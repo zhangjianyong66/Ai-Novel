@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 修复 Docker Compose v1 回退
+
+**Date**: 2026-07-01
+**Task**: 修复 Docker Compose v1 回退
+**Branch**: `main`
+
+### Summary
+
+为 tools/docker-up.sh 增加 docker-compose 独立命令回退，补充回归测试并完成验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8b18229` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

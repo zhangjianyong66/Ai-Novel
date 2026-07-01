@@ -135,3 +135,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: AI 生成完成通知
+
+**Date**: 2026-07-01
+**Task**: AI 生成完成通知
+**Branch**: `main`
+
+### Summary
+
+新增用户级通知设置、飞书 Webhook 发送、浏览器通知入口，并接入生成记录链路与相关测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51c105e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

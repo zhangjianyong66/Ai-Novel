@@ -77,6 +77,9 @@ export function guessPreviewValues(args: {
     2,
   );
   const requirementsObj = { chapter_count: 12 };
+  const targetChapterCount = requirementsObj.chapter_count;
+  const chapterCountRule = `chapters 必须输出 ${targetChapterCount} 章，number 需完整覆盖 1..${targetChapterCount} 且不缺号。`;
+  const chapterDetailRule = "beats 每章 5~9 条，按发生顺序；每条用短句，明确“发生了什么/造成什么后果”。";
 
   const values: Record<string, unknown> = {
     project_name: projectName,
@@ -94,6 +97,9 @@ export function guessPreviewValues(args: {
     chapter_content_md: chapterContentMd,
     analysis_json: analysisJson,
     requirements: JSON.stringify(requirementsObj, null, 2),
+    target_chapter_count: targetChapterCount,
+    chapter_count_rule: chapterCountRule,
+    chapter_detail_rule: chapterDetailRule,
     instruction,
     previous_chapter: previousChapter,
     target_word_count: String(targetWordCount),

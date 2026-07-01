@@ -26,6 +26,7 @@
 - 多表读取使用 `select(...)`，聚合使用 SQLAlchemy 表达式，例如 `case`、`func.count`。
 - 批量或分页查询要限制返回量；章节 meta 分页见 `backend/app/api/routes/chapters.py` 和测试 `backend/tests/test_chapters_meta_contract.py`。
 - SQLite 模式不能在 LLM 调用期间持有长事务；本地开发只允许 `--workers 1`。
+- SQLite 读回 `DateTime(timezone=True)` 时可能得到 offset-naive `datetime`；如果要和 `utc_now()` 这类 offset-aware 值比较，先在比较边界统一规范化（例如去掉 `tzinfo` 或统一转 UTC），否则快速写入/排序逻辑会在测试或本地环境触发 `TypeError`。
 
 ## 迁移约定
 

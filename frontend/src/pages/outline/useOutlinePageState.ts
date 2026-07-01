@@ -450,6 +450,8 @@ export function useOutlinePageState(): OutlinePageState {
       generating: generation.generating,
       genForm: generation.genForm,
       onGenFormChange: (patch) => generation.setGenForm((prev) => ({ ...prev, ...patch })),
+      toneOptions: generation.toneOptions,
+      pacingOptions: generation.pacingOptions,
       streamEnabled: generation.streamEnabled,
       onStreamEnabledChange: generation.setStreamEnabled,
       streamProgress: generation.streamProgress,

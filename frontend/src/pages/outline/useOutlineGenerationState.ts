@@ -9,13 +9,17 @@ import { normalizeOutlineGenResult, parseOutlineGenResultFromText, type OutlineG
 
 import { getOutlineStreamRetryMessage, OUTLINE_COPY } from "./outlineCopy";
 import {
+  DEFAULT_OUTLINE_PACING_OPTIONS,
+  DEFAULT_OUTLINE_TONE_OPTIONS,
   appendCappedRawText,
   buildGeneratedOutlineTitle,
   DEFAULT_OUTLINE_GEN_FORM,
+  mergeOutlineGenerationOptions,
   STREAM_RAW_MAX_CHARS,
   toFinalPreviewJson,
   waitMs,
   type OutlineGenForm,
+  type OutlineGenerationPreferences,
   type OutlineStreamProgress,
 } from "./outlineModels";
 
@@ -48,6 +52,10 @@ export function useOutlineGenerationState(args: {
   const [streamProgress, setStreamProgress] = useState<OutlineStreamProgress | null>(null);
   const [streamRawText, setStreamRawText] = useState("");
   const [streamPreviewJson, setStreamPreviewJson] = useState("");
+  const [generationPreferences, setGenerationPreferences] = useState<OutlineGenerationPreferences>({
+    tone: [],
+    pacing: [],
+  });
   const streamClientRef = useRef<SSEPostClient | null>(null);
   const streamHasChunkRef = useRef(false);
 
@@ -69,6 +77,47 @@ export function useOutlineGenerationState(args: {
   const clearPreview = useCallback(() => {
     setGenPreview(null);
   }, []);
+
+  const refreshGenerationPreferences = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const response = await apiJson<{ preferences: OutlineGenerationPreferences }>(
+        `/api/projects/${projectId}/outline/generation-preferences`,
+      );
+      setGenerationPreferences({
+        tone: response.data.preferences?.tone ?? [],
+        pacing: response.data.preferences?.pacing ?? [],
+      });
+    } catch {
+      setGenerationPreferences({ tone: [], pacing: [] });
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void refreshGenerationPreferences();
+  }, [refreshGenerationPreferences]);
+
+  const saveGenerationPreferences = useCallback(async () => {
+    if (!projectId) return;
+    const tone = genForm.tone.trim();
+    const pacing = genForm.pacing.trim();
+    if (!tone && !pacing) return;
+    try {
+      const response = await apiJson<{ preferences: OutlineGenerationPreferences }>(
+        `/api/projects/${projectId}/outline/generation-preferences`,
+        {
+          method: "POST",
+          body: JSON.stringify({ tone: tone || undefined, pacing: pacing || undefined }),
+        },
+      );
+      setGenerationPreferences({
+        tone: response.data.preferences?.tone ?? [],
+        pacing: response.data.preferences?.pacing ?? [],
+      });
+    } catch {
+      // Preference persistence must not block outline generation.
+    }
+  }, [genForm.pacing, genForm.tone, projectId]);
 
   const overwriteCurrentOutline = useCallback(async () => {
     if (!genPreview) return;
@@ -119,6 +168,8 @@ export function useOutlineGenerationState(args: {
           include_characters: genForm.include_characters,
         },
       };
+
+      void saveGenerationPreferences();
 
       if (!streamEnabled) {
         const response = await apiJson<OutlineGenResult>(`/api/projects/${projectId}/outline/generate`, {
@@ -282,7 +333,7 @@ export function useOutlineGenerationState(args: {
       streamClientRef.current = null;
       setGenerating(false);
     }
-  }, [genForm, preset, projectId, streamEnabled, toast]);
+  }, [genForm, preset, projectId, saveGenerationPreferences, streamEnabled, toast]);
 
   return {
     open,
@@ -298,6 +349,8 @@ export function useOutlineGenerationState(args: {
     streamProgress,
     streamRawText,
     streamPreviewJson,
+    toneOptions: mergeOutlineGenerationOptions(generationPreferences.tone, DEFAULT_OUTLINE_TONE_OPTIONS),
+    pacingOptions: mergeOutlineGenerationOptions(generationPreferences.pacing, DEFAULT_OUTLINE_PACING_OPTIONS),
     generate,
     cancelGenerate,
     clearPreview,

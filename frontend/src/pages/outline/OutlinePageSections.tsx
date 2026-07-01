@@ -192,6 +192,8 @@ export type OutlineGenerationModalProps = {
   generating: boolean;
   genForm: OutlineGenForm;
   onGenFormChange: (patch: Partial<OutlineGenForm>) => void;
+  toneOptions: string[];
+  pacingOptions: string[];
   streamEnabled: boolean;
   onStreamEnabledChange: (value: boolean) => void;
   streamProgress: OutlineStreamProgress | null;
@@ -246,21 +248,33 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
               <span className="text-xs text-subtext">{OUTLINE_COPY.tone}</span>
               <input
                 className="input"
+                list="outline_generation_tone_options"
                 name="tone"
                 value={props.genForm.tone}
                 onChange={(event) => props.onGenFormChange({ tone: event.target.value })}
                 placeholder={OUTLINE_COPY.tonePlaceholder}
               />
+              <datalist id="outline_generation_tone_options">
+                {props.toneOptions.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
             </label>
             <label className="grid gap-1 sm:col-span-3">
               <span className="text-xs text-subtext">{OUTLINE_COPY.pacing}</span>
               <input
                 className="input"
+                list="outline_generation_pacing_options"
                 name="pacing"
                 value={props.genForm.pacing}
                 onChange={(event) => props.onGenFormChange({ pacing: event.target.value })}
                 placeholder={OUTLINE_COPY.pacingPlaceholder}
               />
+              <datalist id="outline_generation_pacing_options">
+                {props.pacingOptions.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
             </label>
           </div>
         </div>

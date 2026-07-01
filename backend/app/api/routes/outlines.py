@@ -18,7 +18,12 @@ from app.db.utils import new_id
 from app.models.chapter import Chapter
 from app.models.outline import Outline
 from app.models.project_settings import ProjectSettings
+from app.schemas.outline_generation_preferences import OutlineGenerationPreferencesSave
 from app.schemas.outline import OutlineCreate, OutlineListItem, OutlineOut, OutlineUpdate
+from app.services.outline_generation_preferences import (
+    list_outline_generation_preferences,
+    save_outline_generation_preferences,
+)
 from app.services.outline_payload_normalizer import normalize_outline_content_and_structure, parse_outline_structure_json
 from app.services.search_index_service import schedule_search_rebuild_task
 from app.services.vector_rag_service import schedule_vector_rebuild_task
@@ -74,6 +79,34 @@ def list_outlines(request: Request, db: DbDep, user_id: UserIdDep, project_id: s
         for r in rows
     ]
     return ok_payload(request_id=request_id, data={"outlines": items})
+
+
+@router.get("/projects/{project_id}/outline/generation-preferences")
+def get_outline_generation_preferences(request: Request, db: DbDep, user_id: UserIdDep, project_id: str) -> dict:
+    request_id = request.state.request_id
+    require_project_viewer(db, project_id=project_id, user_id=user_id)
+    preferences = list_outline_generation_preferences(db, project_id=project_id, user_id=user_id)
+    return ok_payload(request_id=request_id, data={"preferences": preferences})
+
+
+@router.post("/projects/{project_id}/outline/generation-preferences")
+def save_outline_generation_preference_values(
+    request: Request,
+    db: DbDep,
+    user_id: UserIdDep,
+    project_id: str,
+    body: OutlineGenerationPreferencesSave,
+) -> dict:
+    request_id = request.state.request_id
+    require_project_editor(db, project_id=project_id, user_id=user_id)
+    preferences = save_outline_generation_preferences(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        tone=body.tone,
+        pacing=body.pacing,
+    )
+    return ok_payload(request_id=request_id, data={"preferences": preferences})
 
 
 @router.post("/projects/{project_id}/outlines")

@@ -10,6 +10,7 @@ from app.models.llm_preset import LLMPreset
 from app.models.llm_task_preset import LLMTaskPreset
 from app.models.memory_task import MemoryTask
 from app.models.outline import Outline
+from app.models.outline_generation_preference import ProjectOutlineGenerationPreference
 from app.models.project import Project
 from app.models.project_membership import ProjectMembership
 from app.models.project_settings import ProjectSettings
@@ -54,6 +55,7 @@ __all__ = [
     "LLMTaskPreset",
     "MemoryTask",
     "Outline",
+    "ProjectOutlineGenerationPreference",
     "Project",
     "ProjectMembership",
     "ProjectDefaultStyle",

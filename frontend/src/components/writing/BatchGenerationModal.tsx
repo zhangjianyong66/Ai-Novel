@@ -47,22 +47,52 @@ function readNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function readString(value: unknown, fallback = "-"): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+function formatProjectTaskStreamStatus(status: "idle" | "connecting" | "open" | "error"): string {
+  if (status === "open") return "已连接";
+  if (status === "connecting") return "重连中";
+  if (status === "error") return "使用轮询兜底";
+  return "空闲";
 }
 
-function formatProjectTaskStreamStatus(status: "idle" | "connecting" | "open" | "error"): string {
-  if (status === "open") return "connected";
-  if (status === "connecting") return "reconnecting";
-  if (status === "error") return "fallback polling";
-  return "idle";
+function formatTaskStatus(status: BatchGenerationTask["status"]): string {
+  const labels: Record<BatchGenerationTask["status"], string> = {
+    queued: "排队中",
+    running: "生成中",
+    paused: "已暂停",
+    succeeded: "已完成",
+    failed: "失败",
+    canceled: "已取消",
+  };
+  return labels[status] ?? status;
+}
+
+function formatItemStatus(status: BatchGenerationTaskItem["status"]): string {
+  const labels: Record<BatchGenerationTaskItem["status"], string> = {
+    queued: "排队中",
+    running: "生成中",
+    succeeded: "已完成",
+    failed: "失败",
+    canceled: "已取消",
+    skipped: "已跳过",
+  };
+  return labels[status] ?? status;
+}
+
+function formatCheckpointStatus(value: unknown, fallback: BatchGenerationTask["status"]): string {
+  if (typeof value !== "string" || !value.trim()) return formatTaskStatus(fallback);
+  const status = value.trim();
+  if (status === "queued" || status === "running" || status === "paused" || status === "succeeded") {
+    return formatTaskStatus(status);
+  }
+  if (status === "failed" || status === "canceled") return formatTaskStatus(status);
+  return status;
 }
 
 function buildStepLabel(item: BatchGenerationTaskItem): string {
-  const requestId = item.last_request_id ? ` ? request_id ${item.last_request_id}` : "";
-  const attempts = ` ? attempt ${item.attempt_count}`;
-  const error = item.error_message ? ` ? ${item.error_message}` : "";
-  return `${item.status}${attempts}${requestId}${error}`;
+  const requestId = item.last_request_id ? ` · 请求 ID ${item.last_request_id}` : "";
+  const attempts = ` · 第 ${item.attempt_count} 次尝试`;
+  const error = item.error_message ? ` · ${item.error_message}` : "";
+  return `${formatItemStatus(item.status)}${attempts}${requestId}${error}`;
 }
 
 export function BatchGenerationModal(props: {
@@ -124,53 +154,50 @@ export function BatchGenerationModal(props: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-content text-xl text-ink" id={titleId}>
-            Batch Generation
+            批量生成
           </div>
           <div className="mt-1 text-xs text-subtext">
-            Batch generation writes generation runs only. Chapters stay unchanged until you apply a result to the
-            editor.
+            批量生成只会先写入生成记录。应用结果到编辑器前，章节正文不会被自动覆盖。
           </div>
         </div>
         <button
           className="btn btn-secondary"
-          aria-label="Close"
+          aria-label="关闭"
           onClick={props.onClose}
           disabled={props.batchLoading}
           type="button"
         >
-          Close
+          关闭
         </button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-atelier border border-border bg-canvas px-3 py-2 text-xs text-subtext">
-        <span aria-label="batch_generation_live_status">Runtime SSE: {streamStatusLabel}</span>
+        <span aria-label="batch_generation_live_status">运行状态流：{streamStatusLabel}</span>
         {props.taskCenterHref ? (
           <a
             className="btn btn-secondary btn-sm"
             href={props.taskCenterHref}
-            aria-label="Open TaskCenter (batch_generation_open_task_center)"
+            aria-label="打开任务中心 (batch_generation_open_task_center)"
           >
-            Open TaskCenter
+            打开任务中心
           </a>
         ) : null}
       </div>
 
       <div className="mt-4 grid gap-3">
         <div className="grid gap-2 rounded-atelier border border-border bg-canvas p-3">
-          <div className="text-sm font-medium text-ink">Step 1 ? Range</div>
+          <div className="text-sm font-medium text-ink">步骤 1 · 选择范围</div>
           <div className="text-xs text-subtext">
-            Start after: {props.activeChapterNumber ? `chapter ${props.activeChapterNumber}` : "chapter 1"}
+            起点：{props.activeChapterNumber ? `第 ${props.activeChapterNumber} 章之后` : "从第 1 章开始"}
           </div>
-          <div className="text-[11px] text-subtext">
-            The active chapter decides the starting point. Generation continues sequentially after it.
-          </div>
+          <div className="text-[11px] text-subtext">当前选中的章节会决定起始位置，后续章节会按顺序连续生成。</div>
         </div>
 
         <div className="grid gap-2 rounded-atelier border border-border bg-canvas p-3">
-          <div className="text-sm font-medium text-ink">Step 2 ? Options</div>
+          <div className="text-sm font-medium text-ink">步骤 2 · 生成选项</div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="grid gap-1">
-              <span className="text-xs text-subtext">Count: 1~200</span>
+              <span className="text-xs text-subtext">生成数量：1~200</span>
               <input
                 className="input w-28"
                 min={1}
@@ -189,14 +216,14 @@ export function BatchGenerationModal(props: {
                 disabled={props.batchLoading || taskRunning}
                 onChange={(e) => props.setBatchIncludeExisting(e.target.checked)}
               />
-              Include chapters that already have content
+              包含已有正文的章节
             </label>
           </div>
         </div>
 
         <div className="grid gap-3 rounded-atelier border border-border bg-surface p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-medium text-ink">Step 3 ? Run and recovery</div>
+            <div className="text-sm font-medium text-ink">步骤 3 · 执行与恢复</div>
             <div className="flex flex-wrap items-center gap-2">
               {!task || taskTerminal ? (
                 <button
@@ -205,7 +232,7 @@ export function BatchGenerationModal(props: {
                   onClick={props.onStartTask}
                   type="button"
                 >
-                  {props.batchLoading ? "Starting..." : "Start batch generation"}
+                  {props.batchLoading ? "启动中..." : "开始批量生成"}
                 </button>
               ) : null}
               {taskRunning ? (
@@ -213,10 +240,10 @@ export function BatchGenerationModal(props: {
                   className="btn btn-secondary"
                   disabled={props.batchLoading}
                   onClick={props.onPauseTask}
-                  aria-label="Pause batch generation (batch_generation_pause)"
+                  aria-label="暂停批量生成 (batch_generation_pause)"
                   type="button"
                 >
-                  {props.batchLoading ? "Working..." : "Pause"}
+                  {props.batchLoading ? "处理中..." : "暂停"}
                 </button>
               ) : null}
               {canResume ? (
@@ -224,10 +251,10 @@ export function BatchGenerationModal(props: {
                   className="btn btn-secondary"
                   disabled={props.batchLoading}
                   onClick={props.onResumeTask}
-                  aria-label="Resume batch generation (batch_generation_resume)"
+                  aria-label="继续批量生成 (batch_generation_resume)"
                   type="button"
                 >
-                  {props.batchLoading ? "Working..." : "Resume"}
+                  {props.batchLoading ? "处理中..." : "继续"}
                 </button>
               ) : null}
               {canRetryFailed ? (
@@ -235,10 +262,10 @@ export function BatchGenerationModal(props: {
                   className="btn btn-secondary"
                   disabled={props.batchLoading}
                   onClick={props.onRetryFailedTask}
-                  aria-label="Retry failed chapters (batch_generation_retry_failed)"
+                  aria-label="重试失败章节 (batch_generation_retry_failed)"
                   type="button"
                 >
-                  {props.batchLoading ? "Working..." : "Retry failed chapters"}
+                  {props.batchLoading ? "处理中..." : "重试失败章节"}
                 </button>
               ) : null}
               {canSkipFailed ? (
@@ -246,10 +273,10 @@ export function BatchGenerationModal(props: {
                   className="btn btn-secondary"
                   disabled={props.batchLoading}
                   onClick={props.onSkipFailedTask}
-                  aria-label="Skip failed chapters (batch_generation_skip_failed)"
+                  aria-label="跳过失败章节 (batch_generation_skip_failed)"
                   type="button"
                 >
-                  {props.batchLoading ? "Working..." : "Skip failed chapters"}
+                  {props.batchLoading ? "处理中..." : "跳过失败章节"}
                 </button>
               ) : null}
               {canCancel ? (
@@ -257,18 +284,16 @@ export function BatchGenerationModal(props: {
                   className="btn btn-secondary"
                   disabled={props.batchLoading}
                   onClick={props.onCancelTask}
-                  aria-label="Cancel batch generation (batch_generation_cancel)"
+                  aria-label="取消批量生成 (batch_generation_cancel)"
                   type="button"
                 >
-                  {props.batchLoading ? "Working..." : "Cancel batch"}
+                  {props.batchLoading ? "处理中..." : "取消批量任务"}
                 </button>
               ) : null}
             </div>
           </div>
 
-          {!task ? (
-            <div className="text-sm text-subtext">No batch exists yet. Configure options and start one when ready.</div>
-          ) : null}
+          {!task ? <div className="text-sm text-subtext">还没有批量任务。配置选项后即可启动。</div> : null}
 
           {task ? (
             <>
@@ -278,35 +303,35 @@ export function BatchGenerationModal(props: {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink">
                   <span>
-                    Status: <span className="font-mono">{task.status}</span>
+                    状态：<span>{formatTaskStatus(task.status)}</span>
                   </span>
                   <span>
-                    completed {task.completed_count}/{task.total_count} ? failed {task.failed_count} ? skipped{" "}
+                    已完成 {task.completed_count}/{task.total_count} · 失败 {task.failed_count} · 已跳过{" "}
                     {task.skipped_count}
                   </span>
                 </div>
-                <ProgressBar ariaLabel="Batch generation progress" value={taskProgressPercent} />
+                <ProgressBar ariaLabel="批量生成进度" value={taskProgressPercent} />
                 <div className="text-[11px] text-subtext">
-                  pause_requested: {String(task.pause_requested)} ? cancel_requested: {String(task.cancel_requested)}
+                  请求暂停：{task.pause_requested ? "是" : "否"} · 请求取消：{task.cancel_requested ? "是" : "否"}
                 </div>
-                {requestId ? <div className="text-[11px] text-subtext">request_id: {requestId}</div> : null}
+                {requestId ? <div className="text-[11px] text-subtext">请求 ID：{requestId}</div> : null}
               </section>
 
               {latestCheckpoint ? (
                 <section className="rounded-atelier border border-border bg-canvas p-3">
-                  <div className="text-sm text-ink">Recovery point</div>
+                  <div className="text-sm text-ink">恢复点</div>
                   <div className="mt-2 grid gap-1 text-xs text-subtext">
-                    <div>status: {readString(latestCheckpoint.status, task.status)}</div>
-                    <div>completed_count: {readNumber(latestCheckpoint.completed_count, task.completed_count)}</div>
-                    <div>failed_count: {readNumber(latestCheckpoint.failed_count, task.failed_count)}</div>
-                    <div>skipped_count: {readNumber(latestCheckpoint.skipped_count, task.skipped_count)}</div>
+                    <div>状态：{formatCheckpointStatus(latestCheckpoint.status, task.status)}</div>
+                    <div>已完成：{readNumber(latestCheckpoint.completed_count, task.completed_count)}</div>
+                    <div>失败：{readNumber(latestCheckpoint.failed_count, task.failed_count)}</div>
+                    <div>已跳过：{readNumber(latestCheckpoint.skipped_count, task.skipped_count)}</div>
                   </div>
                 </section>
               ) : null}
 
               {task.error_json ? (
                 <div className="rounded-atelier border border-border bg-canvas p-3">
-                  <div className="text-sm text-ink">Error</div>
+                  <div className="text-sm text-ink">错误信息</div>
                   <div className="mt-1 break-words text-xs text-subtext">{task.error_json}</div>
                 </div>
               ) : null}
@@ -315,9 +340,9 @@ export function BatchGenerationModal(props: {
                 className="rounded-atelier border border-border bg-canvas p-3"
                 aria-label="batch_generation_runtime_timeline"
               >
-                <summary className="cursor-pointer select-none text-sm text-ink">Runtime timeline</summary>
+                <summary className="cursor-pointer select-none text-sm text-ink">运行时间线</summary>
                 {timeline.length === 0 ? (
-                  <div className="mt-2 text-xs text-subtext">No runtime events yet.</div>
+                  <div className="mt-2 text-xs text-subtext">暂无运行事件。</div>
                 ) : (
                   <div className="mt-3 max-h-48 space-y-2 overflow-auto text-xs text-subtext">
                     {timeline.map((entry) => (
@@ -332,8 +357,8 @@ export function BatchGenerationModal(props: {
                           <span>{entry.created_at || "-"}</span>
                         </div>
                         <div className="mt-1 text-subtext">
-                          {entry.reason ? `reason: ${entry.reason}` : "reason: -"}
-                          {entry.source ? ` ? source: ${entry.source}` : ""}
+                          {entry.reason ? `原因：${entry.reason}` : "原因：-"}
+                          {entry.source ? ` · 来源：${entry.source}` : ""}
                         </div>
                       </div>
                     ))}
@@ -346,17 +371,17 @@ export function BatchGenerationModal(props: {
                 aria-label="batch_generation_items"
               >
                 {props.batchItems.length === 0 ? (
-                  <div className="p-3 text-sm text-subtext">No batch items yet.</div>
+                  <div className="p-3 text-sm text-subtext">暂无批量条目。</div>
                 ) : (
                   <div className="divide-y divide-border">
                     {props.batchItems.map((item) => (
                       <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm text-ink">Chapter {item.chapter_number}</div>
+                          <div className="text-sm text-ink">第 {item.chapter_number} 章</div>
                           <div className="mt-1 break-words text-xs text-subtext">{buildStepLabel(item)}</div>
                           {item.started_at || item.finished_at ? (
                             <div className="mt-1 text-[11px] text-subtext">
-                              started_at: {item.started_at || "-"} ? finished_at: {item.finished_at || "-"}
+                              开始时间：{item.started_at || "-"} · 结束时间：{item.finished_at || "-"}
                             </div>
                           ) : null}
                         </div>
@@ -368,7 +393,7 @@ export function BatchGenerationModal(props: {
                               disabled={props.batchLoading}
                               type="button"
                             >
-                              Apply to editor
+                              应用到编辑器
                             </button>
                           ) : null}
                         </div>

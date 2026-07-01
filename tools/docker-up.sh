@@ -71,6 +71,11 @@ compose_cmd() {
     return
   fi
 
+  if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    printf 'docker-compose'
+    return
+  fi
+
   if [[ "$docker_bin" == "sudo docker" && -x "$HOME/.docker/cli-plugins/docker-compose" ]]; then
     info "sudo docker compose 不可用，尝试安装用户级 Compose 插件到系统级目录。"
     sudo mkdir -p /usr/local/lib/docker/cli-plugins
@@ -150,7 +155,7 @@ run_build() {
 
   if proxy_enabled; then
     tmp_override="$(mktemp)"
-    trap 'rm -f "$tmp_override"' RETURN
+    trap "rm -f '$tmp_override'; trap - RETURN" RETURN
     write_proxy_override "$tmp_override"
     info "使用构建代理: $PROXY_URL"
     $compose -f "$ROOT_DIR/docker-compose.yml" -f "$tmp_override" --env-file "$ENV_FILE" build
@@ -196,6 +201,11 @@ main() {
   local docker_bin compose
   docker_bin="$(docker_cmd)"
   compose="$(compose_cmd "$docker_bin")"
+
+  if [[ "${DOCKER_UP_PRINT_COMPOSE:-}" == "1" ]]; then
+    printf '%s\n' "$compose"
+    return
+  fi
 
   case "$ACTION" in
     build-up)

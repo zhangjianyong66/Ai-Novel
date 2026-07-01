@@ -71,3 +71,34 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 完成 Trellis 入门任务
+
+**Date**: 2026-07-01
+**Task**: 完成 Trellis 入门任务
+**Branch**: `main`
+
+### Summary
+
+恢复并完成 joiner onboarding 任务；核对项目 Trellis 工作流、规范索引、任务 CLI 用法和活跃任务状态；归档 00-join-zhangjianyong。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

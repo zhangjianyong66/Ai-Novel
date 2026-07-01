@@ -31,6 +31,11 @@ const AdminUsersPage = lazy(async () => {
   return { default: mod.AdminUsersPage };
 });
 
+const NotificationSettingsPage = lazy(async () => {
+  const mod = await importWithChunkRetry(() => import("./pages/NotificationSettingsPage"));
+  return { default: mod.NotificationSettingsPage };
+});
+
 const ProjectWizardPage = lazy(async () => {
   const mod = await importWithChunkRetry(() => import("./pages/ProjectWizardPage"));
   return { default: mod.ProjectWizardPage };
@@ -182,6 +187,10 @@ const router = createBrowserRouter([
           {
             path: "admin/users",
             element: <AdminUsersPage />,
+          },
+          {
+            path: "account/notification-settings",
+            element: <NotificationSettingsPage />,
           },
           {
             path: "projects/:projectId",

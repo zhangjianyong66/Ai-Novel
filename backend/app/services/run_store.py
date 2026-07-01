@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db.session import SessionLocal
 from app.db.utils import new_id
 from app.models.generation_run import GenerationRun
+from app.services.generation_notification_service import GenerationNotificationEvent, notify_generation_finished_fail_soft
 from app.services.user_usage_service import bump_user_generation_usage, count_generated_chars
 
 
@@ -74,6 +75,22 @@ def write_generation_run(
                     had_error=had_error,
                 )
                 db.commit()
+                try:
+                    notify_generation_finished_fail_soft(
+                        db,
+                        event=GenerationNotificationEvent(
+                            actor_user_id=actor_user_id,
+                            project_id=project_id,
+                            chapter_id=chapter_id,
+                            generation_run_id=rid,
+                            task_type=run_type,
+                            status="failed" if had_error else "success",
+                            request_id=request_id,
+                            error_message=(str(error_json or "")[:300] if had_error else None),
+                        ),
+                    )
+                except Exception:
+                    pass
                 return rid
             except IntegrityError as exc:
                 db.rollback()

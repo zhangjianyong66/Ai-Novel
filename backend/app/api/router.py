@@ -23,6 +23,7 @@ from app.api.routes import (
     llm_task_presets,
     mcp,
     memory,
+    notification_settings,
     outline,
     outlines,
     projects,
@@ -52,6 +53,7 @@ api_router.include_router(vector.router, tags=["vector"])
 api_router.include_router(graph.router, tags=["graph"])
 api_router.include_router(fractal.router, tags=["fractal"])
 api_router.include_router(settings.router, tags=["settings"])
+api_router.include_router(notification_settings.router, tags=["notification_settings"])
 api_router.include_router(characters.router, tags=["characters"])
 api_router.include_router(outline.router, tags=["outline"])
 api_router.include_router(chapters.router, tags=["chapters"])

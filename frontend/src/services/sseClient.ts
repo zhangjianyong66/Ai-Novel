@@ -1,4 +1,5 @@
 import { ApiError, type ApiErrorPayload } from "./apiClient";
+import { generationTaskLabelFromPath, notifyGenerationBrowser } from "./browserGenerationNotifications";
 import { shouldNotifyUnauthorized } from "./unauthorizedPolicy";
 
 export type SSEMessage =
@@ -217,10 +218,16 @@ export class SSEPostClient {
             const error = typeof obj?.error === "string" ? obj.error : "SSE error";
             const code = typeof obj?.code === "number" ? obj.code : undefined;
             this.options.onError?.(error, code);
+            void notifyGenerationBrowser({
+              status: "failed",
+              taskLabel: generationTaskLabelFromPath(this.url),
+              detail: error,
+            });
             throw new SSEError({ code: "SSE_SERVER_ERROR", message: error, requestId: this.requestId });
           } else if (eventType === "done") {
             doneReceived = true;
             this.options.onDone?.();
+            void notifyGenerationBrowser({ status: "success", taskLabel: generationTaskLabelFromPath(this.url) });
             return { requestId: this.requestId, result: this.resultData, accumulatedContent: this.accumulatedContent };
           }
         }
@@ -248,6 +255,7 @@ export class SSEPostClient {
       if (this.resultData !== undefined) {
         // Some proxies may drop the terminal done event while result is already delivered.
         this.options.onDone?.();
+        void notifyGenerationBrowser({ status: "success", taskLabel: generationTaskLabelFromPath(this.url) });
         return { requestId: this.requestId, result: this.resultData, accumulatedContent: this.accumulatedContent };
       }
       throw new SSEError({ code: "SSE_EARLY_CLOSE", message: "SSE 连接提前结束", requestId: this.requestId });

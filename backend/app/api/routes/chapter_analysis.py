@@ -175,7 +175,7 @@ def analyze_chapter(
     if not prompt_system.strip() and not prompt_user.strip():
         raise AppError(code="PROMPT_CONFIG_ERROR", message="缺少 chapter_analyze 提示词预设/提示块", status_code=400)
 
-    llm_call = with_param_overrides(llm_call, {"temperature": 0.2, "max_tokens": 2048})
+    llm_call = with_param_overrides(llm_call, {"temperature": 0.2})
     llm_result = call_llm_and_record(
         logger=logger,
         request_id=request_id,
@@ -214,7 +214,7 @@ def analyze_chapter(
             data["memory_update_auto_propose"] = {"enabled": True, "ok": False, "skipped": True, "reason": "memupd_prompt_missing"}
         else:
             try:
-                memupd_llm_call2 = with_param_overrides(memupd_llm_call, {"temperature": 0.2, "max_tokens": 2048})
+                memupd_llm_call2 = with_param_overrides(memupd_llm_call, {"temperature": 0.2})
                 memupd_llm_result = call_llm_and_record(
                     logger=logger,
                     request_id=request_id,
@@ -374,7 +374,7 @@ def rewrite_chapter(
     if not prompt_system.strip() and not prompt_user.strip():
         raise AppError(code="PROMPT_CONFIG_ERROR", message="缺少 chapter_rewrite 提示词预设/提示块", status_code=400)
 
-    llm_call = with_param_overrides(llm_call, {"temperature": 0.35, "max_tokens": 8192})
+    llm_call = with_param_overrides(llm_call, {"temperature": 0.35})
     llm_result = call_llm_and_record(
         logger=logger,
         request_id=request_id,

@@ -721,7 +721,7 @@ def auto_propose_chapter_memory_update(
     if not prompt_system.strip() and not prompt_user.strip():
         raise AppError(code="PROMPT_CONFIG_ERROR", message="缺少 memory_update 提示词预设/提示块", status_code=400)
 
-    llm_call = with_param_overrides(llm_call, {"temperature": 0.2, "max_tokens": 2048})
+    llm_call = with_param_overrides(llm_call, {"temperature": 0.2})
     llm_result = call_llm_and_record(
         logger=logger,
         request_id=request_id,

@@ -30,6 +30,7 @@ from app.models.structured_memory import (
     MemoryRelation,
 )
 from app.schemas.memory_update import AFTER_MODEL_BY_TABLE, MemoryUpdateV1Request
+from app.services.generation_notification_service import GenerationNotificationEvent, notify_generation_finished_fail_soft
 from app.services.table_executor import TableUpdateV1Request, is_key_value_schema, validate_row_data_for_table
 from app.services.fractal_memory_service import rebuild_fractal_memory
 from app.services.vector_embedding_overrides import vector_embedding_overrides
@@ -509,6 +510,18 @@ def propose_chapter_memory_change_set(
             error_json=None,
         )
     )
+    notify_generation_finished_fail_soft(
+        db,
+        event=GenerationNotificationEvent(
+            actor_user_id=actor_user_id,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            generation_run_id=generation_run_id,
+            task_type="memory_update_propose",
+            status="success",
+            request_id=request_id,
+        ),
+    )
 
     change_set = MemoryChangeSet(
         id=new_id(),
@@ -717,6 +730,18 @@ def propose_project_table_change_set(
             output_text=_compact_json_dumps(payload.model_dump()),
             error_json=None,
         )
+    )
+    notify_generation_finished_fail_soft(
+        db,
+        event=GenerationNotificationEvent(
+            actor_user_id=actor_user_id,
+            project_id=project_id,
+            chapter_id=None,
+            generation_run_id=generation_run_id,
+            task_type="table_update_propose",
+            status="success",
+            request_id=request_id,
+        ),
     )
 
     change_set = MemoryChangeSet(

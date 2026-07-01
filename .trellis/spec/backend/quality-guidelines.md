@@ -16,6 +16,7 @@
 - 响应使用 `ok_payload` / `AppError` 契约。
 - 配置集中在 `backend/app/core/config.py` 的 `Settings`，新增环境变量必须有默认值、类型和必要 validator。
 - LLM 调用、生成 run、prompt、错误审计要沿用现有 `llm/` 与 `services/run_store.py` 路径。
+- 章节分析、章节改写、记忆更新自动提议等生成类路由必须保留模型配置页的 `max_tokens`/`max_output_tokens`；只覆盖必要的 `temperature` 等采样参数，避免低上限截断 JSON 契约输出。
 - 生成、记忆、RAG、批量任务改动必须同步或新增测试。
 
 ## 测试选择

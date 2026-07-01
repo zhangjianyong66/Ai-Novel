@@ -24,6 +24,7 @@ from app.models.story_memory import StoryMemory
 from app.schemas.chapter_analysis import ChapterAnalyzeRequest
 from app.services.chapter_context_service import build_chapter_analyze_render_values
 from app.services.generation_service import prepare_llm_call
+from app.services.generation_notification_service import GenerationNotificationEvent, notify_generation_finished_fail_soft
 from app.services.llm_key_resolver import resolve_api_key_for_project
 from app.services.llm_task_preset_resolver import resolve_task_llm_config
 from app.services.llm_retry import (
@@ -522,9 +523,10 @@ def apply_chapter_analysis(
         if not created:
             raise AppError(code="INTERNAL_ERROR", message="未生成任何 story_memories", status_code=500)
 
+        generation_run_id = new_id()
         db.add(
             GenerationRun(
-                id=new_id(),
+                id=generation_run_id,
                 project_id=project_id,
                 actor_user_id=actor_user_id,
                 chapter_id=chapter_id,
@@ -549,6 +551,18 @@ def apply_chapter_analysis(
         settings_row.vector_index_dirty = True
 
         db.commit()
+        notify_generation_finished_fail_soft(
+            db,
+            event=GenerationNotificationEvent(
+                actor_user_id=actor_user_id,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                generation_run_id=generation_run_id,
+                task_type="analysis_apply",
+                status="success",
+                request_id=request_id,
+            ),
+        )
         return {
             "idempotent": False,
             "analysis_hash": analysis_hash,

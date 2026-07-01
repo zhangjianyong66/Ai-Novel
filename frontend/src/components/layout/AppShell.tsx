@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
-import { CircleHelp, LayoutDashboard, PanelLeftClose, PanelLeftOpen, UserCog } from "lucide-react";
+import { Bell, CircleHelp, LayoutDashboard, PanelLeftClose, PanelLeftOpen, UserCog } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate, useOutlet, useParams } from "react-router-dom";
 
@@ -357,6 +357,14 @@ export function AppShell() {
                         openHelp();
                       }}
                     />
+                    <SidebarLink
+                      collapsed={false}
+                      icon={<Bell size={18} />}
+                      label={UI_COPY.nav.notificationSettings}
+                      ariaLabel="通知设置 (nav_notification_settings)"
+                      to="/account/notification-settings"
+                      onClick={closeMobileNav}
+                    />
                     <div className="my-2 h-px bg-border" />
                     {projectId ? (
                       <>
@@ -476,6 +484,13 @@ export function AppShell() {
                 label={UI_COPY.nav.help}
                 ariaLabel="术语/帮助 (nav_help)"
                 onClick={openHelp}
+              />
+              <SidebarLink
+                collapsed={collapsed}
+                icon={<Bell size={18} />}
+                label={UI_COPY.nav.notificationSettings}
+                ariaLabel="通知设置 (nav_notification_settings)"
+                to="/account/notification-settings"
               />
               <div className="my-2 h-px bg-border" />
               {projectId ? (

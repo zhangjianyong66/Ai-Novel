@@ -1,4 +1,9 @@
 import { shouldNotifyUnauthorized } from "./unauthorizedPolicy";
+import {
+  generationTaskLabelFromPath,
+  isAiGenerationRequest,
+  notifyGenerationBrowser,
+} from "./browserGenerationNotifications";
 
 export type ApiErrorPayload = {
   ok: false;
@@ -122,9 +127,21 @@ export async function apiJson<T>(path: string, init?: ApiRequestInit): Promise<A
 
   if (typeof payload === "object" && payload && "ok" in payload) {
     const typed = payload as ApiOkPayload<T> | ApiErrorPayload;
-    if (typed.ok) return typed as ApiOkPayload<T>;
+    if (typed.ok) {
+      if (isAiGenerationRequest(path, init)) {
+        void notifyGenerationBrowser({ status: "success", taskLabel: generationTaskLabelFromPath(path) });
+      }
+      return typed as ApiOkPayload<T>;
+    }
     if (shouldNotifyUnauthorized(res.status, typed.error.code))
       notifyUnauthorized(typed.request_id ?? requestIdHeader ?? "unknown");
+    if (isAiGenerationRequest(path, init)) {
+      void notifyGenerationBrowser({
+        status: "failed",
+        taskLabel: generationTaskLabelFromPath(path),
+        detail: typed.error.message,
+      });
+    }
     throw new ApiError({
       code: typed.error.code,
       message: typed.error.message,
@@ -135,6 +152,13 @@ export async function apiJson<T>(path: string, init?: ApiRequestInit): Promise<A
   }
 
   if (shouldNotifyUnauthorized(res.status, null)) notifyUnauthorized(requestIdHeader ?? "unknown");
+  if (isAiGenerationRequest(path, init)) {
+    void notifyGenerationBrowser({
+      status: "failed",
+      taskLabel: generationTaskLabelFromPath(path),
+      detail: "响应格式错误",
+    });
+  }
   throw new ApiError({
     code: "BAD_RESPONSE",
     message: "响应格式错误",

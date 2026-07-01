@@ -102,3 +102,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 大纲生成偏好保存
+
+**Date**: 2026-07-01
+**Task**: 大纲生成偏好保存
+**Branch**: `main`
+
+### Summary
+
+实现 AI 大纲生成基调和节奏候选项，支持自由输入并将历史偏好按用户和项目保存到后端数据库。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b114cbb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

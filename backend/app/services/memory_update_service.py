@@ -448,6 +448,37 @@ def _item_to_dict(item: MemoryChangeSetItem) -> dict[str, Any]:
     }
 
 
+def _resolve_entity_ref(
+    db: Session, *, project_id: str, ref: object, entity_aliases: dict[str, str]
+) -> str:
+    raw = str(ref or "").strip()
+    if not raw:
+        return raw
+    if raw in entity_aliases:
+        return entity_aliases[raw]
+
+    existing_by_id = db.get(MemoryEntity, raw)
+    if existing_by_id is not None and str(existing_by_id.project_id) == project_id and existing_by_id.deleted_at is None:
+        return raw
+
+    matches = (
+        db.execute(
+            select(MemoryEntity.id).where(
+                MemoryEntity.project_id == project_id,
+                MemoryEntity.name == raw,
+                MemoryEntity.deleted_at.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(matches) == 1:
+        resolved = str(matches[0])
+        entity_aliases[raw] = resolved
+        return resolved
+    return raw
+
+
 def propose_chapter_memory_change_set(
     *,
     db: Session,
@@ -537,6 +568,7 @@ def propose_chapter_memory_change_set(
     db.add(change_set)
 
     items: list[MemoryChangeSetItem] = []
+    entity_aliases: dict[str, str] = {}
     for idx, op in enumerate(payload.ops):
         target_table = str(op.target_table)
         target_id = str(op.target_id or "").strip()
@@ -589,6 +621,25 @@ def propose_chapter_memory_change_set(
 
             if not target_id:
                 target_id = new_id()
+
+            if target_table == "entities":
+                name = str(after_dict.get("name") or "").strip()
+                if name:
+                    entity_aliases[name] = target_id
+
+            if target_table == "relations":
+                after_dict["from_entity_id"] = _resolve_entity_ref(
+                    db,
+                    project_id=project_id,
+                    ref=after_dict.get("from_entity_id"),
+                    entity_aliases=entity_aliases,
+                )
+                after_dict["to_entity_id"] = _resolve_entity_ref(
+                    db,
+                    project_id=project_id,
+                    ref=after_dict.get("to_entity_id"),
+                    entity_aliases=entity_aliases,
+                )
 
             after_dict["id"] = target_id
 

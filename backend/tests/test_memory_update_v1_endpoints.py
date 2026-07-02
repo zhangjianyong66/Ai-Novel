@@ -286,6 +286,59 @@ class TestMemoryUpdateV1Endpoints(unittest.TestCase):
         self.assertEqual(rollback_forbidden.status_code, 404)
         self.assertEqual(rollback_forbidden.json()["error"]["code"], "NOT_FOUND")
 
+    def test_propose_resolves_relation_entity_names_from_same_change_set(self) -> None:
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-relation-name-resolution-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": "e_alice",
+                        "after": {"entity_type": "character", "name": "Alice"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": "e_bob",
+                        "after": {"entity_type": "character", "name": "Bob"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "relations",
+                        "target_id": "r_alice_bob",
+                        "after": {
+                            "from_entity_id": "Alice",
+                            "to_entity_id": "Bob",
+                            "relation_type": "knows",
+                        },
+                    },
+                ],
+            },
+        )
+        self.assertEqual(propose.status_code, 200)
+        relation_item = propose.json()["data"]["items"][2]
+        self.assertEqual(relation_item["target_table"], "relations")
+        self.assertIn('"from_entity_id":"e_alice"', relation_item["after_json"])
+        self.assertIn('"to_entity_id":"e_bob"', relation_item["after_json"])
+
+        change_set_id = propose.json()["data"]["change_set"]["id"]
+        apply_ok = client.post(
+            f"/api/memory_change_sets/{change_set_id}/apply",
+            headers={"X-Test-User": "u_editor"},
+        )
+        self.assertEqual(apply_ok.status_code, 200)
+
+        with self.SessionLocal() as db:
+            relation = db.get(MemoryRelation, "r_alice_bob")
+            self.assertIsNotNone(relation)
+            self.assertEqual(relation.from_entity_id, "e_alice")
+            self.assertEqual(relation.to_entity_id, "e_bob")
+
     def test_apply_integrity_error_marks_failed(self) -> None:
         with self.SessionLocal() as db:
             db.add(

@@ -38,6 +38,13 @@ from app.services.worldbook_service import preview_worldbook_trigger
 
 router = APIRouter()
 
+_WORLD_BOOK_PRIORITIES = {"drop_first", "optional", "important", "must"}
+
+
+def _normalize_priority(value: object) -> str:
+    priority = str(value or "").strip().lower()
+    return priority if priority in _WORLD_BOOK_PRIORITIES else "important"
+
 
 def _mark_vector_index_dirty(db: DbDep, *, project_id: str) -> None:
     row = db.get(ProjectSettings, project_id)
@@ -91,7 +98,7 @@ def _to_out(row: WorldBookEntry) -> dict:
         exclude_recursion=bool(row.exclude_recursion),
         prevent_recursion=bool(row.prevent_recursion),
         char_limit=int(row.char_limit or 0),
-        priority=str(row.priority or "important"),  # type: ignore[arg-type]
+        priority=_normalize_priority(row.priority),  # type: ignore[arg-type]
         updated_at=row.updated_at,
     ).model_dump()
 
@@ -182,7 +189,7 @@ def export_all_worldbook_entries(request: Request, db: DbDep, user_id: UserIdDep
                 exclude_recursion=bool(r.exclude_recursion),
                 prevent_recursion=bool(r.prevent_recursion),
                 char_limit=int(r.char_limit or 0),
-                priority=str(r.priority or "important"),  # type: ignore[arg-type]
+                priority=_normalize_priority(r.priority),  # type: ignore[arg-type]
             )
             for r in rows
         ]
@@ -453,7 +460,7 @@ def duplicate_worldbook_entries(
                 exclude_recursion=bool(src.exclude_recursion),
                 prevent_recursion=bool(src.prevent_recursion),
                 char_limit=int(src.char_limit or 0),
-                priority=str(src.priority or "important"),
+                priority=_normalize_priority(src.priority),
             )
         )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -42,6 +42,7 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+        event.listen(engine, "connect", lambda dbapi_connection, _connection_record: dbapi_connection.execute("PRAGMA foreign_keys=ON"))
         self.addCleanup(engine.dispose)
 
         Base.metadata.create_all(
@@ -158,6 +159,7 @@ def _count(db: Session, stmt) -> int:  # type: ignore[no-untyped-def]
 
 def _seed_project(db: Session) -> None:
     db.add(User(id="u1", display_name="User 1", is_admin=False))
+    db.flush()
     project = Project(
         id="p1",
         owner_user_id="u1",
@@ -169,6 +171,7 @@ def _seed_project(db: Session) -> None:
     )
     db.add(project)
     db.add(ProjectMembership(project_id="p1", user_id="u1", role="owner"))
+    db.flush()
     db.add(
         ProjectSettings(
             project_id="p1",
@@ -218,6 +221,7 @@ def _seed_project(db: Session) -> None:
 
     outline = Outline(id="o1", project_id="p1", title="Outline 1", content_md="outline", structure_json=None)
     db.add(outline)
+    db.flush()
     db.add(Chapter(id="c1", project_id="p1", outline_id="o1", number=1, title="Chapter 1", plan="p", content_md="c", summary="s", status="done"))
     project.active_outline_id = "o1"
 
@@ -315,6 +319,7 @@ def _seed_project(db: Session) -> None:
             is_preset=False,
         )
     )
+    db.flush()
     db.add(ProjectDefaultStyle(project_id="p1", style_id="ws1"))
     db.add(FractalMemory(id="fm1", project_id="p1", config_json="{}", scenes_json="[]", arcs_json="[]", sagas_json="[]"))
     db.add(

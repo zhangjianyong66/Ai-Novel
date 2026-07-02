@@ -46,6 +46,12 @@ def _lower_nonempty(items: list[str]) -> list[str]:
 _ASCII_QUERY_RE = re.compile(r"[a-z0-9]+")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _ALIAS_SPLIT_RE = re.compile(r"[\s,|;]+")
+_WORLD_BOOK_PRIORITIES = {"drop_first", "optional", "important", "must"}
+
+
+def _normalize_priority(value: object) -> str:
+    priority = str(value or "").strip().lower()
+    return priority if priority in _WORLD_BOOK_PRIORITIES else "important"
 
 
 def _extract_ascii_query(text: str) -> str:
@@ -271,7 +277,7 @@ def _format_worldbook_text(entries: list[WorldBookEntry], *, reason_by_id: dict[
         limit = int(e.char_limit or 0)
         if limit >= 0 and len(content) > limit:
             content = content[:limit].rstrip()
-        header = f"【世界书条目：{title} | {reason} | priority:{str(e.priority or 'important')}】"
+        header = f"【世界书条目：{title} | {reason} | priority:{_normalize_priority(e.priority)}】"
         parts.append(f"{header}\n{content}".rstrip())
 
     inner = "\n\n---\n\n".join([p for p in parts if p.strip()]).strip()
@@ -341,7 +347,7 @@ def preview_worldbook_trigger(
                 id=e.id,
                 title=e.title,
                 reason=reason,
-                priority=str(e.priority or "important"),  # type: ignore[arg-type]
+                priority=_normalize_priority(e.priority),  # type: ignore[arg-type]
             )
         )
 

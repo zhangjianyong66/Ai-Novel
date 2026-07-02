@@ -36,6 +36,12 @@ from app.services.vector_rag_service import VectorChunk, ingest_chunks, purge_pr
 
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9\u4e00-\u9fff]{2,}")
+_WORLD_BOOK_PRIORITIES = {"drop_first", "optional", "important", "must"}
+
+
+def _normalize_worldbook_priority(value: object) -> str:
+    priority = str(value or "").strip().lower()
+    return priority if priority in _WORLD_BOOK_PRIORITIES else "important"
 
 
 def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
@@ -557,7 +563,7 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
                     "exclude_recursion": bool(e.exclude_recursion),
                     "prevent_recursion": bool(e.prevent_recursion),
                     "char_limit": int(e.char_limit),
-                    "priority": str(e.priority or "important"),
+                    "priority": _normalize_worldbook_priority(e.priority),
                 }
                 for e in worldbook_entries
             ],
@@ -901,6 +907,8 @@ def import_project_bundle(
             )
         )
     report["created"]["outlines"] = len(outline_id_map)
+    if outline_id_map:
+        db.flush()
 
     chapter_id_map: dict[str, str] = {}
     chapters_in = bundle.get("chapters")
@@ -933,6 +941,8 @@ def import_project_bundle(
             )
         )
     report["created"]["chapters"] = len(chapter_id_map)
+    if chapter_id_map:
+        db.flush()
 
     if active_outline_id:
         mapped = outline_id_map.get(active_outline_id)
@@ -981,7 +991,7 @@ def import_project_bundle(
                 exclude_recursion=bool(e.get("exclude_recursion", False)),
                 prevent_recursion=bool(e.get("prevent_recursion", False)),
                 char_limit=int(e.get("char_limit") or 12000),
-                priority=str(e.get("priority") or "important")[:32],
+                priority=_normalize_worldbook_priority(e.get("priority")),
             )
         )
     report["created"]["worldbook_entries"] = created_entries
@@ -1062,6 +1072,8 @@ def import_project_bundle(
                 attributes_json=str(e.get("attributes_json") or "") or None,
             )
         )
+    if entity_id_map:
+        db.flush()
 
     created_relations = 0
     relations_list = sm_obj.get("relations")
@@ -1262,6 +1274,7 @@ def import_project_bundle(
                 schema_json=str(t.get("schema_json") or "{}"),
             )
         )
+        db.flush()
         rows_in = t.get("rows")
         for r in (rows_in if isinstance(rows_in, list) else []):
             if not isinstance(r, dict):
@@ -1314,6 +1327,7 @@ def import_project_bundle(
                 is_preset=False,
             )
         )
+        db.flush()
         db.add(ProjectDefaultStyle(project_id=new_project_id, style_id=style_id))
         report["created"]["default_writing_style"] = 1
     else:

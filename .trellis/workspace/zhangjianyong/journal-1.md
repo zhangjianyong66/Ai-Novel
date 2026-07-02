@@ -267,3 +267,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 调整章节一键保存触发更新
+
+**Date**: 2026-07-02
+**Task**: 调整章节一键保存触发更新
+**Branch**: `main`
+
+### Summary
+
+调整写作页一键保存并触发更新：已保存章节也可触发；草稿只补跑 vector/search；定稿触发完整章节自动更新链，并同步测试与规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6793b5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

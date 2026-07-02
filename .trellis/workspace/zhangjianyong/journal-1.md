@@ -201,3 +201,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 完成项目包导入导出
+
+**Date**: 2026-07-02
+**Task**: 完成项目包导入导出
+**Branch**: `main`
+
+### Summary
+
+实现 project_bundle_v1 项目包导入导出 MVP：后端补齐可继续写作数据范围、导入大小配置与路由校验；前端新增首页导入卡片、本地预检摘要、导出页项目包下载入口；补充测试、环境示例和项目包规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bd0138f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -333,3 +333,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 拆分章节状态修改动作
+
+**Date**: 2026-07-02
+**Task**: 拆分章节状态修改动作
+**Branch**: `main`
+
+### Summary
+
+新增章节状态独立 PATCH 接口和状态机，禁止 PUT 修改 status；写作页改为状态徽标与合法动作按钮，并同步测试和章节自动更新规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `335012c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Request
@@ -7,6 +8,7 @@ from pydantic import Field
 from sqlalchemy import case, func, select
 
 from app.api.deps import DbDep, UserIdDep, require_outline_viewer, require_owned_llm_profile, require_project_owner, require_project_viewer
+from app.core.config import settings
 from app.core.errors import AppError, ok_payload
 from app.core.logging import exception_log_fields, log_event
 from app.db.utils import new_id
@@ -47,6 +49,20 @@ class ProjectMembershipUpdateRole(RequestModel):
 class ProjectBundleImportRequest(RequestModel):
     bundle: dict = Field(default_factory=dict)
     rebuild_vectors: bool = False
+
+
+PROJECT_BUNDLE_SCHEMA_VERSION = "project_bundle_v1"
+
+
+def _project_bundle_max_bytes() -> int:
+    return int(getattr(settings, "project_bundle_import_max_bytes", 50 * 1024 * 1024) or 50 * 1024 * 1024)
+
+
+def _raise_bundle_too_large(*, max_bytes: int, actual_bytes: int | None = None) -> None:
+    details: dict[str, object] = {"reason": "project_bundle_too_large", "max_bytes": int(max_bytes)}
+    if actual_bytes is not None:
+        details["actual_bytes"] = int(actual_bytes)
+    raise AppError.validation(message="项目包超过大小限制", details=details)
 
 
 def _normalize_membership_role(raw: str) -> str:
@@ -256,10 +272,37 @@ def create_project(request: Request, db: DbDep, user_id: UserIdDep, body: Projec
 def import_project_bundle_endpoint(request: Request, db: DbDep, user_id: UserIdDep, body: ProjectBundleImportRequest) -> dict:
     request_id = request.state.request_id
 
+    max_bytes = _project_bundle_max_bytes()
+    content_length_raw = str(request.headers.get("content-length") or "").strip()
+    if content_length_raw:
+        try:
+            content_length = int(content_length_raw)
+        except Exception:
+            content_length = 0
+        if content_length > max_bytes:
+            _raise_bundle_too_large(max_bytes=max_bytes, actual_bytes=content_length)
+
+    try:
+        payload_size = len(json.dumps(body.bundle, ensure_ascii=False).encode("utf-8"))
+    except Exception:
+        payload_size = max_bytes + 1
+    if payload_size > max_bytes:
+        _raise_bundle_too_large(max_bytes=max_bytes, actual_bytes=payload_size)
+
     result = import_project_bundle(db, owner_user_id=user_id, bundle=body.bundle, rebuild_vectors=bool(body.rebuild_vectors))
     if not bool(result.get("ok")):
         raise AppError.validation(details={"reason": "import_bundle_failed", **result})
     return ok_payload(request_id=request_id, data={"result": result})
+
+
+@router.get("/projects/import_bundle/config")
+def get_import_project_bundle_config(request: Request, user_id: UserIdDep) -> dict:
+    request_id = request.state.request_id
+    _ = user_id
+    return ok_payload(
+        request_id=request_id,
+        data={"max_bytes": _project_bundle_max_bytes(), "schema_version": PROJECT_BUNDLE_SCHEMA_VERSION},
+    )
 
 
 @router.get("/projects/{project_id}")

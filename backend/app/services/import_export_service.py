@@ -14,17 +14,22 @@ from app.db.session import SessionLocal
 from app.db.utils import new_id
 from app.models.character import Character
 from app.models.chapter import Chapter
+from app.models.glossary_term import GlossaryTerm
 from app.models.knowledge_base import KnowledgeBase
 from app.models.llm_preset import LLMPreset
+from app.models.llm_task_preset import LLMTaskPreset
 from app.models.outline import Outline
 from app.models.project import Project
+from app.models.project_default_style import ProjectDefaultStyle
 from app.models.project_membership import ProjectMembership
 from app.models.project_source_document import ProjectSourceDocument, ProjectSourceDocumentChunk
 from app.models.project_settings import ProjectSettings
+from app.models.project_table import ProjectTable, ProjectTableRow
 from app.models.prompt_block import PromptBlock
 from app.models.prompt_preset import PromptPreset
 from app.models.story_memory import StoryMemory
 from app.models.structured_memory import MemoryEntity, MemoryEvent, MemoryEvidence, MemoryForeshadow, MemoryRelation
+from app.models.writing_style import WritingStyle
 from app.models.worldbook_entry import WorldBookEntry
 from app.services.vector_embedding_overrides import vector_embedding_overrides
 from app.services.vector_rag_service import VectorChunk, ingest_chunks, purge_project_vectors
@@ -307,6 +312,11 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
 
     settings_row = db.get(ProjectSettings, project_id_norm)
     llm_preset = db.get(LLMPreset, project_id_norm)
+    llm_task_presets = (
+        db.execute(select(LLMTaskPreset).where(LLMTaskPreset.project_id == project_id_norm).order_by(LLMTaskPreset.task_key.asc()))
+        .scalars()
+        .all()
+    )
 
     outlines = db.execute(select(Outline).where(Outline.project_id == project_id_norm).order_by(Outline.updated_at.desc())).scalars().all()
     chapters = db.execute(select(Chapter).where(Chapter.project_id == project_id_norm).order_by(Chapter.updated_at.desc())).scalars().all()
@@ -397,6 +407,28 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
         .scalars()
         .all()
     )
+    project_tables = (
+        db.execute(select(ProjectTable).where(ProjectTable.project_id == project_id_norm).order_by(ProjectTable.table_key.asc()))
+        .scalars()
+        .all()
+    )
+    table_rows_by_table_id: dict[str, list[ProjectTableRow]] = {}
+    for table in project_tables:
+        rows = (
+            db.execute(select(ProjectTableRow).where(ProjectTableRow.table_id == table.id).order_by(ProjectTableRow.row_index.asc()))
+            .scalars()
+            .all()
+        )
+        table_rows_by_table_id[str(table.id)] = rows
+
+    glossary_terms = (
+        db.execute(select(GlossaryTerm).where(GlossaryTerm.project_id == project_id_norm).order_by(GlossaryTerm.term.asc()))
+        .scalars()
+        .all()
+    )
+
+    default_style_row = db.get(ProjectDefaultStyle, project_id_norm)
+    default_style = db.get(WritingStyle, default_style_row.style_id) if default_style_row is not None and default_style_row.style_id else None
 
     return {
         "schema_version": "project_bundle_v1",
@@ -428,9 +460,26 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
                 "enabled": getattr(settings_row, "vector_rerank_enabled", None) if settings_row else None,
                 "method": getattr(settings_row, "vector_rerank_method", None) if settings_row else None,
                 "top_k": getattr(settings_row, "vector_rerank_top_k", None) if settings_row else None,
+                "provider": getattr(settings_row, "vector_rerank_provider", None) if settings_row else None,
+                "base_url": getattr(settings_row, "vector_rerank_base_url", None) if settings_row else None,
+                "model": getattr(settings_row, "vector_rerank_model", None) if settings_row else None,
+                "timeout_seconds": getattr(settings_row, "vector_rerank_timeout_seconds", None) if settings_row else None,
+                "hybrid_alpha": getattr(settings_row, "vector_rerank_hybrid_alpha", None) if settings_row else None,
+                "has_api_key": bool(getattr(settings_row, "vector_rerank_api_key_ciphertext", None) or "") if settings_row else False,
+                "masked_api_key": getattr(settings_row, "vector_rerank_api_key_masked", None) if settings_row else "",
             },
             "query_preprocessing_json": getattr(settings_row, "query_preprocessing_json", None) if settings_row else None,
             "context_optimizer_enabled": bool(getattr(settings_row, "context_optimizer_enabled", False)) if settings_row else False,
+            "auto_update": {
+                "worldbook": bool(getattr(settings_row, "auto_update_worldbook_enabled", True)) if settings_row else True,
+                "characters": bool(getattr(settings_row, "auto_update_characters_enabled", True)) if settings_row else True,
+                "story_memory": bool(getattr(settings_row, "auto_update_story_memory_enabled", True)) if settings_row else True,
+                "graph": bool(getattr(settings_row, "auto_update_graph_enabled", True)) if settings_row else True,
+                "vector": bool(getattr(settings_row, "auto_update_vector_enabled", True)) if settings_row else True,
+                "search": bool(getattr(settings_row, "auto_update_search_enabled", True)) if settings_row else True,
+                "fractal": bool(getattr(settings_row, "auto_update_fractal_enabled", True)) if settings_row else True,
+                "tables": bool(getattr(settings_row, "auto_update_tables_enabled", True)) if settings_row else True,
+            },
         },
         "llm_preset": (
             {
@@ -449,6 +498,27 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
             if llm_preset is not None
             else None
         ),
+        "llm_task_presets": {
+            "schema_version": "llm_task_presets_export_v1",
+            "presets": [
+                {
+                    "task_key": row.task_key,
+                    "provider": row.provider,
+                    "base_url": row.base_url,
+                    "model": row.model,
+                    "temperature": row.temperature,
+                    "top_p": row.top_p,
+                    "max_tokens": row.max_tokens,
+                    "presence_penalty": row.presence_penalty,
+                    "frequency_penalty": row.frequency_penalty,
+                    "top_k": row.top_k,
+                    "stop_json": row.stop_json,
+                    "timeout_seconds": row.timeout_seconds,
+                    "extra_json": row.extra_json,
+                }
+                for row in llm_task_presets
+            ],
+        },
         "outlines": [
             {
                 "id": o.id,
@@ -634,6 +704,46 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
                 for d in source_docs
             ],
         },
+        "project_tables": {
+            "schema_version": "project_tables_export_v1",
+            "tables": [
+                {
+                    "id": t.id,
+                    "table_key": t.table_key,
+                    "name": t.name,
+                    "auto_update_enabled": bool(t.auto_update_enabled),
+                    "schema_version": int(t.schema_version),
+                    "schema_json": t.schema_json,
+                    "rows": [
+                        {"id": r.id, "row_index": int(r.row_index), "data_json": r.data_json}
+                        for r in (table_rows_by_table_id.get(str(t.id)) or [])
+                    ],
+                }
+                for t in project_tables
+            ],
+        },
+        "glossary_terms": {
+            "schema_version": "glossary_terms_export_v1",
+            "terms": [
+                {
+                    "term": g.term,
+                    "aliases_json": g.aliases_json,
+                    "sources_json": g.sources_json,
+                    "origin": g.origin,
+                    "enabled": int(g.enabled),
+                }
+                for g in glossary_terms
+            ],
+        },
+        "default_writing_style": (
+            {
+                "name": default_style.name,
+                "description": default_style.description,
+                "prompt_content": default_style.prompt_content,
+            }
+            if default_style is not None
+            else None
+        ),
     }
 
 
@@ -689,9 +799,32 @@ def import_project_bundle(
     settings_row.vector_rerank_enabled = rerank_obj.get("enabled")
     settings_row.vector_rerank_method = str(rerank_obj.get("method") or "") or None
     settings_row.vector_rerank_top_k = int(rerank_obj.get("top_k")) if isinstance(rerank_obj.get("top_k"), int) else None
+    settings_row.vector_rerank_provider = str(rerank_obj.get("provider") or "") or None
+    settings_row.vector_rerank_base_url = str(rerank_obj.get("base_url") or "") or None
+    settings_row.vector_rerank_model = str(rerank_obj.get("model") or "") or None
+    settings_row.vector_rerank_timeout_seconds = int(rerank_obj.get("timeout_seconds")) if isinstance(rerank_obj.get("timeout_seconds"), int) else None
+    try:
+        settings_row.vector_rerank_hybrid_alpha = float(rerank_obj.get("hybrid_alpha")) if rerank_obj.get("hybrid_alpha") is not None else None
+    except Exception:
+        settings_row.vector_rerank_hybrid_alpha = None
+    rerank_has_key = bool(rerank_obj.get("has_api_key"))
+    settings_row.vector_rerank_api_key_ciphertext = None
+    settings_row.vector_rerank_api_key_masked = str(rerank_obj.get("masked_api_key") or "") if rerank_has_key else None
+    if rerank_has_key:
+        report["warnings"].append("rerank_api_key_not_imported")
 
     settings_row.query_preprocessing_json = str(settings_obj.get("query_preprocessing_json") or "") or None
     settings_row.context_optimizer_enabled = bool(settings_obj.get("context_optimizer_enabled", False))
+    auto_update_in = settings_obj.get("auto_update")
+    auto_update_obj = auto_update_in if isinstance(auto_update_in, dict) else {}
+    settings_row.auto_update_worldbook_enabled = bool(auto_update_obj.get("worldbook", True))
+    settings_row.auto_update_characters_enabled = bool(auto_update_obj.get("characters", True))
+    settings_row.auto_update_story_memory_enabled = bool(auto_update_obj.get("story_memory", True))
+    settings_row.auto_update_graph_enabled = bool(auto_update_obj.get("graph", True))
+    settings_row.auto_update_vector_enabled = bool(auto_update_obj.get("vector", True))
+    settings_row.auto_update_search_enabled = bool(auto_update_obj.get("search", True))
+    settings_row.auto_update_fractal_enabled = bool(auto_update_obj.get("fractal", True))
+    settings_row.auto_update_tables_enabled = bool(auto_update_obj.get("tables", True))
 
     db.add(settings_row)
     report["created"]["project_settings"] = 1
@@ -716,6 +849,38 @@ def import_project_bundle(
             )
         )
         report["created"]["llm_preset"] = 1
+
+    task_presets_in = bundle.get("llm_task_presets")
+    task_presets_obj = task_presets_in if isinstance(task_presets_in, dict) else {}
+    task_presets_list = task_presets_obj.get("presets")
+    created_task_presets = 0
+    for item in (task_presets_list if isinstance(task_presets_list, list) else []):
+        if not isinstance(item, dict):
+            continue
+        task_key = str(item.get("task_key") or "").strip()
+        if not task_key:
+            continue
+        created_task_presets += 1
+        db.add(
+            LLMTaskPreset(
+                project_id=new_project_id,
+                task_key=task_key[:64],
+                llm_profile_id=None,
+                provider=str(item.get("provider") or "openai")[:32],
+                base_url=str(item.get("base_url") or "") or None,
+                model=str(item.get("model") or "gpt-4o-mini")[:255],
+                temperature=item.get("temperature"),
+                top_p=item.get("top_p"),
+                max_tokens=item.get("max_tokens"),
+                presence_penalty=item.get("presence_penalty"),
+                frequency_penalty=item.get("frequency_penalty"),
+                top_k=item.get("top_k"),
+                stop_json=str(item.get("stop_json") or "") or None,
+                timeout_seconds=item.get("timeout_seconds"),
+                extra_json=str(item.get("extra_json") or "") or None,
+            )
+        )
+    report["created"]["llm_task_presets"] = created_task_presets
 
     outline_id_map: dict[str, str] = {}
     outlines_in = bundle.get("outlines")
@@ -1073,6 +1238,86 @@ def import_project_bundle(
             )
         )
     report["created"]["source_documents"] = created_docs
+
+    tables_in = bundle.get("project_tables")
+    tables_obj = tables_in if isinstance(tables_in, dict) else {}
+    tables_list = tables_obj.get("tables")
+    table_id_map: dict[str, str] = {}
+    created_table_rows = 0
+    for t in (tables_list if isinstance(tables_list, list) else []):
+        if not isinstance(t, dict):
+            continue
+        old_table_id = str(t.get("id") or "").strip()
+        new_table_id = new_id()
+        if old_table_id:
+            table_id_map[old_table_id] = new_table_id
+        db.add(
+            ProjectTable(
+                id=new_table_id,
+                project_id=new_project_id,
+                table_key=str(t.get("table_key") or "")[:64] or f"table_{new_table_id[:8]}",
+                name=str(t.get("name") or "")[:255] or "Table",
+                auto_update_enabled=bool(t.get("auto_update_enabled", True)),
+                schema_version=int(t.get("schema_version") or 1),
+                schema_json=str(t.get("schema_json") or "{}"),
+            )
+        )
+        rows_in = t.get("rows")
+        for r in (rows_in if isinstance(rows_in, list) else []):
+            if not isinstance(r, dict):
+                continue
+            created_table_rows += 1
+            db.add(
+                ProjectTableRow(
+                    id=new_id(),
+                    project_id=new_project_id,
+                    table_id=new_table_id,
+                    row_index=int(r.get("row_index") or 0),
+                    data_json=str(r.get("data_json") or "{}"),
+                )
+            )
+    report["created"]["project_tables"] = len(table_id_map)
+    report["created"]["project_table_rows"] = created_table_rows
+
+    glossary_in = bundle.get("glossary_terms")
+    glossary_obj = glossary_in if isinstance(glossary_in, dict) else {}
+    terms_in = glossary_obj.get("terms")
+    created_terms = 0
+    for g in (terms_in if isinstance(terms_in, list) else []):
+        if not isinstance(g, dict):
+            continue
+        created_terms += 1
+        db.add(
+            GlossaryTerm(
+                id=new_id(),
+                project_id=new_project_id,
+                term=str(g.get("term") or "")[:255],
+                aliases_json=str(g.get("aliases_json") or "[]"),
+                sources_json=str(g.get("sources_json") or "[]"),
+                origin=str(g.get("origin") or "manual")[:16],
+                enabled=int(g.get("enabled") or 0),
+            )
+        )
+    report["created"]["glossary_terms"] = created_terms
+
+    default_style_in = bundle.get("default_writing_style")
+    default_style_obj = default_style_in if isinstance(default_style_in, dict) else {}
+    if default_style_obj:
+        style_id = new_id()
+        db.add(
+            WritingStyle(
+                id=style_id,
+                owner_user_id=str(owner_user_id),
+                name=str(default_style_obj.get("name") or "Imported Style")[:255],
+                description=str(default_style_obj.get("description") or "") or None,
+                prompt_content=str(default_style_obj.get("prompt_content") or ""),
+                is_preset=False,
+            )
+        )
+        db.add(ProjectDefaultStyle(project_id=new_project_id, style_id=style_id))
+        report["created"]["default_writing_style"] = 1
+    else:
+        report["created"]["default_writing_style"] = 0
 
     db.commit()
 

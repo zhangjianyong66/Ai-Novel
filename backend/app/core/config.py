@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     batch_generation_project_active_limit: int = 1
     batch_generation_user_active_limit: int = 3
     batch_generation_provider_active_limit: int = 3
+    project_bundle_import_max_bytes: int = 50 * 1024 * 1024
 
     vector_chroma_persist_dir: str | None = None
     vector_chroma_collection_naming: VectorChromaCollectionNaming = "hash"
@@ -257,6 +258,18 @@ class Settings(BaseSettings):
         if raw <= 0:
             return 1800
         return min(raw, 24 * 60 * 60)
+
+    @field_validator("project_bundle_import_max_bytes", mode="before")
+    @classmethod
+    def _normalize_project_bundle_import_max_bytes(cls, value: object) -> int:
+        default = 50 * 1024 * 1024
+        try:
+            raw = int(str(value or "").strip() or 0)
+        except Exception:
+            raw = 0
+        if raw <= 0:
+            return default
+        return min(raw, 500 * 1024 * 1024)
 
     @field_validator("secret_encryption_key", mode="before")
     @classmethod
@@ -792,6 +805,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
 
 

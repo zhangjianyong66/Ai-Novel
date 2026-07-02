@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { FileUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Modal } from "../components/ui/Modal";
 import { ProgressBar } from "../components/ui/ProgressBar";
@@ -12,6 +13,14 @@ import { UI_COPY } from "../lib/uiCopy";
 import { ApiError, apiJson } from "../services/apiClient";
 import { computeWizardProgressFromSummary } from "../services/wizard";
 import type { Project, ProjectSummaryItem } from "../types";
+import {
+  DEFAULT_PROJECT_BUNDLE_IMPORT_MAX_BYTES,
+  PROJECT_BUNDLE_SCHEMA_VERSION,
+  buildProjectBundleSummary,
+  formatBytes,
+  isProjectBundleV1,
+  type ProjectBundleSummary,
+} from "./projectBundle";
 
 type CreateProjectForm = {
   name: string;
@@ -19,16 +28,44 @@ type CreateProjectForm = {
   logline: string;
 };
 
+type ProjectBundleImportConfig = {
+  max_bytes: number;
+  schema_version: string;
+};
+
+type ProjectBundleImportResult = {
+  ok: boolean;
+  project_id: string;
+  report?: {
+    created?: Record<string, number>;
+    warnings?: string[];
+  };
+  vector_rebuild?: unknown;
+};
+
 export function DashboardPage() {
   const { projects, loading, error, refresh } = useProjects();
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const location = useLocation();
   const reduceMotion = useReducedMotion();
 
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateProjectForm>({ name: "", genre: "", logline: "" });
+  const [bundleImportOpen, setBundleImportOpen] = useState(false);
+  const [bundleConfig, setBundleConfig] = useState<ProjectBundleImportConfig>({
+    max_bytes: DEFAULT_PROJECT_BUNDLE_IMPORT_MAX_BYTES,
+    schema_version: PROJECT_BUNDLE_SCHEMA_VERSION,
+  });
+  const [bundleFileName, setBundleFileName] = useState("");
+  const [bundlePayload, setBundlePayload] = useState<Record<string, unknown> | null>(null);
+  const [bundleSummary, setBundleSummary] = useState<ProjectBundleSummary | null>(null);
+  const [bundleError, setBundleError] = useState("");
+  const [bundleRebuildVectors, setBundleRebuildVectors] = useState(false);
+  const [bundleImporting, setBundleImporting] = useState(false);
+  const [bundleImportResult, setBundleImportResult] = useState<ProjectBundleImportResult | null>(null);
 
   const sorted = useMemo(() => [...projects].sort((a, b) => b.created_at.localeCompare(a.created_at)), [projects]);
   const recommendedProject = sorted[0] ?? null;
@@ -48,6 +85,35 @@ export function DashboardPage() {
   const recommendedWizardLoading = recommendedProject
     ? Boolean(wizardLoadingByProjectId[recommendedProject.id])
     : false;
+
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search);
+    if (qs.get("importBundle") === "1") setBundleImportOpen(true);
+  }, [location.search]);
+
+  useEffect(() => {
+    if (!bundleImportOpen) return;
+    let cancelled = false;
+    void apiJson<ProjectBundleImportConfig>("/api/projects/import_bundle/config", { timeoutMs: 15_000 })
+      .then((res) => {
+        if (cancelled) return;
+        const maxBytes = Number(res.data.max_bytes);
+        setBundleConfig({
+          max_bytes: Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_PROJECT_BUNDLE_IMPORT_MAX_BYTES,
+          schema_version: res.data.schema_version || PROJECT_BUNDLE_SCHEMA_VERSION,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBundleConfig({
+          max_bytes: DEFAULT_PROJECT_BUNDLE_IMPORT_MAX_BYTES,
+          schema_version: PROJECT_BUNDLE_SCHEMA_VERSION,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bundleImportOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +175,64 @@ export function DashboardPage() {
     },
     [navigate, wizardByProjectId],
   );
+
+  const resetBundleSelection = useCallback(() => {
+    setBundleFileName("");
+    setBundlePayload(null);
+    setBundleSummary(null);
+    setBundleError("");
+    setBundleRebuildVectors(false);
+  }, []);
+
+  const loadBundleFile = useCallback(
+    async (file: File | null) => {
+      setBundleImportResult(null);
+      resetBundleSelection();
+      if (!file) return;
+      setBundleFileName(file.name || "project.bundle.json");
+      const maxBytes = Number(bundleConfig.max_bytes) || DEFAULT_PROJECT_BUNDLE_IMPORT_MAX_BYTES;
+      if (file.size > maxBytes) {
+        setBundleError(`项目包超过大小限制：${formatBytes(file.size)} / ${formatBytes(maxBytes)}`);
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        setBundleError("项目包 JSON 解析失败");
+        return;
+      }
+      if (!isProjectBundleV1(parsed)) {
+        setBundleError(`不支持的项目包版本，仅支持 ${PROJECT_BUNDLE_SCHEMA_VERSION}`);
+        return;
+      }
+      setBundlePayload(parsed);
+      setBundleSummary(buildProjectBundleSummary(parsed));
+    },
+    [bundleConfig.max_bytes, resetBundleSelection],
+  );
+
+  const submitBundleImport = useCallback(async () => {
+    if (!bundlePayload || bundleImporting) return;
+    setBundleImporting(true);
+    setBundleError("");
+    try {
+      const res = await apiJson<{ result: ProjectBundleImportResult }>("/api/projects/import_bundle", {
+        method: "POST",
+        body: JSON.stringify({ bundle: bundlePayload, rebuild_vectors: bundleRebuildVectors }),
+        timeoutMs: 120_000,
+      });
+      setBundleImportResult(res.data.result);
+      await refresh();
+      toast.toastSuccess("项目包导入完成", res.request_id);
+    } catch (e) {
+      const err = e as ApiError;
+      setBundleError(`${err.message} (${err.code})`);
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    } finally {
+      setBundleImporting(false);
+    }
+  }, [bundleImporting, bundlePayload, bundleRebuildVectors, refresh, toast]);
 
   type PrimaryCta = { label: string; onClick: () => void; disabled?: boolean; ariaLabel: string };
   const primaryCta: PrimaryCta = useMemo(() => {
@@ -188,6 +312,19 @@ export function DashboardPage() {
         >
           <div className="font-content text-2xl text-ink">+</div>
           <div className="text-sm text-subtext">新建项目</div>
+        </button>
+
+        <button
+          className="panel-interactive ui-focus-ring group relative flex min-h-[180px] flex-col items-center justify-center gap-2 border-dashed p-5 text-center"
+          onClick={() => {
+            setBundleImportOpen(true);
+            setBundleImportResult(null);
+          }}
+          type="button"
+        >
+          <FileUp className="h-7 w-7 text-ink" aria-hidden="true" />
+          <div className="text-sm text-subtext">导入项目包</div>
+          <div className="max-w-xs text-xs text-subtext">上传 `.bundle.json`，导入为一个新项目。</div>
         </button>
 
         <div className="panel p-6">
@@ -411,6 +548,120 @@ export function DashboardPage() {
           );
         })}
       </motion.div>
+
+      <Modal
+        open={bundleImportOpen}
+        onClose={() => {
+          setBundleImportOpen(false);
+          resetBundleSelection();
+        }}
+        panelClassName="surface max-w-2xl p-6"
+        ariaLabel="导入项目包"
+      >
+        <div className="font-content text-2xl text-ink">导入项目包</div>
+        <div className="mt-1 text-sm text-subtext">
+          项目包会导入为一个新项目，不会覆盖现有项目。当前上限：{formatBytes(bundleConfig.max_bytes)}。
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-2">
+            <span className="text-xs text-subtext">选择 `.bundle.json` 文件</span>
+            <input
+              className="input"
+              accept=".json,.bundle.json,application/json"
+              disabled={bundleImporting}
+              onChange={(event) => void loadBundleFile(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+          </label>
+
+          {bundleFileName ? <div className="text-xs text-subtext">已选择：{bundleFileName}</div> : null}
+          {bundleError ? <div className="callout-danger text-sm">{bundleError}</div> : null}
+
+          {bundleSummary ? (
+            <div className="grid gap-3 rounded-atelier border border-border bg-canvas p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-content text-lg text-ink">{bundleSummary.projectName}</div>
+                  <div className="text-xs text-subtext">schema：{bundleSummary.schemaVersion}</div>
+                </div>
+                <div className="text-xs text-subtext">将创建新项目</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-subtext sm:grid-cols-3">
+                <div>大纲：{bundleSummary.counts.outlines}</div>
+                <div>章节：{bundleSummary.counts.chapters}</div>
+                <div>角色：{bundleSummary.counts.characters}</div>
+                <div>世界书：{bundleSummary.counts.worldbookEntries}</div>
+                <div>Prompt：{bundleSummary.counts.promptPresets}</div>
+                <div>记忆：{bundleSummary.counts.structuredMemoryItems + bundleSummary.counts.storyMemories}</div>
+                <div>知识库：{bundleSummary.counts.knowledgeBases}</div>
+                <div>导入资料：{bundleSummary.counts.sourceDocuments}</div>
+                <div>数值表格：{bundleSummary.counts.projectTables}</div>
+                <div>表格行：{bundleSummary.counts.projectTableRows}</div>
+                <div>术语：{bundleSummary.counts.glossaryTerms}</div>
+              </div>
+              {bundleSummary.apiKeyWarnings.length > 0 ? (
+                <div className="callout-warning text-sm">
+                  {bundleSummary.apiKeyWarnings.map((warning) => (
+                    <div key={warning}>{warning}</div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="text-xs text-subtext">默认不会重建向量/搜索索引；导入后可在 RAG 或搜索页面手动重建。</div>
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <input
+                  checked={bundleRebuildVectors}
+                  className="h-4 w-4"
+                  disabled={bundleImporting}
+                  onChange={(event) => setBundleRebuildVectors(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>导入后尝试重建向量索引</span>
+              </label>
+            </div>
+          ) : null}
+
+          {bundleImportResult ? (
+            <div className="grid gap-3 rounded-atelier border border-success/30 bg-success/10 p-4 text-sm">
+              <div className="font-semibold text-ink">已导入作品数据，可稍后在 RAG/搜索相关页面手动重建。</div>
+              {bundleImportResult.report?.warnings?.length ? (
+                <div className="text-subtext">提示：{bundleImportResult.report.warnings.join("、")}</div>
+              ) : null}
+              <div className="flex justify-end">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => navigate(`/projects/${bundleImportResult.project_id}/wizard`)}
+                  type="button"
+                >
+                  进入新项目
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            className="btn btn-secondary"
+            disabled={bundleImporting}
+            onClick={() => {
+              setBundleImportOpen(false);
+              resetBundleSelection();
+            }}
+            type="button"
+          >
+            关闭
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!bundlePayload || bundleImporting}
+            onClick={() => void submitBundleImport()}
+            type="button"
+          >
+            {bundleImporting ? "导入中..." : "导入为新项目"}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={createOpen}

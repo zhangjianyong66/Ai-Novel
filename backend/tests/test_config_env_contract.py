@@ -51,6 +51,15 @@ class TestConfigEnvContract(unittest.TestCase):
             ["https://app.example.com", "https://admin.example.com"],
         )
 
+    def test_project_bundle_import_max_bytes_defaults_to_50mb(self) -> None:
+        settings = Settings()
+        self.assertEqual(settings.project_bundle_import_max_bytes, 50 * 1024 * 1024)
+
+    def test_project_bundle_import_max_bytes_normalizes_invalid_values(self) -> None:
+        self.assertEqual(Settings(project_bundle_import_max_bytes=0).project_bundle_import_max_bytes, 50 * 1024 * 1024)
+        self.assertEqual(Settings(project_bundle_import_max_bytes=-1).project_bundle_import_max_bytes, 50 * 1024 * 1024)
+        self.assertEqual(Settings(project_bundle_import_max_bytes=999 * 1024 * 1024).project_bundle_import_max_bytes, 500 * 1024 * 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

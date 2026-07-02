@@ -1,12 +1,12 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Check } from "lucide-react";
 
 import { GhostwriterIndicator } from "../components/atelier/GhostwriterIndicator";
 import { WizardNextBar } from "../components/atelier/WizardNextBar";
 import { useToast } from "../components/ui/toast";
 import { useWizardProgress } from "../hooks/useWizardProgress";
-import { ApiError, apiDownloadMarkdown } from "../services/apiClient";
+import { ApiError, apiDownloadAttachment, apiDownloadMarkdown } from "../services/apiClient";
 import { markWizardExported } from "../services/wizard";
 
 type ExportForm = {
@@ -65,6 +65,7 @@ export function ExportPage() {
   const bumpWizardLocal = wizard.bumpLocal;
 
   const [exporting, setExporting] = useState(false);
+  const [exportingBundle, setExportingBundle] = useState(false);
   const [form, setForm] = useState<ExportForm>({
     include_settings: true,
     include_characters: true,
@@ -110,6 +111,30 @@ export function ExportPage() {
       setExporting(false);
     }
   }, [bumpWizardLocal, exporting, projectId, toast, url]);
+
+  const doBundleExport = useCallback(async (): Promise<boolean> => {
+    if (!projectId || exportingBundle) return false;
+    setExportingBundle(true);
+    try {
+      const { filename, blob } = await apiDownloadAttachment(`/api/projects/${projectId}/export/bundle`);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename || "ainovel.bundle.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      toast.toastSuccess("已导出项目包，已开始下载");
+      return true;
+    } catch (e) {
+      const err = e as ApiError;
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      return false;
+    } finally {
+      setExportingBundle(false);
+    }
+  }, [exportingBundle, projectId, toast]);
 
   return (
     <div className="grid gap-6 pb-24">
@@ -198,6 +223,31 @@ export function ExportPage() {
             <summary className="ui-transition-fast cursor-pointer hover:text-ink">排障信息（请求 URL）</summary>
             <div className="mt-2 break-all">{url || "（请选择项目）"}</div>
           </details>
+        </div>
+      </section>
+
+      <section className="panel p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-2">
+            <div className="font-content text-xl">项目包备份/迁移</div>
+            <div className="text-xs text-subtext">
+              下载 `.bundle.json`，用于导入为新项目并继续写作；项目包默认包含导入资料原文，不包含 API Key 密文。
+            </div>
+          </div>
+          <button
+            className="btn btn-primary"
+            disabled={!projectId || exportingBundle}
+            onClick={() => void doBundleExport()}
+            type="button"
+          >
+            {exportingBundle ? "导出中..." : "导出项目包"}
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-subtext">
+          <div>导入项目包会创建新项目，不会覆盖当前项目。</div>
+          <Link className="btn btn-secondary px-3 py-2 text-xs" to="/?importBundle=1">
+            去首页导入项目包
+          </Link>
         </div>
       </section>
 

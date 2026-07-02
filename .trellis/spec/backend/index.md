@@ -10,6 +10,7 @@
 - [数据库规范](./database-guidelines.md)：SQLAlchemy 模型、Session、迁移、SQLite/Postgres 约束。
 - [错误处理](./error-handling.md)：`AppError`、统一响应、鉴权/权限失败语义。
 - [日志规范](./logging-guidelines.md)：JSON 日志、`X-Request-Id`、敏感信息脱敏。
+- [项目包导入导出规范](./project-bundle-guidelines.md)：项目包 API、环境变量、数据范围、敏感字段和前端预检契约。
 - [质量规范](./quality-guidelines.md)：运行命令、测试要求、安全与生成链路检查。
 
 ## 常用命令

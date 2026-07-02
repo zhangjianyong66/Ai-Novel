@@ -191,7 +191,7 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
             rows = db.execute(select(ProjectTask)).scalars().all()
         self.assertEqual({row.kind for row in rows}, {"vector_rebuild", "search_rebuild"})
 
-    def test_update_chapter_to_done_does_not_create_project_tasks(self) -> None:
+    def test_update_chapter_rejects_status_field(self) -> None:
         client = TestClient(self.app)
         with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
             "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
@@ -202,14 +202,49 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
                 json={"status": "done", "content_md": "final content", "summary": "final summary"},
             )
 
+        self.assertEqual(resp.status_code, 400)
+        payload = resp.json()
+        self.assertFalse(payload.get("ok"))
+        error = payload.get("error") or {}
+        self.assertEqual(error.get("code"), "VALIDATION_ERROR")
+        self.assertEqual(
+            (error.get("details") or {}).get("reason"),
+            "chapter_status_update_requires_status_endpoint",
+        )
+
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            self.assertEqual(chapter.status, "drafting")
+            self.assertEqual(chapter.content_md, "content")
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual(rows, [])
+
+    def test_update_chapter_status_to_done_does_not_create_project_tasks(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.patch(
+                "/api/chapters/c1/status",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "done", "expected_status": "drafting"},
+            )
+
         self.assertEqual(resp.status_code, 200)
         payload = resp.json()
         self.assertTrue(payload.get("ok"))
         chapter = (payload.get("data") or {}).get("chapter") or {}
         self.assertEqual(chapter.get("status"), "done")
-        self.assertEqual(chapter.get("content_md"), "final content")
+        self.assertEqual(chapter.get("content_md"), "content")
 
         with self.SessionLocal() as db:
+            chapter_row = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter_row)
+            self.assertEqual(chapter_row.status, "done")
+            settings = db.get(ProjectSettings, "p1")
+            self.assertIsNotNone(settings)
+            self.assertTrue(settings.vector_index_dirty)
             rows = db.execute(select(ProjectTask)).scalars().all()
         self.assertEqual(rows, [])
 
@@ -234,7 +269,7 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
             rows = db.execute(select(ProjectTask)).scalars().all()
         self.assertEqual(rows, [])
 
-    def test_done_chapter_can_only_be_reopened_without_content_changes(self) -> None:
+    def test_status_endpoint_reopens_done_chapter_without_content_changes(self) -> None:
         with self.SessionLocal() as db:
             chapter = db.get(Chapter, "c1")
             self.assertIsNotNone(chapter)
@@ -247,10 +282,10 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
         with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
             "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
         ):
-            resp = client.put(
-                "/api/chapters/c1",
+            resp = client.patch(
+                "/api/chapters/c1/status",
                 headers={"X-Test-User": "u_owner"},
-                json={"status": "drafting"},
+                json={"status": "drafting", "expected_status": "done"},
             )
 
         self.assertEqual(resp.status_code, 200)
@@ -265,7 +300,55 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
             rows = db.execute(select(ProjectTask)).scalars().all()
         self.assertEqual(rows, [])
 
-    def test_done_chapter_reopen_rejects_simultaneous_content_changes(self) -> None:
+    def test_status_endpoint_rejects_invalid_transition(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.patch(
+                "/api/chapters/c1/status",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "done", "expected_status": "planned"},
+            )
+
+        self.assertEqual(resp.status_code, 409)
+        payload = resp.json()
+        self.assertFalse(payload.get("ok"))
+        error = payload.get("error") or {}
+        self.assertEqual(error.get("code"), "CONFLICT")
+        details = error.get("details") or {}
+        self.assertEqual(details.get("reason"), "chapter_status_conflict")
+        self.assertEqual(details.get("expected_status"), "planned")
+        self.assertEqual(details.get("current_status"), "drafting")
+
+    def test_status_endpoint_rejects_disallowed_transition(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "planned"
+            db.commit()
+
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.patch(
+                "/api/chapters/c1/status",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "done", "expected_status": "planned"},
+            )
+
+        self.assertEqual(resp.status_code, 400)
+        payload = resp.json()
+        self.assertFalse(payload.get("ok"))
+        error = payload.get("error") or {}
+        self.assertEqual(error.get("code"), "VALIDATION_ERROR")
+        details = error.get("details") or {}
+        self.assertEqual(details.get("reason"), "invalid_chapter_status_transition")
+        self.assertEqual(details.get("from_status"), "planned")
+        self.assertEqual(details.get("to_status"), "done")
+
+    def test_done_chapter_content_update_is_still_readonly(self) -> None:
         with self.SessionLocal() as db:
             chapter = db.get(Chapter, "c1")
             self.assertIsNotNone(chapter)
@@ -280,7 +363,7 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
             resp = client.put(
                 "/api/chapters/c1",
                 headers={"X-Test-User": "u_owner"},
-                json={"status": "drafting", "content_md": "changed"},
+                json={"content_md": "changed"},
             )
 
         self.assertEqual(resp.status_code, 400)

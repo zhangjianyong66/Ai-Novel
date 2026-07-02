@@ -176,7 +176,7 @@ export function useChapterAnalysis(args: {
         return;
       }
 
-      setForm((prev) => (prev ? { ...prev, content_md: nextContent, status: "drafting" } : prev));
+      setForm((prev) => (prev ? { ...prev, content_md: nextContent } : prev));
       toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedUnsaved, res.request_id);
       const droppedParams = res.data.dropped_params ?? [];
       if (droppedParams.length > 0) {

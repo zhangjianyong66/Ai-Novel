@@ -22,6 +22,9 @@ export const WRITING_PAGE_COPY = {
   saveAndTriggerPending: "保存并触发中...",
   save: "保存",
   saving: "保存中...",
+  statusUpdating: "更新状态中...",
+  statusUpdateSuccess: "章节状态已更新",
+  statusActionNeedsSaveFirst: "请先保存当前修改。",
   openTaskCenter: "打开 TaskCenter",
   openChapterAnalysis: "打开标注页",
   switchedOutline: "已切换大纲",
@@ -94,6 +97,12 @@ export const WRITING_PAGE_COPY = {
       title: "删除章节？",
       description: "删除后该章节正文与摘要将丢失。",
       confirmText: "删除",
+    },
+    reopenChapter: {
+      title: "回退为起草中？",
+      description: "回退后本章将解除只读保护，可继续编辑。已有世界书、角色、记忆、图谱等更新结果不会自动回滚。",
+      confirmText: "回退为起草中",
+      cancelText: "取消",
     },
     nextChapterReplace: {
       description: "将以“替换”模式生成草稿（生成结果不会自动保存）。",

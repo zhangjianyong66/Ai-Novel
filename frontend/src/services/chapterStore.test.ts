@@ -6,6 +6,7 @@ import type {
   ChapterDetail,
   ChapterListItem,
   CreateChapterInput,
+  UpdateChapterStatusInput,
   UpdateChapterInput,
 } from "../types";
 
@@ -54,6 +55,7 @@ function buildTransport(
     fetchAllChapterMeta?: (projectId: string) => Promise<ChapterListItem[]>;
     fetchChapterDetail?: (chapterId: string) => Promise<ChapterDetail>;
     updateChapter?: (chapterId: string, payload: UpdateChapterInput) => Promise<ChapterDetail>;
+    updateChapterStatus?: (chapterId: string, payload: UpdateChapterStatusInput) => Promise<ChapterDetail>;
   } = {},
 ) {
   return {
@@ -63,6 +65,7 @@ function buildTransport(
     fetchAllChapterMeta: args.fetchAllChapterMeta ?? vi.fn(async () => []),
     fetchChapterDetail: args.fetchChapterDetail ?? vi.fn(async () => makeDetail()),
     updateChapter: args.updateChapter ?? vi.fn(async () => makeDetail()),
+    updateChapterStatus: args.updateChapterStatus ?? vi.fn(async () => makeDetail()),
   };
 }
 
@@ -88,7 +91,6 @@ describe("chapterStore", () => {
       makeDetail({
         content_md: "# Ready",
         summary: "Synced",
-        status: "done",
         title: "Chapter 1 Updated",
       }),
     );
@@ -100,14 +102,32 @@ describe("chapterStore", () => {
     );
 
     await store.loadProjectChapterMeta("project-1");
-    const chapter = await store.updateChapterDetail("chapter-1", { title: "Chapter 1 Updated", status: "done" });
+    const chapter = await store.updateChapterDetail("chapter-1", { title: "Chapter 1 Updated" });
 
     expect(chapter.title).toBe("Chapter 1 Updated");
     expect(store.getDetailSnapshot("chapter-1").data?.summary).toBe("Synced");
     expect(store.getMetaSnapshot("project-1").data).toEqual([
-      expect.objectContaining({ title: "Chapter 1 Updated", has_content: true, has_summary: true, status: "done" }),
+      expect.objectContaining({ title: "Chapter 1 Updated", has_content: true, has_summary: true }),
     ]);
     expect(updateChapter).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps chapter detail and meta status in sync after status updates", async () => {
+    const updateChapterStatus = vi.fn(async () => makeDetail({ status: "done", updated_at: "2026-03-07T00:00:00Z" }));
+    const store = createChapterStore(
+      buildTransport({
+        fetchAllChapterMeta: async () => [makeListItem()],
+        updateChapterStatus,
+      }),
+    );
+
+    await store.loadProjectChapterMeta("project-1");
+    const chapter = await store.updateChapterStatus("chapter-1", { status: "done", expected_status: "drafting" });
+
+    expect(chapter.status).toBe("done");
+    expect(store.getDetailSnapshot("chapter-1").data?.status).toBe("done");
+    expect(store.getMetaSnapshot("project-1").data).toEqual([expect.objectContaining({ status: "done" })]);
+    expect(updateChapterStatus).toHaveBeenCalledWith("chapter-1", { status: "done", expected_status: "drafting" });
   });
 
   it("removes deleted chapters from both meta and detail caches", async () => {

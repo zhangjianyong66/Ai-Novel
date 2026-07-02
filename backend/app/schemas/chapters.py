@@ -27,6 +27,11 @@ class ChapterUpdate(BaseModel):
     status: ChapterStatus | None = None
 
 
+class ChapterStatusUpdate(BaseModel):
+    status: ChapterStatus
+    expected_status: ChapterStatus
+
+
 class BulkChapter(BaseModel):
     number: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=255)

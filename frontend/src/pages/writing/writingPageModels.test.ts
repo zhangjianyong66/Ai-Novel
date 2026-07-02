@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBatchTaskCenterHref,
+  getChapterStatusActions,
   buildProjectTaskCenterHref,
   buildWritingTaskCenterHref,
+  isChapterStatusActionDisabled,
   isSaveAndTriggerDisabled,
   pickFirstProjectTaskId,
 } from "./writingPageModels";
@@ -42,7 +44,7 @@ describe("writingPageModels", () => {
     expect(buildBatchTaskCenterHref("p1", null)).toBeNull();
   });
 
-  it("sends only status when reopening a done chapter without content edits", () => {
+  it("builds save payload without chapter status", () => {
     expect(
       buildChapterSavePayload(
         {
@@ -50,35 +52,12 @@ describe("writingPageModels", () => {
           plan: "原计划",
           content_md: "已定稿正文",
           summary: "原摘要",
-          status: "done",
-        },
-        {
-          title: "第 1 章",
-          plan: "原计划",
-          content_md: "已定稿正文",
-          summary: "原摘要",
-          status: "drafting",
-        },
-      ),
-    ).toEqual({ status: "drafting" });
-  });
-
-  it("keeps full payload when reopening a done chapter with content edits", () => {
-    expect(
-      buildChapterSavePayload(
-        {
-          title: "第 1 章",
-          plan: "原计划",
-          content_md: "已定稿正文",
-          summary: "原摘要",
-          status: "done",
         },
         {
           title: "第 1 章",
           plan: "原计划",
           content_md: "改动正文",
           summary: "原摘要",
-          status: "drafting",
         },
       ),
     ).toEqual({
@@ -86,7 +65,36 @@ describe("writingPageModels", () => {
       plan: "原计划",
       content_md: "改动正文",
       summary: "原摘要",
-      status: "drafting",
     });
+  });
+
+  it("returns only legal chapter status actions for current status", () => {
+    expect(getChapterStatusActions("planned")).toEqual([{ status: "drafting", label: "开始起草" }]);
+    expect(getChapterStatusActions("drafting")).toEqual([
+      { status: "planned", label: "标记为已规划" },
+      { status: "done", label: "标记为定稿" },
+    ]);
+    expect(getChapterStatusActions("done")).toEqual([{ status: "drafting", label: "回退为起草中", confirm: true }]);
+  });
+
+  it("disables chapter status actions when content has unsaved changes", () => {
+    expect(
+      isChapterStatusActionDisabled({
+        dirty: true,
+        loadingChapter: false,
+        saving: false,
+        statusUpdating: false,
+        activeChapterId: "c1",
+      }),
+    ).toBe(true);
+    expect(
+      isChapterStatusActionDisabled({
+        dirty: false,
+        loadingChapter: false,
+        saving: false,
+        statusUpdating: false,
+        activeChapterId: "c1",
+      }),
+    ).toBe(false);
   });
 });

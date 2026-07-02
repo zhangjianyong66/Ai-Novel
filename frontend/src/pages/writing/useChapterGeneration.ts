@@ -238,7 +238,7 @@ export function useChapterGeneration(args: {
       const nextContent = choice === "raw" ? postEditCompare.rawContentMd : postEditCompare.editedContentMd;
       setForm((prev) => {
         if (!prev) return prev;
-        return { ...prev, content_md: nextContent, status: "drafting" };
+        return { ...prev, content_md: nextContent };
       });
       setPostEditCompare((prev) => (prev ? { ...prev, appliedChoice: choice } : prev));
       toast.toastSuccess(
@@ -274,7 +274,7 @@ export function useChapterGeneration(args: {
         choice === "raw" ? contentOptimizeCompare.rawContentMd : contentOptimizeCompare.optimizedContentMd;
       setForm((prev) => {
         if (!prev) return prev;
-        return { ...prev, content_md: nextContent, status: "drafting" };
+        return { ...prev, content_md: nextContent };
       });
       setContentOptimizeCompare((prev) => (prev ? { ...prev, appliedChoice: choice } : prev));
       toast.toastSuccess(
@@ -393,7 +393,7 @@ export function useChapterGeneration(args: {
 
           setForm((prev) => {
             if (!prev) return prev;
-            return { ...prev, content_md: startContent, status: "drafting" };
+            return { ...prev, content_md: startContent };
           });
 
           const client = new SSEPostClient(`/api/chapters/${activeChapter.id}/generate-stream`, payload, {
@@ -415,7 +415,7 @@ export function useChapterGeneration(args: {
               if (out.contentDelta) {
                 setForm((prev) => {
                   if (!prev) return prev;
-                  return { ...prev, content_md: (prev.content_md ?? "") + out.contentDelta, status: "drafting" };
+                  return { ...prev, content_md: (prev.content_md ?? "") + out.contentDelta };
                 });
               }
             },
@@ -462,7 +462,6 @@ export function useChapterGeneration(args: {
                   ...prev,
                   content_md: prev.content_md === expectedContent ? nextContent : prev.content_md,
                   summary: shouldOverrideSummary ? nextSummaryRaw || prev.summary || baseSummary : prev.summary,
-                  status: "drafting",
                 };
               });
 
@@ -570,7 +569,6 @@ export function useChapterGeneration(args: {
                     ...prev,
                     content_md: nextContent,
                     summary: res.data.summary ?? prev.summary,
-                    status: "drafting",
                   };
                 });
 
@@ -680,7 +678,6 @@ export function useChapterGeneration(args: {
               ...prev,
               content_md: nextContent,
               summary: res.data.summary ?? prev.summary,
-              status: "drafting",
             };
           });
 

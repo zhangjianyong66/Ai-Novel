@@ -163,7 +163,11 @@ export interface UpdateChapterInput {
   plan?: string | null;
   content_md?: string | null;
   summary?: string | null;
-  status?: ChapterStatus;
+}
+
+export interface UpdateChapterStatusInput {
+  status: ChapterStatus;
+  expected_status: ChapterStatus;
 }
 
 export interface BulkCreateChapterInput {

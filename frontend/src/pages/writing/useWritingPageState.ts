@@ -9,8 +9,9 @@ import { usePersistentOutletIsActive } from "../../hooks/usePersistentOutlet";
 import { useProjectData } from "../../hooks/useProjectData";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
 import { ApiError, apiJson } from "../../services/apiClient";
-import { getWizardProjectChangedAt } from "../../services/wizard";
-import type { Character, LLMPreset, Outline, OutlineListItem } from "../../types";
+import { chapterStore } from "../../services/chapterStore";
+import { getWizardProjectChangedAt, markWizardProjectChanged } from "../../services/wizard";
+import type { ChapterStatus, Character, LLMPreset, Outline, OutlineListItem } from "../../types";
 
 import type {
   WritingChapterListDrawerProps,
@@ -27,7 +28,6 @@ import { useChapterEditor } from "./useChapterEditor";
 import { useChapterGeneration } from "./useChapterGeneration";
 import { useGenerationHistory } from "./useGenerationHistory";
 import { useOutlineSwitcher } from "./useOutlineSwitcher";
-import type { ChapterForm } from "./writingUtils";
 import {
   buildBatchTaskCenterHref,
   buildProjectTaskCenterHref,
@@ -89,6 +89,7 @@ export function useWritingPageState(): WritingPageState {
   const [memoryUpdateOpen, setMemoryUpdateOpen] = useState(false);
   const [foreshadowOpen, setForeshadowOpen] = useState(false);
   const [autoUpdatesTriggering, setAutoUpdatesTriggering] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   const writingQuery = useProjectData<WritingLoaded>(projectId, async (id) => {
     const [outlineRes, presetRes, charactersRes] = await Promise.all([
@@ -127,11 +128,11 @@ export function useWritingPageState(): WritingPageState {
     activeId,
     setActiveId,
     activeChapter,
-    baseline,
     form,
     setForm,
     dirty,
     saveChapter,
+    applyChapterDetail,
     requestSelectChapter: requestSelectChapterBase,
     loadingChapter,
     saving,
@@ -159,7 +160,7 @@ export function useWritingPageState(): WritingPageState {
     if (!activeChapter) autoGenerateNextRef.current = null;
   }, [activeChapter]);
 
-  const isDoneReadonly = Boolean(baseline && form && baseline.status === "done" && form.status === "done");
+  const isDoneReadonly = activeChapter?.status === "done";
 
   useApplyGenerationRun({
     applyRunId,
@@ -318,6 +319,50 @@ export function useWritingPageState(): WritingPageState {
     }
   }, [activeChapter, autoUpdatesTriggering, navigate, projectId, saveChapter, toast]);
 
+  const updateChapterStatus = useCallback(
+    async (status: ChapterStatus) => {
+      if (!activeChapter || statusUpdating) return;
+      if (dirty) {
+        toast.toastWarning(WRITING_PAGE_COPY.statusActionNeedsSaveFirst);
+        return;
+      }
+
+      const expectedStatus = activeChapter.status;
+      if (expectedStatus === "done" && status === "drafting") {
+        const ok = await confirm.confirm(WRITING_PAGE_COPY.confirms.reopenChapter);
+        if (!ok) return;
+      }
+
+      setStatusUpdating(true);
+      try {
+        const nextChapter = await chapterStore.updateChapterStatus(activeChapter.id, {
+          status,
+          expected_status: expectedStatus,
+        });
+        applyChapterDetail(nextChapter);
+        markWizardProjectChanged(nextChapter.project_id);
+        bumpWizardLocal();
+        await refreshWizard();
+        toast.toastSuccess(WRITING_PAGE_COPY.statusUpdateSuccess);
+      } catch (error) {
+        const err =
+          error instanceof ApiError
+            ? error
+            : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        if ((err.details as { reason?: unknown } | undefined)?.reason === "chapter_status_conflict") {
+          void chapterStore
+            .loadChapterDetail(activeChapter.id, { force: true })
+            .then(applyChapterDetail)
+            .catch(() => undefined);
+        }
+      } finally {
+        setStatusUpdating(false);
+      }
+    },
+    [activeChapter, applyChapterDetail, bumpWizardLocal, confirm, dirty, refreshWizard, statusUpdating, toast],
+  );
+
   const saveAndGenerateNext = useCallback(async () => {
     if (!activeChapter) return;
 
@@ -410,11 +455,12 @@ export function useWritingPageState(): WritingPageState {
       loadingChapter,
       generating,
       saving,
+      statusUpdating,
       autoUpdatesTriggering,
       contentEditorTab,
       onContentEditorTabChange: setContentEditorTab,
       onTitleChange: (value) => setForm((prev) => (prev ? { ...prev, title: value } : prev)),
-      onStatusChange: (status) => setForm((prev) => (prev ? { ...prev, status } : prev)),
+      onUpdateChapterStatus: (status) => void updateChapterStatus(status),
       onPlanChange: (value) => setForm((prev) => (prev ? { ...prev, plan: value } : prev)),
       onContentChange: (value) => setForm((prev) => (prev ? { ...prev, content_md: value } : prev)),
       onSummaryChange: (value) => setForm((prev) => (prev ? { ...prev, summary: value } : prev)),
@@ -429,7 +475,6 @@ export function useWritingPageState(): WritingPageState {
       onDeleteChapter: () => void chapterCrud.deleteChapter(),
       onSaveAndTriggerAutoUpdates: () => void saveAndTriggerAutoUpdates(),
       onSaveChapter: () => void saveChapter(),
-      onReopenDrafting: () => setForm((prev: ChapterForm | null) => (prev ? { ...prev, status: "drafting" } : prev)),
       generationIndicatorLabel:
         genForm.stream && genStreamProgress
           ? getWritingGenerateIndicatorLabel(genStreamProgress.message, genStreamProgress.progress)

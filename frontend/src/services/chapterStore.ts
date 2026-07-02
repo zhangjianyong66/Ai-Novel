@@ -7,12 +7,14 @@ import {
   fetchAllChapterMeta,
   fetchChapterDetail,
   updateChapter,
+  updateChapterStatus,
 } from "./chaptersApi";
 import type {
   BulkCreateChapterInput,
   ChapterDetail,
   ChapterListItem,
   CreateChapterInput,
+  UpdateChapterStatusInput,
   UpdateChapterInput,
 } from "../types";
 
@@ -38,6 +40,7 @@ export type ChapterTransport = {
   fetchAllChapterMeta: (projectId: string) => Promise<ChapterListItem[]>;
   fetchChapterDetail: (chapterId: string) => Promise<ChapterDetail>;
   updateChapter: (chapterId: string, payload: UpdateChapterInput) => Promise<ChapterDetail>;
+  updateChapterStatus: (chapterId: string, payload: UpdateChapterStatusInput) => Promise<ChapterDetail>;
 };
 
 type CacheEntry<T> = {
@@ -68,6 +71,7 @@ const DEFAULT_TRANSPORT: ChapterTransport = {
   fetchAllChapterMeta,
   fetchChapterDetail,
   updateChapter,
+  updateChapterStatus,
 };
 
 function normalizeApiError(error: unknown): ApiError {
@@ -366,6 +370,12 @@ export function createChapterStore(transport: ChapterTransport = DEFAULT_TRANSPO
     },
     updateChapterDetail: async (chapterId: string, payload: UpdateChapterInput): Promise<ChapterDetail> => {
       const chapter = await transport.updateChapter(chapterId, payload);
+      setDetail(chapter);
+      upsertMetaItem(chapter.project_id, chapterDetailToListItem(chapter));
+      return chapter;
+    },
+    updateChapterStatus: async (chapterId: string, payload: UpdateChapterStatusInput): Promise<ChapterDetail> => {
+      const chapter = await transport.updateChapterStatus(chapterId, payload);
       setDetail(chapter);
       upsertMetaItem(chapter.project_id, chapterDetailToListItem(chapter));
       return chapter;

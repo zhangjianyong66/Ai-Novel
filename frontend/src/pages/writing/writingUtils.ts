@@ -1,11 +1,10 @@
-import type { Chapter, ChapterStatus, UpdateChapterInput } from "../../types";
+import type { Chapter, UpdateChapterInput } from "../../types";
 
 export type ChapterForm = {
   title: string;
   plan: string;
   content_md: string;
   summary: string;
-  status: ChapterStatus;
 };
 
 export function normalizeText(v: string | null | undefined): string {
@@ -31,28 +30,14 @@ export function chapterToForm(chapter: Chapter): ChapterForm {
     plan: normalizeText(chapter.plan),
     content_md: normalizeText(chapter.content_md),
     summary: normalizeText(chapter.summary),
-    status: chapter.status,
   };
 }
 
-export function buildChapterSavePayload(baseline: ChapterForm, next: ChapterForm): UpdateChapterInput {
-  const onlyReopeningDoneChapter =
-    baseline.status === "done" &&
-    next.status === "drafting" &&
-    next.title === baseline.title &&
-    next.plan === baseline.plan &&
-    next.content_md === baseline.content_md &&
-    next.summary === baseline.summary;
-
-  if (onlyReopeningDoneChapter) {
-    return { status: "drafting" };
-  }
-
+export function buildChapterSavePayload(_baseline: ChapterForm, next: ChapterForm): UpdateChapterInput {
   return {
     title: next.title.trim(),
     plan: next.plan,
     content_md: next.content_md,
     summary: next.summary,
-    status: next.status,
   };
 }

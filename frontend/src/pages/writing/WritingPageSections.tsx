@@ -22,7 +22,12 @@ import { humanizeChapterStatus } from "../../lib/humanize";
 import type { Chapter, ChapterListItem, ChapterStatus } from "../../types";
 
 import type { ChapterForm } from "./writingUtils";
-import { CHAPTER_LIST_SIDEBAR_WIDTH_CLASS, isSaveAndTriggerDisabled } from "./writingPageModels";
+import {
+  CHAPTER_LIST_SIDEBAR_WIDTH_CLASS,
+  getChapterStatusActions,
+  isChapterStatusActionDisabled,
+  isSaveAndTriggerDisabled,
+} from "./writingPageModels";
 import {
   getWritingChapterHeading,
   getWritingGenerateIndicatorLabel,
@@ -39,11 +44,12 @@ export type WritingEditorSectionProps = {
   loadingChapter: boolean;
   generating: boolean;
   saving: boolean;
+  statusUpdating: boolean;
   autoUpdatesTriggering: boolean;
   contentEditorTab: "edit" | "preview";
   onContentEditorTabChange: (tab: "edit" | "preview") => void;
   onTitleChange: (value: string) => void;
-  onStatusChange: (status: ChapterStatus) => void;
+  onUpdateChapterStatus: (status: ChapterStatus) => void;
   onPlanChange: (value: string) => void;
   onContentChange: (value: string) => void;
   onSummaryChange: (value: string) => void;
@@ -53,7 +59,6 @@ export type WritingEditorSectionProps = {
   onDeleteChapter: () => void;
   onSaveAndTriggerAutoUpdates: () => void;
   onSaveChapter: () => void;
-  onReopenDrafting: () => void;
   generationIndicatorLabel?: string;
 };
 
@@ -69,11 +74,8 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
   return (
     <div className="mx-auto w-full max-w-4xl rounded-atelier border border-border bg-surface p-5 shadow-sm">
       {props.isDoneReadonly ? (
-        <div className="callout-warning mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="callout-warning mb-4">
           <div className="text-xs">{getWritingReadonlyCallout()}</div>
-          <button className="btn btn-secondary" onClick={props.onReopenDrafting} type="button">
-            {WRITING_PAGE_COPY.readonlyCalloutAction}
-          </button>
         </div>
       ) : null}
 
@@ -154,20 +156,36 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             onChange={(event) => props.onTitleChange(event.target.value)}
           />
         </label>
-        <label className="grid gap-1 sm:col-span-1">
+        <div className="grid gap-1 sm:col-span-1">
           <span className="text-xs text-subtext">{WRITING_PAGE_COPY.statusLabel}</span>
-          <select
-            className="select"
-            name="status"
-            value={props.form.status}
-            onChange={(event) => props.onStatusChange(event.target.value as ChapterStatus)}
-          >
-            <option value="planned">{humanizeChapterStatus("planned")}</option>
-            <option value="drafting">{humanizeChapterStatus("drafting")}</option>
-            <option value="done">{humanizeChapterStatus("done")}</option>
-          </select>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="rounded-atelier border border-border bg-canvas px-2 py-1 text-xs font-medium text-ink">
+              {humanizeChapterStatus(props.activeChapter.status)}
+            </span>
+            {getChapterStatusActions(props.activeChapter.status).map((action) => {
+              const disabled = isChapterStatusActionDisabled({
+                dirty: props.dirty,
+                loadingChapter: props.loadingChapter,
+                saving: props.saving,
+                statusUpdating: props.statusUpdating,
+                activeChapterId: props.activeChapter?.id,
+              });
+              return (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={disabled}
+                  key={action.status}
+                  onClick={() => props.onUpdateChapterStatus(action.status)}
+                  title={props.dirty ? WRITING_PAGE_COPY.statusActionNeedsSaveFirst : undefined}
+                  type="button"
+                >
+                  {props.statusUpdating ? WRITING_PAGE_COPY.statusUpdating : action.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="text-[11px] text-subtext">{getWritingStatusHint()}</div>
-        </label>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-3">

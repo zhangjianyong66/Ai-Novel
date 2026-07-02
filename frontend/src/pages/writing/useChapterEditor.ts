@@ -83,10 +83,16 @@ export function useChapterEditor(args: {
       form.title !== baseline.title ||
       form.plan !== baseline.plan ||
       form.content_md !== baseline.content_md ||
-      form.summary !== baseline.summary ||
-      form.status !== baseline.status
+      form.summary !== baseline.summary
     );
   }, [baseline, form]);
+
+  const applyChapterDetail = useCallback((chapter: Chapter) => {
+    setActiveChapter(chapter);
+    const nextBaseline = chapterToForm(chapter);
+    setBaseline(nextBaseline);
+    setForm(nextBaseline);
+  }, []);
 
   useEffect(() => {
     setActiveId((prev) => {
@@ -124,10 +130,7 @@ export function useChapterEditor(args: {
       try {
         const chapter = await chapterStore.loadChapterDetail(activeId);
         if (!chapterLoadGuardRef.current.isLatest(seq)) return;
-        setActiveChapter(chapter);
-        const next = chapterToForm(chapter);
-        setBaseline(next);
-        setForm(next);
+        applyChapterDetail(chapter);
       } catch (e) {
         if (!chapterLoadGuardRef.current.isLatest(seq)) return;
         const err = e as ApiError;
@@ -141,7 +144,7 @@ export function useChapterEditor(args: {
         }
       }
     })();
-  }, [activeId, toast]);
+  }, [activeId, applyChapterDetail, toast]);
 
   const saveChapter = useCallback(
     async (opts?: { snapshot?: ChapterForm; silent?: boolean }) => {
@@ -198,8 +201,7 @@ export function useChapterEditor(args: {
               prev.title === nextSnapshot.title &&
               prev.plan === nextSnapshot.plan &&
               prev.content_md === nextSnapshot.content_md &&
-              prev.summary === nextSnapshot.summary &&
-              prev.status === nextSnapshot.status
+              prev.summary === nextSnapshot.summary
             ) {
               return nextBaseline;
             }
@@ -293,6 +295,7 @@ export function useChapterEditor(args: {
     dirty,
     saveChapter,
     requestSelectChapter,
+    applyChapterDetail,
     loadingChapter,
     saving,
   };

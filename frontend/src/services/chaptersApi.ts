@@ -5,6 +5,7 @@ import type {
   ChapterListItem,
   ChapterMetaPage,
   CreateChapterInput,
+  UpdateChapterStatusInput,
   UpdateChapterInput,
 } from "../types";
 
@@ -83,6 +84,17 @@ export async function createChapter(projectId: string, payload: CreateChapterInp
 export async function updateChapter(chapterId: string, payload: UpdateChapterInput): Promise<ChapterDetail> {
   const res = await apiJson<{ chapter: ChapterDetail }>(`/api/chapters/${chapterId}`, {
     method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return res.data.chapter;
+}
+
+export async function updateChapterStatus(
+  chapterId: string,
+  payload: UpdateChapterStatusInput,
+): Promise<ChapterDetail> {
+  const res = await apiJson<{ chapter: ChapterDetail }>(`/api/chapters/${chapterId}/status`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
   return res.data.chapter;

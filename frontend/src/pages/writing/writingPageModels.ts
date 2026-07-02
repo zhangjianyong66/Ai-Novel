@@ -1,9 +1,40 @@
+import type { ChapterStatus } from "../../types";
+
 export type ChapterAutoUpdatesTriggerResult = {
   tasks: Record<string, string | null>;
   chapter_token: string | null;
 };
 
+export type ChapterStatusAction = {
+  status: ChapterStatus;
+  label: string;
+  confirm?: boolean;
+};
+
 export const CHAPTER_LIST_SIDEBAR_WIDTH_CLASS = "w-[260px]" as const;
+
+export function getChapterStatusActions(status: ChapterStatus): ChapterStatusAction[] {
+  if (status === "planned") return [{ status: "drafting", label: "开始起草" }];
+  if (status === "drafting") {
+    return [
+      { status: "planned", label: "标记为已规划" },
+      { status: "done", label: "标记为定稿" },
+    ];
+  }
+  return [{ status: "drafting", label: "回退为起草中", confirm: true }];
+}
+
+export function isChapterStatusActionDisabled(params: {
+  dirty: boolean;
+  loadingChapter: boolean;
+  saving: boolean;
+  statusUpdating: boolean;
+  activeChapterId?: string | null;
+}): boolean {
+  return Boolean(
+    params.dirty || params.loadingChapter || params.saving || params.statusUpdating || !params.activeChapterId,
+  );
+}
 
 export function isSaveAndTriggerDisabled(params: {
   loadingChapter: boolean;

@@ -42,6 +42,7 @@ from app.schemas.chapters import (
     ChapterListItemOut,
     ChapterMetaPageOut,
     ChapterOut,
+    ChapterStatusUpdate,
     ChapterUpdate,
 )
 from app.schemas.chapter_generate import ChapterGenerateRequest
@@ -99,6 +100,13 @@ from app.utils.sse_response import (
 )
 
 router = APIRouter()
+
+ALLOWED_CHAPTER_STATUS_TRANSITIONS = {
+    ("planned", "drafting"),
+    ("drafting", "planned"),
+    ("drafting", "done"),
+    ("done", "drafting"),
+}
 logger = logging.getLogger("ainovel")
 
 PREVIOUS_CHAPTER_ENDING_CHARS = 1000
@@ -767,14 +775,22 @@ def get_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str
 def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str, body: ChapterUpdate) -> dict:
     request_id = request.state.request_id
     row = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+    changed_fields = set(getattr(body, "model_fields_set", set()) or set())
+    if "status" in changed_fields:
+        raise AppError.validation(
+            "章节状态请通过状态接口修改",
+            details={
+                "reason": "chapter_status_update_requires_status_endpoint",
+                "allowed_endpoint": "PATCH /api/chapters/{chapter_id}/status",
+            },
+        )
+
     prev_status = str(row.status or "")
-    if prev_status == "done":
-        changed_fields = set(getattr(body, "model_fields_set", set()) or set())
-        if changed_fields != {"status"} or body.status != "drafting":
-            raise AppError.validation(
-                "章节已定稿，需先回退为起草中才能编辑",
-                details={"reason": "chapter_done_readonly", "allowed_action": "reopen_drafting"},
-            )
+    if prev_status == "done" and changed_fields:
+        raise AppError.validation(
+            "章节已定稿，需先回退为起草中才能编辑",
+            details={"reason": "chapter_done_readonly", "allowed_action": "reopen_drafting"},
+        )
 
     if body.title is not None:
         row.title = body.title
@@ -784,14 +800,52 @@ def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: 
         row.content_md = body.content_md
     if body.summary is not None:
         row.summary = body.summary
-    if body.status is not None:
-        row.status = body.status
 
     _mark_vector_index_dirty(db, project_id=str(row.project_id))
     db.commit()
     db.refresh(row)
 
     return ok_payload(request_id=request_id, data={"chapter": ChapterOut.model_validate(row).model_dump()})
+
+
+@router.patch("/chapters/{chapter_id}/status")
+def update_chapter_status(
+    request: Request,
+    db: DbDep,
+    user_id: UserIdDep,
+    chapter_id: str,
+    body: ChapterStatusUpdate,
+) -> dict:
+    request_id = request.state.request_id
+    row = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+    current_status = str(row.status or "")
+    if current_status != body.expected_status:
+        raise AppError.conflict(
+            "章节状态已变化，请刷新后重试",
+            details={
+                "reason": "chapter_status_conflict",
+                "expected_status": body.expected_status,
+                "current_status": current_status,
+            },
+        )
+
+    next_status = str(body.status)
+    if (current_status, next_status) not in ALLOWED_CHAPTER_STATUS_TRANSITIONS:
+        raise AppError.validation(
+            "不允许的章节状态流转",
+            details={
+                "reason": "invalid_chapter_status_transition",
+                "from_status": current_status,
+                "to_status": next_status,
+            },
+        )
+
+    row.status = body.status
+    _mark_vector_index_dirty(db, project_id=str(row.project_id))
+    db.commit()
+    db.refresh(row)
+
+    return ok_payload(request_id=request_id, data={"chapter": ChapterDetailOut.model_validate(row).model_dump()})
 
 
 @router.post("/chapters/{chapter_id}/trigger_auto_updates")

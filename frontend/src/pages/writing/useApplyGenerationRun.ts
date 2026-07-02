@@ -79,9 +79,7 @@ export function useApplyGenerationRun(args: {
 
         const nextContent = content.trim() || raw.trim();
         const nextSummary = summary.trim();
-        setForm((prev) =>
-          prev ? { ...prev, content_md: nextContent, summary: nextSummary || prev.summary, status: "drafting" } : prev,
-        );
+        setForm((prev) => (prev ? { ...prev, content_md: nextContent, summary: nextSummary || prev.summary } : prev));
         toast.toastSuccess(WRITING_PAGE_COPY.applyRunSuccess, res.request_id);
       } catch (e) {
         const err = e as ApiError;

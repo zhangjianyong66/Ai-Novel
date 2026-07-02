@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~236 | Active |
+| `journal-1.md` | ~269 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-07-02 | 清理残留伏笔 | `9d7f2c2` | `main` |
 | 7 | 2026-07-02 | 完成项目包导入导出 | `bd0138f` | `main` |
 | 6 | 2026-07-02 | AI生成用户指令历史 | `924ecf6` | `main` |
 | 5 | 2026-07-01 | AI 生成完成通知 | `51c105e` | `main` |

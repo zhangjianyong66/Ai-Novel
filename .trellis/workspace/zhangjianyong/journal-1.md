@@ -234,3 +234,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 清理残留伏笔
+
+**Date**: 2026-07-02
+**Task**: 清理残留伏笔
+**Branch**: `main`
+
+### Summary
+
+修复删除大纲/章节后章节派生 StoryMemory 伏笔残留；伏笔时间线过滤无章节来源记录；补充回归测试与后端规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9d7f2c2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

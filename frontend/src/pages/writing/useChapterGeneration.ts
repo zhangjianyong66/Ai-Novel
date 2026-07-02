@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import type { GenerateForm } from "../../components/writing/types";
@@ -19,6 +19,7 @@ import {
 } from "./writingPageCopy";
 import { appendMarkdown } from "./writingUtils";
 import type { ChapterForm } from "./writingUtils";
+import { mergeChapterGenerationInstructionOptions } from "./chapterGenerationInstructionOptions";
 
 type StreamProgress = {
   message: string;
@@ -41,6 +42,10 @@ type GenerateResponse = {
   content_optimize_raw_content_md?: string;
   content_optimize_optimized_content_md?: string;
   content_optimize_run_id?: string;
+};
+
+type ChapterGenerationInstructionPreferences = {
+  instructions: string[];
 };
 
 export type PostEditCompare = {
@@ -137,6 +142,7 @@ export function useChapterGeneration(args: {
   const genStreamHasChunkRef = useRef(false);
   const [postEditCompare, setPostEditCompare] = useState<PostEditCompare | null>(null);
   const [contentOptimizeCompare, setContentOptimizeCompare] = useState<ContentOptimizeCompare | null>(null);
+  const [instructionHistory, setInstructionHistory] = useState<string[]>([]);
 
   const [genForm, setGenForm] = useState<GenerateForm>(() => ({
     ...DEFAULT_GEN_FORM,
@@ -144,11 +150,17 @@ export function useChapterGeneration(args: {
   }));
 
   const lastProjectIdRef = useRef<string | undefined>(undefined);
+  const currentProjectIdRef = useRef<string | undefined>(projectId);
+
+  useEffect(() => {
+    currentProjectIdRef.current = projectId;
+  }, [projectId]);
 
   useEffect(() => {
     if (lastProjectIdRef.current === projectId) return;
     lastProjectIdRef.current = projectId;
     const enabled = loadMemoryInjectionEnabled(projectId);
+    setInstructionHistory([]);
     setGenForm((prev) => ({
       ...prev,
       memory_injection_enabled: enabled,
@@ -168,7 +180,56 @@ export function useChapterGeneration(args: {
     localStorage.setItem(key, genForm.memory_injection_enabled ? "1" : "0");
   }, [genForm.memory_injection_enabled, projectId]);
 
+  const refreshInstructionHistory = useCallback(async () => {
+    if (!projectId) {
+      setInstructionHistory([]);
+      return;
+    }
+    const targetProjectId = projectId;
+    try {
+      const response = await apiJson<{ preferences: ChapterGenerationInstructionPreferences }>(
+        `/api/projects/${targetProjectId}/chapter-generation-instruction-preferences`,
+      );
+      if (currentProjectIdRef.current !== targetProjectId) return;
+      setInstructionHistory(response.data.preferences?.instructions ?? []);
+    } catch {
+      if (currentProjectIdRef.current !== targetProjectId) return;
+      setInstructionHistory([]);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void refreshInstructionHistory();
+  }, [refreshInstructionHistory]);
+
+  const saveInstructionPreference = useCallback(
+    async (instruction: string) => {
+      if (!projectId) return;
+      const value = instruction.trim();
+      if (!value) return;
+      const targetProjectId = projectId;
+      try {
+        const response = await apiJson<{ preferences: ChapterGenerationInstructionPreferences }>(
+          `/api/projects/${targetProjectId}/chapter-generation-instruction-preferences`,
+          {
+            method: "POST",
+            body: JSON.stringify({ instruction: value }),
+          },
+        );
+        if (currentProjectIdRef.current !== targetProjectId) return;
+        setInstructionHistory(response.data.preferences?.instructions ?? []);
+      } catch {
+        // Preference persistence must not block chapter generation.
+      }
+    },
+    [projectId],
+  );
+
   const abortGenerate = useCallback(() => genStreamClientRef.current?.abort(), []);
+  const instructionOptions = useMemo(
+    () => mergeChapterGenerationInstructionOptions(instructionHistory),
+    [instructionHistory],
+  );
 
   const applyPostEditVariant = useCallback(
     async (choice: PostEditCompare["appliedChoice"]) => {
@@ -252,6 +313,7 @@ export function useChapterGeneration(args: {
       }
 
       setGenerating(true);
+      void saveInstructionPreference(genForm.instruction);
       setGenRequestId(null);
       setGenStreamProgress(null);
       genStreamClientRef.current = null;
@@ -696,7 +758,20 @@ export function useChapterGeneration(args: {
         setGenerating(false);
       }
     },
-    [activeChapter, chapters, confirm, dirty, form, genForm, preset, requestSelectChapter, saveChapter, setForm, toast],
+    [
+      activeChapter,
+      chapters,
+      confirm,
+      dirty,
+      form,
+      genForm,
+      preset,
+      requestSelectChapter,
+      saveChapter,
+      saveInstructionPreference,
+      setForm,
+      toast,
+    ],
   );
 
   return {
@@ -706,6 +781,7 @@ export function useChapterGeneration(args: {
     genStreamClientRef,
     genForm,
     setGenForm,
+    instructionOptions,
     postEditCompare,
     applyPostEditVariant,
     contentOptimizeCompare,

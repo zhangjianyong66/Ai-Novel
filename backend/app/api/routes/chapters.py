@@ -45,7 +45,12 @@ from app.schemas.chapters import (
     ChapterUpdate,
 )
 from app.schemas.chapter_generate import ChapterGenerateRequest
+from app.schemas.chapter_generation_instruction_preferences import ChapterGenerationInstructionPreferencesSave
 from app.schemas.chapter_plan import ChapterPlanRequest
+from app.services.chapter_generation_instruction_preferences import (
+    list_chapter_generation_instruction_preferences,
+    save_chapter_generation_instruction_preferences,
+)
 from app.services.generation_service import build_run_params_json, call_llm_and_record, prepare_llm_call, with_param_overrides
 from app.services.generation_pipeline import (
     run_chapter_generate_llm_step,
@@ -516,6 +521,38 @@ def _chapter_meta_payload(row: Chapter) -> dict:
         has_summary=bool(str(row.summary or "").strip()),
         has_content=bool(str(row.content_md or "").strip()),
     ).model_dump()
+
+
+@router.get("/projects/{project_id}/chapter-generation-instruction-preferences")
+def get_chapter_generation_instruction_preferences(
+    request: Request,
+    db: DbDep,
+    user_id: UserIdDep,
+    project_id: str,
+) -> dict:
+    request_id = request.state.request_id
+    require_project_viewer(db, project_id=project_id, user_id=user_id)
+    preferences = list_chapter_generation_instruction_preferences(db, project_id=project_id, user_id=user_id)
+    return ok_payload(request_id=request_id, data={"preferences": preferences})
+
+
+@router.post("/projects/{project_id}/chapter-generation-instruction-preferences")
+def save_chapter_generation_instruction_preference_values(
+    request: Request,
+    db: DbDep,
+    user_id: UserIdDep,
+    project_id: str,
+    body: ChapterGenerationInstructionPreferencesSave,
+) -> dict:
+    request_id = request.state.request_id
+    require_project_editor(db, project_id=project_id, user_id=user_id)
+    preferences = save_chapter_generation_instruction_preferences(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        instruction=body.instruction,
+    )
+    return ok_payload(request_id=request_id, data={"preferences": preferences})
 
 
 @router.get("/projects/{project_id}/chapters/meta")

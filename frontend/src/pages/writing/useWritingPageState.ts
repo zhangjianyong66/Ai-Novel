@@ -502,6 +502,7 @@ export function useWritingPageState(): WritingPageState {
       saving: saving || loadingChapter,
       genForm,
       setGenForm,
+      instructionOptions: generation.instructionOptions,
       characters,
       streamProgress: genStreamProgress,
       onClose: () => setAiOpen(false),

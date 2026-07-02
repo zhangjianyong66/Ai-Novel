@@ -17,6 +17,7 @@ type Props = {
   saving?: boolean;
   genForm: GenerateForm;
   setGenForm: Dispatch<SetStateAction<GenerateForm>>;
+  instructionOptions: string[];
   characters: Character[];
   streamProgress?: { message: string; progress: number; status: string; charCount?: number } | null;
   onClose: () => void;
@@ -148,6 +149,28 @@ export function AiGenerateDrawer(props: Props) {
         <div className="panel p-3">
           <div className="text-sm font-medium text-ink">基础生成</div>
           <div className="mt-3 grid gap-3">
+            <label className="grid gap-1">
+              <span className="text-xs text-subtext">套用用户指令</span>
+              <select
+                className="select"
+                disabled={props.generating || props.instructionOptions.length === 0}
+                name="instruction_preset"
+                value=""
+                onChange={(e) => {
+                  const value = e.currentTarget.value;
+                  if (!value) return;
+                  props.setGenForm((v) => ({ ...v, instruction: value }));
+                }}
+              >
+                <option value="">选择默认或历史指令...</option>
+                {props.instructionOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="grid gap-1">
               <span className="text-xs text-subtext">用户指令</span>
               <textarea

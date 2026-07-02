@@ -300,3 +300,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 修复定稿章节回退草稿保存失败
+
+**Date**: 2026-07-02
+**Task**: 修复定稿章节回退草稿保存失败
+**Branch**: `main`
+
+### Summary
+
+修复写作页已定稿章节回退草稿后保存仍提交完整 payload 导致 chapter_done_readonly 的问题，补充前端回归测试和章节保存契约规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `920e00c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

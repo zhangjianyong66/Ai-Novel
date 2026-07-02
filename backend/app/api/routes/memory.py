@@ -236,6 +236,7 @@ def list_story_memory_foreshadow_open_loops(
         StoryMemory.project_id == project_id,
         StoryMemory.is_foreshadow == 1,  # noqa: E712
         StoryMemory.foreshadow_resolved_at_chapter_id.is_(None),
+        StoryMemory.chapter_id.is_not(None),
     ]
     if q_norm:
         pattern = f"%{q_norm}%"

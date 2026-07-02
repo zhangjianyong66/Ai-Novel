@@ -84,6 +84,7 @@ from app.services.prompt_store import format_characters
 from app.services.project_task_service import schedule_chapter_done_tasks
 from app.services.run_store import write_generation_run
 from app.services.search_index_service import schedule_search_rebuild_task
+from app.services.story_memory_cleanup_service import delete_story_memories_for_chapter_ids
 from app.services.vector_rag_service import schedule_vector_rebuild_task
 from app.utils.sse_response import (
     create_sse_response,
@@ -716,6 +717,12 @@ def bulk_create(
         raise AppError.validation("chapters.number 不能重复")
 
     if replace:
+        chapter_ids = (
+            db.execute(select(Chapter.id).where(Chapter.project_id == project_id, Chapter.outline_id == target_outline_id))
+            .scalars()
+            .all()
+        )
+        delete_story_memories_for_chapter_ids(db, chapter_ids)
         db.execute(delete(Chapter).where(Chapter.project_id == project_id, Chapter.outline_id == target_outline_id))
         _mark_vector_index_dirty(db, project_id=project_id)
         db.commit()
@@ -888,6 +895,7 @@ def record_post_edit_adoption(
 def delete_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str) -> dict:
     request_id = request.state.request_id
     row = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+    delete_story_memories_for_chapter_ids(db, [chapter_id])
     db.delete(row)
     _mark_vector_index_dirty(db, project_id=str(row.project_id))
     db.commit()

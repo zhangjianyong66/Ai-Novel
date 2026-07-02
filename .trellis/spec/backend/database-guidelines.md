@@ -28,6 +28,13 @@
 - SQLite 模式不能在 LLM 调用期间持有长事务；本地开发只允许 `--workers 1`。
 - SQLite 读回 `DateTime(timezone=True)` 时可能得到 offset-naive `datetime`；如果要和 `utc_now()` 这类 offset-aware 值比较，先在比较边界统一规范化（例如去掉 `tzinfo` 或统一转 UTC），否则快速写入/排序逻辑会在测试或本地环境触发 `TypeError`。
 
+## 章节派生记忆生命周期
+
+- `StoryMemory.chapter_id` 表示章节派生记忆的来源章节。删除单章、删除大纲下章节、覆盖重建章节前，应先调用共享清理逻辑删除命中这些 `chapter_id` 的 `StoryMemory`，再删除 `Chapter`。
+- 不要只依赖 `StoryMemory.chapter_id` 的 `ON DELETE SET NULL`；这会把旧章节伏笔变成无来源 open loop，继续污染伏笔时间线和记忆检索。
+- 伏笔时间线接口只展示 `chapter_id IS NOT NULL`、`is_foreshadow=1` 且未回收的 `StoryMemory`；历史或手动创建的项目级 `chapter_id=NULL` 记忆不应默认进入该页面。
+- 新增章节删除入口或批量替换入口时，应新增/更新回归测试，断言被删章节的 StoryMemory 已删除，其他章节和项目级记忆不受影响。
+
 ## 迁移约定
 
 - 应用启动由 `ensure_db_schema()` 执行 `alembic upgrade head`，见 `backend/app/db/migrations.py`。

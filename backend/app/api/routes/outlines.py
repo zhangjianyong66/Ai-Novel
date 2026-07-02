@@ -26,6 +26,7 @@ from app.services.outline_generation_preferences import (
 )
 from app.services.outline_payload_normalizer import normalize_outline_content_and_structure, parse_outline_structure_json
 from app.services.search_index_service import schedule_search_rebuild_task
+from app.services.story_memory_cleanup_service import delete_story_memories_for_chapter_ids
 from app.services.vector_rag_service import schedule_vector_rebuild_task
 
 router = APIRouter()
@@ -184,6 +185,8 @@ def delete_outline_item(request: Request, db: DbDep, user_id: UserIdDep, project
     if row.project_id != project_id:
         raise AppError.not_found()
 
+    chapter_ids = db.execute(select(Chapter.id).where(Chapter.outline_id == outline_id)).scalars().all()
+    delete_story_memories_for_chapter_ids(db, chapter_ids)
     db.execute(delete(Chapter).where(Chapter.outline_id == outline_id))
     db.delete(row)
 

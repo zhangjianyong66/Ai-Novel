@@ -1,6 +1,16 @@
 import unittest
 
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.db.base import Base
+from app.models.project import Project
+from app.models.prompt_block import PromptBlock
+from app.models.prompt_preset import PromptPreset
+from app.models.user import User
 from app.services.prompt_preset_resources import load_preset_resource
+from app.services.prompt_presets import _ensure_default_preset_from_resource
 
 
 class TestPromptPresetResources(unittest.TestCase):
@@ -8,6 +18,7 @@ class TestPromptPresetResources(unittest.TestCase):
         keys = [
             "plan_chapter_v1",
             "post_edit_v1",
+            "content_optimize_v1",
             "outline_generate_v3",
             "chapter_generate_v3",
             "chapter_analyze_v1",
@@ -21,7 +32,66 @@ class TestPromptPresetResources(unittest.TestCase):
             self.assertGreater(res.version, 0)
             self.assertGreater(len(res.blocks), 0)
 
+    def test_builtin_post_processing_categories_are_readable_chinese(self) -> None:
+        expected_categories = {
+            "post_edit_v1": "润色",
+            "content_optimize_v1": "正文优化",
+        }
+
+        for key, expected_category in expected_categories.items():
+            res = load_preset_resource(key)
+            self.assertEqual(res.category, expected_category)
+
+
+class TestPromptPresetDefaultCategoryRepair(unittest.TestCase):
+    def setUp(self) -> None:
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        self.addCleanup(engine.dispose)
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                User.__table__,
+                Project.__table__,
+                PromptPreset.__table__,
+                PromptBlock.__table__,
+            ],
+        )
+        self.SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+        with self.SessionLocal() as db:
+            db.add(User(id="u1", display_name="owner"))
+            db.add(Project(id="p1", owner_user_id="u1", name="Project 1", genre=None, logline=None))
+            db.commit()
+
+    def test_ensure_default_preset_repairs_known_mojibake_category(self) -> None:
+        cases = [
+            ("post_edit_v1", "娑﹁壊", "润色"),
+            ("content_optimize_v1", "姝ｆ枃浼樺寲", "正文优化"),
+        ]
+
+        with self.SessionLocal() as db:
+            for resource_key, mojibake_category, expected_category in cases:
+                preset = _ensure_default_preset_from_resource(db, project_id="p1", resource_key=resource_key, activate=True)
+                preset.category = mojibake_category
+                db.commit()
+
+                repaired = _ensure_default_preset_from_resource(
+                    db,
+                    project_id="p1",
+                    resource_key=resource_key,
+                    activate=True,
+                )
+
+                self.assertEqual(repaired.category, expected_category)
+
+                persisted_category = db.execute(
+                    select(PromptPreset.category).where(PromptPreset.id == repaired.id)
+                ).scalar_one()
+                self.assertEqual(persisted_category, expected_category)
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -113,6 +113,25 @@ export function getProjectTaskLiveStatusLabel(status: "idle" | "connecting" | "o
   return TASK_CENTER_COPY.projectTasksLiveLabels[status];
 }
 
+const PROJECT_TASK_KIND_LABELS: Record<string, string> = {
+  batch_generation_orchestrator: "批量生成编排",
+  characters_auto_update: "角色自动更新",
+  fractal_rebuild: "分形记忆重建",
+  graph_auto_update: "图谱自动更新",
+  noop: "空任务",
+  plot_auto_update: "剧情记忆自动更新",
+  search_rebuild: "搜索索引重建",
+  table_ai_update: "表格 AI 自动更新",
+  vector_rebuild: "向量索引重建",
+  worldbook_auto_update: "世界书自动更新",
+};
+
+export function formatProjectTaskKindLabel(kind: string | null | undefined): string {
+  const code = String(kind || "").trim();
+  if (!code) return "-";
+  return PROJECT_TASK_KIND_LABELS[code] ?? code;
+}
+
 function readNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }

@@ -7,6 +7,7 @@ import {
   formatRuntimeCheckpointSummary,
   formatRuntimeTimelineMeta,
   formatRuntimeTimelineStep,
+  formatProjectTaskKindLabel,
   formatTaskCenterErrorText,
   getProjectTaskLiveStatusLabel,
   getTaskCenterDetailHeading,
@@ -70,6 +71,13 @@ describe("taskCenterModels", () => {
     expect(getProjectTaskLiveStatusLabel("connecting")).toBe("reconnecting");
     expect(getProjectTaskLiveStatusLabel("error")).toBe("fallback polling");
     expect(getProjectTaskLiveStatusLabel("idle")).toBe("idle");
+  });
+
+  it("formats project task kind labels in Chinese and keeps unknown codes visible", () => {
+    expect(formatProjectTaskKindLabel("search_rebuild")).toBe("搜索索引重建");
+    expect(formatProjectTaskKindLabel("worldbook_auto_update")).toBe("世界书自动更新");
+    expect(formatProjectTaskKindLabel("graph_auto_update")).toBe("图谱自动更新");
+    expect(formatProjectTaskKindLabel("custom_task")).toBe("custom_task");
   });
 
   it("formats shared error and runtime copy consistently", () => {

@@ -12,7 +12,9 @@ from app.core.secrets import redact_api_keys
 from app.db.session import SessionLocal
 from app.db.utils import utc_now
 from app.models.knowledge_base import KnowledgeBase
+from app.models.project import Project
 from app.models.project_settings import ProjectSettings
+from app.services.llm_key_resolver import resolve_api_key_for_project
 from app.services.embedding_service import embed_texts, resolve_embedding_config
 from app.services.memory_query_service import normalize_query_text, parse_query_preprocessing_config
 from app.services.vector_embedding_overrides import vector_embedding_overrides
@@ -63,6 +65,23 @@ def _index_state(row: ProjectSettings | None) -> dict[str, object]:
 
 def _vector_rerank_config(row: ProjectSettings | None) -> dict[str, object]:
     return vector_rerank_overrides(row)
+
+
+def _vector_embedding_config(db, *, project: Project, user_id: str, settings_row: ProjectSettings | None) -> dict[str, str | None]:
+    embedding = vector_embedding_overrides(settings_row)
+    if str(embedding.get("api_key") or "").strip():
+        return embedding
+
+    try:
+        api_key = resolve_api_key_for_project(db, project=project, user_id=user_id, header_api_key=None)
+    except AppError as exc:
+        if exc.code != "LLM_KEY_MISSING":
+            raise
+        api_key = ""
+
+    if api_key:
+        embedding["api_key"] = api_key
+    return embedding
 
 
 def _kb_public(row: KnowledgeBase) -> dict[str, object]:
@@ -146,9 +165,9 @@ def get_vector_status(request: Request, user_id: UserIdDep, project_id: str, bod
     rerank: dict[str, object] = {}
     index_state: dict[str, object] = {"dirty": False, "last_build_at": None}
     try:
-        require_project_viewer(db, project_id=project_id, user_id=user_id)
+        project = require_project_viewer(db, project_id=project_id, user_id=user_id)
         settings_row = db.get(ProjectSettings, project_id)
-        embedding = vector_embedding_overrides(settings_row)
+        embedding = _vector_embedding_config(db, project=project, user_id=user_id, settings_row=settings_row)
         rerank = _vector_rerank_config(settings_row)
         index_state = _index_state(settings_row)
     finally:
@@ -169,9 +188,9 @@ def dry_run_vector_embeddings(request: Request, user_id: UserIdDep, project_id: 
     db = SessionLocal()
     embedding: dict[str, str | None] = {}
     try:
-        require_project_editor(db, project_id=project_id, user_id=user_id)
+        project = require_project_editor(db, project_id=project_id, user_id=user_id)
         settings_row = db.get(ProjectSettings, project_id)
-        embedding = vector_embedding_overrides(settings_row)
+        embedding = _vector_embedding_config(db, project=project, user_id=user_id, settings_row=settings_row)
     finally:
         db.close()
 
@@ -314,9 +333,9 @@ def ingest_vector_index(request: Request, user_id: UserIdDep, project_id: str, b
     db = SessionLocal()
     embedding: dict[str, str | None] = {}
     try:
-        require_project_editor(db, project_id=project_id, user_id=user_id)
+        project = require_project_editor(db, project_id=project_id, user_id=user_id)
         chunks = build_project_chunks(db=db, project_id=project_id, sources=body.sources)
-        embedding = vector_embedding_overrides(db.get(ProjectSettings, project_id))
+        embedding = _vector_embedding_config(db, project=project, user_id=user_id, settings_row=db.get(ProjectSettings, project_id))
         ensure_default_vector_kb(db, project_id=project_id)
         for kid in kb_ids_unique:
             get_vector_kb(db, project_id=project_id, kb_id=kid)
@@ -366,9 +385,9 @@ def rebuild_vector_index(request: Request, user_id: UserIdDep, project_id: str, 
     db = SessionLocal()
     embedding: dict[str, str | None] = {}
     try:
-        require_project_editor(db, project_id=project_id, user_id=user_id)
+        project = require_project_editor(db, project_id=project_id, user_id=user_id)
         chunks = build_project_chunks(db=db, project_id=project_id, sources=body.sources)
-        embedding = vector_embedding_overrides(db.get(ProjectSettings, project_id))
+        embedding = _vector_embedding_config(db, project=project, user_id=user_id, settings_row=db.get(ProjectSettings, project_id))
         ensure_default_vector_kb(db, project_id=project_id)
         for kid in kb_ids_unique:
             get_vector_kb(db, project_id=project_id, kb_id=kid)
@@ -444,9 +463,9 @@ def query_vector_index(request: Request, user_id: UserIdDep, project_id: str, bo
     qp_cfg = None
     selected_kbs: list[KnowledgeBase] = []
     try:
-        require_project_viewer(db, project_id=project_id, user_id=user_id)
+        project = require_project_viewer(db, project_id=project_id, user_id=user_id)
         settings_row = db.get(ProjectSettings, project_id)
-        embedding = vector_embedding_overrides(settings_row)
+        embedding = _vector_embedding_config(db, project=project, user_id=user_id, settings_row=settings_row)
         rerank = _vector_rerank_config(settings_row)
         selected_kbs = resolve_vector_query_kbs(db, project_id=project_id, requested_kb_ids=requested_kb_ids)
         qp_cfg = parse_query_preprocessing_config(

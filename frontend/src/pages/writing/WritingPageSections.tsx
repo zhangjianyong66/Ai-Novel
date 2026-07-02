@@ -22,7 +22,7 @@ import { humanizeChapterStatus } from "../../lib/humanize";
 import type { Chapter, ChapterListItem, ChapterStatus } from "../../types";
 
 import type { ChapterForm } from "./writingUtils";
-import { CHAPTER_LIST_SIDEBAR_WIDTH_CLASS } from "./writingPageModels";
+import { CHAPTER_LIST_SIDEBAR_WIDTH_CLASS, isSaveAndTriggerDisabled } from "./writingPageModels";
 import {
   getWritingChapterHeading,
   getWritingGenerateIndicatorLabel,
@@ -114,9 +114,12 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
           </button>
           <button
             className="btn btn-secondary"
-            disabled={
-              props.loadingChapter || props.generating || props.saving || props.autoUpdatesTriggering || !props.dirty
-            }
+            disabled={isSaveAndTriggerDisabled({
+              loadingChapter: props.loadingChapter,
+              generating: props.generating,
+              saving: props.saving,
+              autoUpdatesTriggering: props.autoUpdatesTriggering,
+            })}
             onClick={props.onSaveAndTriggerAutoUpdates}
             type="button"
           >

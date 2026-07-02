@@ -95,12 +95,18 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
                     plan="hello",
                     content_md="content",
                     summary="summary",
-                    status="draft",
+                    status="drafting",
                 )
             )
             db.commit()
 
     def test_trigger_chapter_auto_updates_is_idempotent_by_generation_run_id(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "done"
+            db.commit()
+
         client = TestClient(self.app)
         with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
             "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
@@ -117,6 +123,8 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
             self.assertTrue(payload1.get("ok"))
             data1 = payload1.get("data") or {}
             tasks1 = data1.get("tasks") or {}
+            self.assertTrue(str(tasks1.get("vector_rebuild") or ""))
+            self.assertTrue(str(tasks1.get("search_rebuild") or ""))
             self.assertTrue(str(tasks1.get("worldbook_auto_update") or ""))
             self.assertTrue(str(tasks1.get("graph_auto_update") or ""))
 
@@ -140,3 +148,152 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
                 after = db.execute(select(ProjectTask)).scalars().all()
 
             self.assertEqual(len(after), len(before))
+
+    def test_trigger_chapter_auto_updates_for_draft_only_creates_index_tasks(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.post(
+                "/api/chapters/c1/trigger_auto_updates",
+                headers={"X-Test-User": "u_owner"},
+                json={},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get("ok"))
+        data = payload.get("data") or {}
+        tasks = data.get("tasks") or {}
+        self.assertTrue(str(tasks.get("vector_rebuild") or ""))
+        self.assertTrue(str(tasks.get("search_rebuild") or ""))
+        self.assertIsNone(tasks.get("worldbook_auto_update"))
+        self.assertIsNone(tasks.get("characters_auto_update"))
+        self.assertIsNone(tasks.get("plot_auto_update"))
+        self.assertIsNone(tasks.get("table_ai_update"))
+        self.assertIsNone(tasks.get("graph_auto_update"))
+        self.assertIsNone(tasks.get("fractal_rebuild"))
+        self.assertEqual(
+            set(tasks.keys()),
+            {
+                "vector_rebuild",
+                "search_rebuild",
+                "worldbook_auto_update",
+                "characters_auto_update",
+                "plot_auto_update",
+                "table_ai_update",
+                "graph_auto_update",
+                "fractal_rebuild",
+            },
+        )
+
+        with self.SessionLocal() as db:
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual({row.kind for row in rows}, {"vector_rebuild", "search_rebuild"})
+
+    def test_update_chapter_to_done_does_not_create_project_tasks(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.put(
+                "/api/chapters/c1",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "done", "content_md": "final content", "summary": "final summary"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get("ok"))
+        chapter = (payload.get("data") or {}).get("chapter") or {}
+        self.assertEqual(chapter.get("status"), "done")
+        self.assertEqual(chapter.get("content_md"), "final content")
+
+        with self.SessionLocal() as db:
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual(rows, [])
+
+    def test_update_chapter_content_does_not_create_project_tasks(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.put(
+                "/api/chapters/c1",
+                headers={"X-Test-User": "u_owner"},
+                json={"content_md": "draft content update"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get("ok"))
+        chapter = (payload.get("data") or {}).get("chapter") or {}
+        self.assertEqual(chapter.get("content_md"), "draft content update")
+
+        with self.SessionLocal() as db:
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual(rows, [])
+
+    def test_done_chapter_can_only_be_reopened_without_content_changes(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "done"
+            chapter.content_md = "locked content"
+            chapter.summary = "locked summary"
+            db.commit()
+
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.put(
+                "/api/chapters/c1",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "drafting"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload.get("ok"))
+        chapter = (payload.get("data") or {}).get("chapter") or {}
+        self.assertEqual(chapter.get("status"), "drafting")
+        self.assertEqual(chapter.get("content_md"), "locked content")
+        self.assertEqual(chapter.get("summary"), "locked summary")
+
+        with self.SessionLocal() as db:
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual(rows, [])
+
+    def test_done_chapter_reopen_rejects_simultaneous_content_changes(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "done"
+            chapter.content_md = "locked content"
+            db.commit()
+
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp = client.put(
+                "/api/chapters/c1",
+                headers={"X-Test-User": "u_owner"},
+                json={"status": "drafting", "content_md": "changed"},
+            )
+
+        self.assertEqual(resp.status_code, 400)
+        payload = resp.json()
+        self.assertFalse(payload.get("ok"))
+        error = payload.get("error") or {}
+        self.assertEqual(error.get("code"), "VALIDATION_ERROR")
+        self.assertEqual((error.get("details") or {}).get("reason"), "chapter_done_readonly")
+
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            self.assertEqual(chapter.status, "done")
+            self.assertEqual(chapter.content_md, "locked content")
+            rows = db.execute(select(ProjectTask)).scalars().all()
+        self.assertEqual(rows, [])

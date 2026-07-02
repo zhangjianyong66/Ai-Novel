@@ -109,8 +109,11 @@ export type WorldBookAutoUpdateSectionProps = {
 };
 
 export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProps) {
-  const triggerDisabled = !props.projectId || props.actionLoading || props.chapterMetaLoading || !props.latestDoneChapter;
-  const appliedSummary = formatWorldBookAutoUpdateAppliedSummary((props.task?.result as Record<string, unknown> | null)?.applied);
+  const triggerDisabled =
+    !props.projectId || props.actionLoading || props.chapterMetaLoading || !props.latestDoneChapter;
+  const appliedSummary = formatWorldBookAutoUpdateAppliedSummary(
+    (props.task?.result as Record<string, unknown> | null)?.applied,
+  );
 
   return (
     <div className="panel p-4">
@@ -136,12 +139,7 @@ export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProp
           >
             {WORLDBOOK_COPY.autoUpdateRetry}
           </button>
-          <button
-            className="btn btn-primary"
-            disabled={triggerDisabled}
-            onClick={props.onTrigger}
-            type="button"
-          >
+          <button className="btn btn-primary" disabled={triggerDisabled} onClick={props.onTrigger} type="button">
             {props.actionLoading ? WORLDBOOK_COPY.autoUpdateProcessing : WORLDBOOK_COPY.autoUpdateTrigger}
           </button>
           {props.projectId ? (

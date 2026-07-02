@@ -5,6 +5,15 @@ export type ChapterAutoUpdatesTriggerResult = {
 
 export const CHAPTER_LIST_SIDEBAR_WIDTH_CLASS = "w-[260px]" as const;
 
+export function isSaveAndTriggerDisabled(params: {
+  loadingChapter: boolean;
+  generating: boolean;
+  saving: boolean;
+  autoUpdatesTriggering: boolean;
+}): boolean {
+  return Boolean(params.loadingChapter || params.generating || params.saving || params.autoUpdatesTriggering);
+}
+
 export function pickFirstProjectTaskId(tasks: Record<string, string | null> | null | undefined): string | null {
   if (!tasks) return null;
   for (const value of Object.values(tasks)) {

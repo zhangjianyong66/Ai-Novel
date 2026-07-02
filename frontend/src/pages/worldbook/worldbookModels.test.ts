@@ -146,14 +146,18 @@ describe("worldbookModels", () => {
   });
 
   it("formats no-op applied result as completed without changes", () => {
-    expect(formatWorldBookAutoUpdateAppliedSummary({ no_op: true, created: 0, updated: 0, deleted: 0, skipped: 0 })).toEqual({
+    expect(
+      formatWorldBookAutoUpdateAppliedSummary({ no_op: true, created: 0, updated: 0, deleted: 0, skipped: 0 }),
+    ).toEqual({
       title: "已完成，未产生世界书变更",
       detail: "模型未提出可应用的新增/合并/更新条目；本次没有修改世界书。",
     });
   });
 
   it("formats applied counts without exposing raw JSON", () => {
-    expect(formatWorldBookAutoUpdateAppliedSummary({ created: 1, updated: 2, deleted: 3, skipped: 4, no_op: false })).toEqual({
+    expect(
+      formatWorldBookAutoUpdateAppliedSummary({ created: 1, updated: 2, deleted: 3, skipped: 4, no_op: false }),
+    ).toEqual({
       title: "已应用：新增 1，更新 2，删除 3，跳过 4",
       detail: null,
     });

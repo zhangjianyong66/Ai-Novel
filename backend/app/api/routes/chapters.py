@@ -768,6 +768,13 @@ def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: 
     request_id = request.state.request_id
     row = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
     prev_status = str(row.status or "")
+    if prev_status == "done":
+        changed_fields = set(getattr(body, "model_fields_set", set()) or set())
+        if changed_fields != {"status"} or body.status != "drafting":
+            raise AppError.validation(
+                "章节已定稿，需先回退为起草中才能编辑",
+                details={"reason": "chapter_done_readonly", "allowed_action": "reopen_drafting"},
+            )
 
     if body.title is not None:
         row.title = body.title
@@ -784,40 +791,6 @@ def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: 
     db.commit()
     db.refresh(row)
 
-    next_status = str(row.status or "")
-    if prev_status != "done" and next_status == "done":
-        token = None
-        updated_at = getattr(row, "updated_at", None)
-        if updated_at is not None:
-            token = updated_at.isoformat().replace("+00:00", "Z")
-
-        try:
-            schedule_chapter_done_tasks(
-                db=db,
-                project_id=str(row.project_id),
-                actor_user_id=user_id,
-                request_id=request_id,
-                chapter_id=str(row.id),
-                chapter_token=token,
-                reason="chapter_done",
-            )
-        except Exception as exc:
-            log_event(
-                logger,
-                "warning",
-                event="CHAPTER_DONE_TASKS",
-                action="trigger_failed",
-                project_id=str(row.project_id),
-                chapter_id=str(row.id),
-                **exception_log_fields(exc),
-            )
-    else:
-        schedule_vector_rebuild_task(
-            db=db, project_id=str(row.project_id), actor_user_id=user_id, request_id=request_id, reason="chapter_update"
-        )
-        schedule_search_rebuild_task(
-            db=db, project_id=str(row.project_id), actor_user_id=user_id, request_id=request_id, reason="chapter_update"
-        )
     return ok_payload(request_id=request_id, data={"chapter": ChapterOut.model_validate(row).model_dump()})
 
 
@@ -841,15 +814,39 @@ def trigger_chapter_auto_updates(
         if updated_at is not None:
             token = updated_at.isoformat().replace("+00:00", "Z")
 
-    tasks = schedule_chapter_done_tasks(
-        db=db,
-        project_id=str(chapter.project_id),
-        actor_user_id=user_id,
-        request_id=request_id,
-        chapter_id=str(chapter.id),
-        chapter_token=token,
-        reason="chapter_auto_updates",
-    )
+    if str(chapter.status or "") == "done":
+        tasks = schedule_chapter_done_tasks(
+            db=db,
+            project_id=str(chapter.project_id),
+            actor_user_id=user_id,
+            request_id=request_id,
+            chapter_id=str(chapter.id),
+            chapter_token=token,
+            reason="chapter_auto_updates",
+        )
+    else:
+        tasks = {
+            "vector_rebuild": schedule_vector_rebuild_task(
+                db=db,
+                project_id=str(chapter.project_id),
+                actor_user_id=user_id,
+                request_id=request_id,
+                reason="chapter_auto_updates_draft",
+            ),
+            "search_rebuild": schedule_search_rebuild_task(
+                db=db,
+                project_id=str(chapter.project_id),
+                actor_user_id=user_id,
+                request_id=request_id,
+                reason="chapter_auto_updates_draft",
+            ),
+            "worldbook_auto_update": None,
+            "characters_auto_update": None,
+            "plot_auto_update": None,
+            "graph_auto_update": None,
+            "table_ai_update": None,
+            "fractal_rebuild": None,
+        }
 
     return ok_payload(request_id=request_id, data={"tasks": tasks, "chapter_token": token})
 

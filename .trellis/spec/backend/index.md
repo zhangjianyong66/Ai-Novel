@@ -12,6 +12,7 @@
 - [日志规范](./logging-guidelines.md)：JSON 日志、`X-Request-Id`、敏感信息脱敏。
 - [项目包导入导出规范](./project-bundle-guidelines.md)：项目包 API、环境变量、数据范围、敏感字段和前端预检契约。
 - [世界书自动更新规范](./worldbook-guidelines.md)：手动触发章节级更新、错误契约和测试要求。
+- [章节定稿自动更新规范](./chapter-auto-update-guidelines.md)：章节自动更新触发接口、done 校验和 ProjectTask 调度边界。
 - [质量规范](./quality-guidelines.md)：运行命令、测试要求、安全与生成链路检查。
 
 ## 常用命令

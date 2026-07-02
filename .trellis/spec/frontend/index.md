@@ -9,6 +9,7 @@
 - [Hook 规范](./hook-guidelines.md)：数据加载、自动保存、请求竞态和清理。
 - [状态管理](./state-management.md)：Context、本地状态、服务端状态、URL 状态。
 - [类型安全](./type-safety.md)：API 类型、错误类型、运行时收窄。
+- [任务中心规范](./task-center-guidelines.md)：Project Task 类型中文显示和码值保留约定。
 - [质量规范](./quality-guidelines.md)：运行、构建、lint、测试和 UI class 检查。
 
 ## 常用命令

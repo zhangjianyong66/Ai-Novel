@@ -11,6 +11,7 @@ import { ProjectTaskRuntimePanel } from "./ProjectTaskRuntimePanel";
 import { StatusBadge } from "./StatusBadge";
 import { TASK_CENTER_COPY } from "./taskCenterCopy";
 import {
+  formatProjectTaskKindLabel,
   formatTaskCenterErrorText,
   type HealthData,
   type MemoryChangeSetSummary,
@@ -422,7 +423,10 @@ export function TaskCenterProjectTasksSection(props: TaskCenterProjectTasksSecti
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-sm text-ink">
-                  {item.kind} <span className="text-subtext">({item.id})</span>
+                  {formatProjectTaskKindLabel(item.kind)}{" "}
+                  <span className="text-subtext">
+                    ({item.kind} · {item.id})
+                  </span>
                 </div>
                 {item.idempotency_key ? (
                   <div className="mt-1 truncate text-xs text-subtext">
@@ -657,7 +661,8 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
             <div className="text-sm text-ink">{TASK_CENTER_COPY.detailOverview}</div>
             <div className="mt-2 grid gap-1 text-xs text-subtext">
               <div>
-                Kind：<span className="font-mono text-ink">{props.selected.item.kind}</span>
+                任务类型：<span className="text-ink">{formatProjectTaskKindLabel(props.selected.item.kind)}</span>
+                <span className="ml-2 font-mono text-subtext">({props.selected.item.kind})</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span>状态：</span>

@@ -4,6 +4,7 @@ import {
   buildBatchTaskCenterHref,
   buildProjectTaskCenterHref,
   buildWritingTaskCenterHref,
+  isSaveAndTriggerDisabled,
   pickFirstProjectTaskId,
 } from "./writingPageModels";
 
@@ -11,6 +12,25 @@ describe("writingPageModels", () => {
   it("picks the first non-empty task id", () => {
     expect(pickFirstProjectTaskId(null)).toBeNull();
     expect(pickFirstProjectTaskId({ a: null, b: "  ", c: "task-1" })).toBe("task-1");
+  });
+
+  it("keeps save-and-trigger enabled for already saved chapters", () => {
+    expect(
+      isSaveAndTriggerDisabled({
+        loadingChapter: false,
+        generating: false,
+        saving: false,
+        autoUpdatesTriggering: false,
+      }),
+    ).toBe(false);
+    expect(
+      isSaveAndTriggerDisabled({
+        loadingChapter: false,
+        generating: false,
+        saving: true,
+        autoUpdatesTriggering: false,
+      }),
+    ).toBe(true);
   });
 
   it("builds stable task center links", () => {

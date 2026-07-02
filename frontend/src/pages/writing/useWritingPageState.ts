@@ -279,7 +279,7 @@ export function useWritingPageState(): WritingPageState {
   );
 
   const saveAndTriggerAutoUpdates = useCallback(async () => {
-    if (!projectId || !activeChapter || autoUpdatesTriggering || !dirty) return;
+    if (!projectId || !activeChapter || autoUpdatesTriggering) return;
 
     setAutoUpdatesTriggering(true);
     try {
@@ -316,7 +316,7 @@ export function useWritingPageState(): WritingPageState {
     } finally {
       setAutoUpdatesTriggering(false);
     }
-  }, [activeChapter, autoUpdatesTriggering, dirty, navigate, projectId, saveChapter, toast]);
+  }, [activeChapter, autoUpdatesTriggering, navigate, projectId, saveChapter, toast]);
 
   const saveAndGenerateNext = useCallback(async () => {
     if (!activeChapter) return;

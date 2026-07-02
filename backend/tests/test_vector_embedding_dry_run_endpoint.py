@@ -15,6 +15,8 @@ from app.api.routes import vector as vector_routes
 from app.core.errors import AppError
 from app.db.base import Base
 from app.main import app_error_handler, validation_error_handler
+from app.models.knowledge_base import KnowledgeBase
+from app.models.llm_profile import LLMProfile
 from app.models.project import Project
 from app.models.project_settings import ProjectSettings
 from app.models.user import User
@@ -68,13 +70,15 @@ class TestVectorEmbeddingDryRunEndpoint(unittest.TestCase):
             tables=[
                 User.__table__,
                 Project.__table__,
+                LLMProfile.__table__,
                 ProjectSettings.__table__,
+                KnowledgeBase.__table__,
             ],
         )
         self.SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
         self.app = _make_test_app()
 
-        self.secret = "sk-test-SECRET1234"
+        self.secret = "unit-test-secret-1234"
         with self.SessionLocal() as db:
             db.add(User(id="u_owner", display_name="owner"))
             db.add(Project(id="p1", owner_user_id="u_owner", name="Project 1", genre=None, logline=None))
@@ -122,10 +126,54 @@ class TestVectorEmbeddingDryRunEndpoint(unittest.TestCase):
         self.assertEqual(embedding.get("base_url"), "http://127.0.0.1:4011/v1")
         self.assertEqual(embedding.get("model"), "text-embedding-mock")
         self.assertEqual(embedding.get("has_api_key"), True)
-        self.assertEqual(embedding.get("masked_api_key"), "sk-****1234")
+        self.assertEqual(embedding.get("masked_api_key"), "unit-****1234")
 
         passed = captured.get("embedding") or {}
         self.assertEqual((passed.get("api_key") or ""), self.secret)
+
+    def test_ingest_falls_back_to_project_default_llm_profile_api_key(self) -> None:
+        captured: dict[str, object] = {}
+
+        with self.SessionLocal() as db:
+            db.add(
+                LLMProfile(
+                    id="prof-default",
+                    owner_user_id="u_owner",
+                    name="Default",
+                    provider="openai_compatible",
+                    base_url="http://127.0.0.1:4011/v1",
+                    model="gpt-test",
+                    api_key_ciphertext="unit-profile-secret-1234",
+                    api_key_masked="unit****1234",
+                )
+            )
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.llm_profile_id = "prof-default"
+            settings = db.get(ProjectSettings, "p1")
+            assert settings is not None
+            settings.vector_embedding_api_key_ciphertext = None
+            settings.vector_embedding_api_key_masked = None
+            db.commit()
+
+        def _fake_ingest_chunks(*, project_id: str, kb_id: str, chunks: list[object], embedding: dict | None = None) -> dict:
+            captured["embedding"] = dict(embedding or {})
+            return {"enabled": True, "skipped": False, "disabled_reason": None, "ingested": len(chunks), "backend": "pgvector"}
+
+        with patch.object(vector_routes, "SessionLocal", self.SessionLocal):
+            with patch.object(vector_routes, "build_project_chunks", return_value=[object()]):
+                with patch.object(vector_routes, "ingest_chunks", side_effect=_fake_ingest_chunks):
+                    client = TestClient(self.app)
+                    resp = client.post(
+                        "/api/projects/p1/vector/ingest",
+                        headers={"X-Test-User": "u_owner"},
+                        json={"kb_ids": ["default"]},
+                    )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["result"]["enabled"], True)
+        embedding = captured.get("embedding") or {}
+        self.assertEqual(embedding.get("api_key"), "unit-profile-secret-1234")
 
 
 if __name__ == "__main__":

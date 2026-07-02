@@ -168,3 +168,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: AI生成用户指令历史
+
+**Date**: 2026-07-02
+**Task**: AI生成用户指令历史
+**Branch**: `main`
+
+### Summary
+
+为单章AI生成增加用户指令历史保存、默认指令下拉选项、后端持久化接口与迁移，并补充前后端测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `924ecf6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

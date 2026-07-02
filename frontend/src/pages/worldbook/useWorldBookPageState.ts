@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { useConfirm } from "../../components/ui/confirm";
 import { useToast } from "../../components/ui/toast";
+import { useChapterMetaList } from "../../hooks/useChapterMetaList";
 import { useProjectData } from "../../hooks/useProjectData";
 import { UI_COPY } from "../../lib/uiCopy";
 import type { ApiError } from "../../services/apiClient";
@@ -42,6 +43,7 @@ import {
   buildWorldBookFilterState,
   downloadJson,
   EMPTY_WORLD_BOOK_ENTRIES,
+  getLatestDoneChapterForWorldBookAutoUpdate,
   normalizeWorldBookCharLimit,
   parseKeywords,
   resolveSelectedWorldBookEntryIds,
@@ -77,6 +79,11 @@ export function useWorldBookPageState(): WorldBookPageState {
   const entries = entriesQuery.data ?? EMPTY_WORLD_BOOK_ENTRIES;
   const loading = entriesQuery.loading;
   const setEntries = entriesQuery.setData;
+  const chapterMetaQuery = useChapterMetaList(projectId);
+  const latestDoneChapter = useMemo(
+    () => getLatestDoneChapterForWorldBookAutoUpdate(chapterMetaQuery.chapters),
+    [chapterMetaQuery.chapters],
+  );
 
   const autoUpdateTaskQuery = useProjectData<ProjectTask | null>(projectId, async (id) =>
     getLatestWorldBookAutoUpdateTask(id),
@@ -123,10 +130,14 @@ export function useWorldBookPageState(): WorldBookPageState {
       toast.toastError(UI_COPY.worldbook.missingProjectId);
       return;
     }
+    if (!latestDoneChapter) {
+      toast.toastError(WORLDBOOK_COPY.autoUpdateNoDoneChapter);
+      return;
+    }
     if (autoUpdateActionLoading) return;
     setAutoUpdateActionLoading(true);
     try {
-      await triggerWorldBookAutoUpdate(projectId);
+      await triggerWorldBookAutoUpdate(projectId, latestDoneChapter.id);
       toast.toastSuccess(WORLDBOOK_COPY.autoUpdateTriggeredToast);
       await autoUpdateTaskQuery.refresh();
     } catch (error) {
@@ -135,7 +146,7 @@ export function useWorldBookPageState(): WorldBookPageState {
     } finally {
       setAutoUpdateActionLoading(false);
     }
-  }, [autoUpdateActionLoading, autoUpdateTaskQuery, projectId, toast]);
+  }, [autoUpdateActionLoading, autoUpdateTaskQuery, latestDoneChapter, projectId, toast]);
 
   const retryAutoUpdate = useCallback(async () => {
     if (!autoUpdateTask || autoUpdateTask.status !== "failed" || autoUpdateActionLoading) return;
@@ -702,6 +713,8 @@ export function useWorldBookPageState(): WorldBookPageState {
       loading: autoUpdateTaskQuery.loading,
       actionLoading: autoUpdateActionLoading,
       task: autoUpdateTask,
+      latestDoneChapter,
+      chapterMetaLoading: Boolean(projectId) && (!chapterMetaQuery.hasLoaded || chapterMetaQuery.loading),
       onRefresh: () => void autoUpdateTaskQuery.refresh(),
       onRetry: () => void retryAutoUpdate(),
       onTrigger: () => void triggerAutoUpdate(),

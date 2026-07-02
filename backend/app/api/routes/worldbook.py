@@ -149,6 +149,12 @@ def trigger_worldbook_auto_update(
             .first()
         )
 
+    if chapter is None:
+        raise AppError.validation(
+            "暂无已完成章节，世界书自动更新需要章节正文；请先完成章节或在章节页面触发",
+            details={"reason": "no_done_chapter"},
+        )
+
     cid = str(getattr(chapter, "id", "") or "").strip() or None
     updated_at = getattr(chapter, "updated_at", None) if chapter is not None else None
     token = updated_at.isoformat().replace("+00:00", "Z") if updated_at is not None else utc_now().isoformat().replace("+00:00", "Z")

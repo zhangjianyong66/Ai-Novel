@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 import { containsPinyinMatch, looksLikePinyinToken, tokenizeSearch } from "../../lib/pinyin";
+import type { ChapterListItem } from "../../types";
 import type { WorldBookEntry, WorldBookPriority } from "../../services/worldbookApi";
 
 import type { WorldBookSortMode } from "./useWorldBookFilters";
@@ -30,6 +31,53 @@ export type WorldBookFilterState = {
 export const EMPTY_WORLD_BOOK_ENTRIES: WorldBookEntry[] = [];
 export const WORLD_BOOK_ENTRY_RENDER_THRESHOLD = 150;
 export const WORLD_BOOK_ENTRY_PAGE_SIZE = 100;
+
+export type WorldBookAutoUpdateAppliedSummary = {
+  title: string;
+  detail: string | null;
+};
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+export function getLatestDoneChapterForWorldBookAutoUpdate(
+  chapters: readonly ChapterListItem[],
+): ChapterListItem | null {
+  const done = chapters.filter((chapter) => chapter.status === "done");
+  if (!done.length) return null;
+  return [...done].sort((left, right) => {
+    const leftTime = Date.parse(left.updated_at);
+    const rightTime = Date.parse(right.updated_at);
+    const leftValue = Number.isFinite(leftTime) ? leftTime : 0;
+    const rightValue = Number.isFinite(rightTime) ? rightTime : 0;
+    return rightValue - leftValue || right.id.localeCompare(left.id);
+  })[0];
+}
+
+export function formatWorldBookChapterLabel(chapter: ChapterListItem): string {
+  const title = String(chapter.title || "").trim();
+  return title ? `第 ${chapter.number} 章：${title}` : `第 ${chapter.number} 章`;
+}
+
+export function formatWorldBookAutoUpdateAppliedSummary(applied: unknown): WorldBookAutoUpdateAppliedSummary | null {
+  if (!applied || typeof applied !== "object") return null;
+  const data = applied as Record<string, unknown>;
+  if (data.no_op === true) {
+    return {
+      title: "已完成，未产生世界书变更",
+      detail: "模型未提出可应用的新增/合并/更新条目；本次没有修改世界书。",
+    };
+  }
+  const created = readNumber(data.created);
+  const updated = readNumber(data.updated);
+  const deleted = readNumber(data.deleted);
+  const skipped = readNumber(data.skipped);
+  return {
+    title: `已应用：新增 ${created}，更新 ${updated}，删除 ${deleted}，跳过 ${skipped}`,
+    detail: null,
+  };
+}
 
 export function taskStatusTone(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
   const s = String(status || "").trim();

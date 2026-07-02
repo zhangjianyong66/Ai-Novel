@@ -4,6 +4,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Drawer } from "../../components/ui/Drawer";
 import { humanizeTaskStatus } from "../../lib/humanize";
 import { UI_COPY } from "../../lib/uiCopy";
+import type { ChapterListItem } from "../../types";
 import type {
   ProjectTask,
   WorldBookEntry,
@@ -17,6 +18,8 @@ import type {
 import { WORLDBOOK_COPY } from "./worldbookCopy";
 import {
   highlightText,
+  formatWorldBookAutoUpdateAppliedSummary,
+  formatWorldBookChapterLabel,
   taskStatusTone,
   WORLD_BOOK_ENTRY_RENDER_THRESHOLD,
   type WorldBookEntryForm,
@@ -98,12 +101,17 @@ export type WorldBookAutoUpdateSectionProps = {
   loading: boolean;
   actionLoading: boolean;
   task: ProjectTask | null | undefined;
+  latestDoneChapter: ChapterListItem | null;
+  chapterMetaLoading: boolean;
   onRefresh: () => void;
   onRetry: () => void;
   onTrigger: () => void;
 };
 
 export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProps) {
+  const triggerDisabled = !props.projectId || props.actionLoading || props.chapterMetaLoading || !props.latestDoneChapter;
+  const appliedSummary = formatWorldBookAutoUpdateAppliedSummary((props.task?.result as Record<string, unknown> | null)?.applied);
+
   return (
     <div className="panel p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -130,7 +138,7 @@ export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProp
           </button>
           <button
             className="btn btn-primary"
-            disabled={!props.projectId || props.actionLoading}
+            disabled={triggerDisabled}
             onClick={props.onTrigger}
             type="button"
           >
@@ -149,6 +157,16 @@ export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProp
       </div>
 
       <div className="mt-3">
+        {props.chapterMetaLoading ? <div className="text-xs text-subtext">{UI_COPY.common.loading}</div> : null}
+        {!props.chapterMetaLoading && props.latestDoneChapter ? (
+          <div className="mb-2 text-xs text-subtext">
+            {WORLDBOOK_COPY.autoUpdateTargetChapter}
+            <span className="text-ink">{formatWorldBookChapterLabel(props.latestDoneChapter)}</span>
+          </div>
+        ) : null}
+        {!props.chapterMetaLoading && !props.latestDoneChapter ? (
+          <div className="mb-2 text-xs text-warning">{WORLDBOOK_COPY.autoUpdateNoDoneChapter}</div>
+        ) : null}
         {props.loading ? <div className="text-xs text-subtext">{UI_COPY.common.loading}</div> : null}
         {!props.loading && !props.task ? (
           <div className="text-xs text-subtext">{WORLDBOOK_COPY.autoUpdateEmpty}</div>
@@ -188,13 +206,13 @@ export function WorldBookAutoUpdateSection(props: WorldBookAutoUpdateSectionProp
               </span>
             </div>
 
-            {typeof (props.task.result as Record<string, unknown> | null)?.applied === "object" &&
-            (props.task.result as Record<string, unknown>).applied ? (
-              <div className="flex flex-wrap gap-2">
-                <span>{WORLDBOOK_COPY.autoUpdateApplied}</span>
-                <span className="font-mono text-ink">
-                  {JSON.stringify((props.task.result as Record<string, unknown>).applied)}
-                </span>
+            {appliedSummary ? (
+              <div className="grid gap-1">
+                <div className="flex flex-wrap gap-2">
+                  <span>{WORLDBOOK_COPY.autoUpdateApplied}</span>
+                  <span className="text-ink">{appliedSummary.title}</span>
+                </div>
+                {appliedSummary.detail ? <div className="text-subtext">{appliedSummary.detail}</div> : null}
               </div>
             ) : null}
 

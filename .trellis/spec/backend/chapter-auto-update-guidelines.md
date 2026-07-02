@@ -19,6 +19,7 @@
 
 - `PUT /api/chapters/{chapter_id}` 不调用 `schedule_chapter_done_tasks`、`schedule_vector_rebuild_task` 或 `schedule_search_rebuild_task`。
 - `PUT` 遇到 `prev_status == "done"` 时，只允许请求体恰好为 `{ "status": "drafting" }`；不允许同时修改 `title`、`plan`、`content_md` 或 `summary`。
+- 写作页前端处理“已定稿 -> 起草中”且其它字段未变的保存时，必须构造最小 payload `{ status: "drafting" }`，不能复用普通完整保存 payload。
 - `POST /trigger_auto_updates` 要求章节必须存在且当前用户有编辑权限；章节 `status == "done"` 时调用完整 `schedule_chapter_done_tasks`，否则只调度 `schedule_vector_rebuild_task` 和 `schedule_search_rebuild_task`。
 - `generation_run_id` 传入时作为幂等 token；未传时使用章节 `updated_at`。
 - 成功响应 data 包含：
@@ -38,8 +39,10 @@
 - Good: 草稿章节点击“一键保存并触发更新”只补跑 `vector_rebuild` 和 `search_rebuild`，不写入长期记忆、世界书或图谱。
 - Base: 已定稿章节重复触发，调度器按 `chapter_token` 幂等并去重旧 queued 任务。
 - Good: 已定稿章节要编辑时，先 `PUT {"status":"drafting"}` 回退，之后再普通保存内容。
+- Good: 前端只切换草稿状态且没有编辑正文/标题/计划/摘要时，保存请求只发送 `{ "status": "drafting" }`，成功响应后再刷新表单基线。
 - Bad: 普通保存或草稿章节直接调用触发接口也创建 `worldbook_auto_update` / `graph_auto_update` 等任务，污染长期记忆和图谱。
 - Bad: `PUT {"status":"drafting","content_md":"..."}` 一边解锁一边修改正文，绕过定稿只读规则。
+- Bad: 前端在回退草稿时仍发送完整章节表单，即使字段值未变化，也会触发 `chapter_done_readonly`。
 
 ### 6. Tests Required
 
@@ -49,6 +52,9 @@
   - `prev_status == "done"` 时，回退同时修改正文/摘要/标题/计划返回 `chapter_done_readonly`，数据库内容不变且不新增 `ProjectTask`。
   - `status != done` 时返回成功，且只新增 `vector_rebuild`、`search_rebuild`。
   - `status == done` 时保留既有幂等行为。
+- Frontend 测试：
+  - 基线 `status=done`、下一状态 `status=drafting` 且其它字段相同时，保存 payload 等于 `{ status: "drafting" }`。
+  - 基线 `status=done`、下一状态 `status=drafting` 且内容字段变化时，保存 payload 保持完整字段，由后端只读校验拒绝。
 
 ### 7. Wrong vs Correct
 

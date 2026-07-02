@@ -11,7 +11,7 @@ import { chapterStore } from "../../services/chapterStore";
 import { markWizardProjectChanged } from "../../services/wizard";
 import type { Chapter, ChapterListItem } from "../../types";
 import { WRITING_PAGE_COPY } from "./writingPageCopy";
-import { chapterToForm } from "./writingUtils";
+import { buildChapterSavePayload, chapterToForm } from "./writingUtils";
 import type { ChapterForm } from "./writingUtils";
 
 export function useChapterEditor(args: {
@@ -184,13 +184,10 @@ export function useChapterEditor(args: {
         savingRef.current = true;
         setSaving(true);
         try {
-          const nextChapter = await chapterStore.updateChapterDetail(latestChapter.id, {
-            title: nextSnapshot.title.trim(),
-            plan: nextSnapshot.plan,
-            content_md: nextSnapshot.content_md,
-            summary: nextSnapshot.summary,
-            status: nextSnapshot.status,
-          });
+          const nextChapter = await chapterStore.updateChapterDetail(
+            latestChapter.id,
+            buildChapterSavePayload(chapterToForm(latestChapter), nextSnapshot),
+          );
           if (!saveGuardRef.current.isLatest(seq)) return true;
           setActiveChapter(nextChapter);
           const nextBaseline = chapterToForm(nextChapter);

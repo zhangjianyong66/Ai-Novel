@@ -399,3 +399,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 修复章节规划失败处理
+
+**Date**: 2026-07-03
+**Task**: 修复章节规划失败处理
+**Branch**: `main`
+
+### Summary
+
+修复 plan_first 模式下规划解析失败仍继续生成的问题，规划步骤保留模型配置 max_tokens，并补充回归测试与后端错误处理规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc67604` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

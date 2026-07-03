@@ -800,6 +800,8 @@ def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: 
         row.content_md = body.content_md
     if body.summary is not None:
         row.summary = body.summary
+    if prev_status == "planned" and str(row.content_md or "").strip():
+        row.status = "drafting"
 
     _mark_vector_index_dirty(db, project_id=str(row.project_id))
     db.commit()

@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import clsx from "clsx";
 
 import { GhostwriterIndicator } from "../../components/atelier/GhostwriterIndicator";
 import { MarkdownEditor } from "../../components/atelier/MarkdownEditor";
@@ -19,14 +20,14 @@ import { PromptInspectorDrawer } from "../../components/writing/PromptInspectorD
 import { TablesPanel } from "../../components/writing/TablesPanel";
 import { WritingToolbar } from "../../components/writing/WritingToolbar";
 import { humanizeChapterStatus } from "../../lib/humanize";
-import type { Chapter, ChapterListItem, ChapterStatus } from "../../types";
+import type { Chapter, ChapterListItem } from "../../types";
 
 import type { ChapterForm } from "./writingUtils";
 import {
   CHAPTER_LIST_SIDEBAR_WIDTH_CLASS,
-  getChapterStatusActions,
-  isChapterStatusActionDisabled,
-  isSaveAndTriggerDisabled,
+  getChapterWorkflowState,
+  type ChapterWorkflowAction,
+  type ChapterWorkflowActionId,
 } from "./writingPageModels";
 import {
   getWritingChapterHeading,
@@ -46,21 +47,43 @@ export type WritingEditorSectionProps = {
   saving: boolean;
   statusUpdating: boolean;
   autoUpdatesTriggering: boolean;
+  memoryUpdateFailed: boolean;
+  hasNonEmptyContent: boolean;
   contentEditorTab: "edit" | "preview";
   onContentEditorTabChange: (tab: "edit" | "preview") => void;
   onTitleChange: (value: string) => void;
-  onUpdateChapterStatus: (status: ChapterStatus) => void;
+  onWorkflowAction: (actionId: ChapterWorkflowActionId) => void;
   onPlanChange: (value: string) => void;
   onContentChange: (value: string) => void;
   onSummaryChange: (value: string) => void;
   onContentTextareaRef: (element: HTMLTextAreaElement | null) => void;
   onOpenAnalysis: () => void;
   onOpenChapterTrace: () => void;
-  onDeleteChapter: () => void;
-  onSaveAndTriggerAutoUpdates: () => void;
-  onSaveChapter: () => void;
   generationIndicatorLabel?: string;
 };
+
+function WorkflowActionButton(props: {
+  action: ChapterWorkflowAction | null;
+  onWorkflowAction: (actionId: ChapterWorkflowActionId) => void;
+  variant?: "primary" | "secondary";
+}) {
+  const action = props.action;
+  if (!action) return null;
+
+  return (
+    <button
+      className={clsx(
+        "btn btn-sm",
+        action.danger ? "btn-danger" : props.variant === "primary" ? "btn-primary" : "btn-secondary",
+      )}
+      disabled={action.disabled}
+      onClick={() => props.onWorkflowAction(action.id)}
+      type="button"
+    >
+      {action.disabled && action.pendingLabel ? action.pendingLabel : action.label}
+    </button>
+  );
+}
 
 export function WritingEditorSection(props: WritingEditorSectionProps) {
   if (!props.activeChapter || !props.form) {
@@ -71,6 +94,19 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
     );
   }
 
+  const workflow = getChapterWorkflowState({
+    status: props.activeChapter.status,
+    dirty: props.dirty,
+    hasNonEmptyContent: props.hasNonEmptyContent,
+    loadingChapter: props.loadingChapter,
+    generating: props.generating,
+    saving: props.saving,
+    statusUpdating: props.statusUpdating,
+    autoUpdatesTriggering: props.autoUpdatesTriggering,
+    activeChapterId: props.activeChapter.id,
+    memoryUpdateFailed: props.memoryUpdateFailed,
+  });
+
   return (
     <div className="mx-auto w-full max-w-4xl rounded-atelier border border-border bg-surface p-5 shadow-sm">
       {props.isDoneReadonly ? (
@@ -79,7 +115,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
         </div>
       ) : null}
 
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="font-content text-2xl text-ink">
             {getWritingChapterHeading(props.activeChapter.number)}{" "}
@@ -89,52 +125,73 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             {WRITING_PAGE_COPY.updatedAtPrefix} {props.activeChapter.updated_at}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            className="btn btn-secondary"
-            disabled={props.loadingChapter || props.generating}
-            onClick={props.onOpenAnalysis}
-            type="button"
-          >
-            {WRITING_PAGE_COPY.analysis}
-          </button>
-          <button
-            className="btn btn-secondary"
-            disabled={props.loadingChapter || props.generating}
-            onClick={props.onOpenChapterTrace}
-            type="button"
-          >
-            {WRITING_PAGE_COPY.trace}
-          </button>
-          <button
-            className="btn btn-ghost text-accent hover:bg-accent/10"
-            disabled={props.loadingChapter || props.generating}
-            onClick={props.onDeleteChapter}
-            type="button"
-          >
-            {WRITING_PAGE_COPY.delete}
-          </button>
-          <button
-            className="btn btn-secondary"
-            disabled={isSaveAndTriggerDisabled({
-              loadingChapter: props.loadingChapter,
-              generating: props.generating,
-              saving: props.saving,
-              autoUpdatesTriggering: props.autoUpdatesTriggering,
-            })}
-            onClick={props.onSaveAndTriggerAutoUpdates}
-            type="button"
-          >
-            {props.autoUpdatesTriggering ? WRITING_PAGE_COPY.saveAndTriggerPending : WRITING_PAGE_COPY.saveAndTrigger}
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={!props.dirty || props.saving || props.loadingChapter || props.generating}
-            onClick={props.onSaveChapter}
-            type="button"
-          >
-            {props.saving ? WRITING_PAGE_COPY.saving : WRITING_PAGE_COPY.save}
-          </button>
+        <div className="grid gap-3 xl:min-w-[320px] xl:max-w-[420px]">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={props.loadingChapter || props.generating}
+              onClick={props.onOpenAnalysis}
+              type="button"
+            >
+              {WRITING_PAGE_COPY.analysis}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={props.loadingChapter || props.generating}
+              onClick={props.onOpenChapterTrace}
+              type="button"
+            >
+              {WRITING_PAGE_COPY.trace}
+            </button>
+          </div>
+
+          <div className="grid gap-2 text-xs">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="rounded-atelier border border-border bg-canvas px-2 py-1 font-medium text-ink">
+                {WRITING_PAGE_COPY.writingStatusLabel}: {workflow.writingStatusLabel}
+              </span>
+              <span className="rounded-atelier border border-border bg-canvas px-2 py-1 font-medium text-subtext">
+                {WRITING_PAGE_COPY.memoryStatusLabel}: {workflow.memoryStatusLabel}
+              </span>
+              {workflow.dirtyLabel ? (
+                <span className="rounded-atelier border border-warning/40 bg-warning/10 px-2 py-1 font-medium text-warning">
+                  {workflow.dirtyLabel}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <WorkflowActionButton
+                action={workflow.secondaryAction}
+                onWorkflowAction={props.onWorkflowAction}
+                variant="secondary"
+              />
+              <WorkflowActionButton
+                action={workflow.primaryAction}
+                onWorkflowAction={props.onWorkflowAction}
+                variant="primary"
+              />
+              {workflow.moreActions.length ? (
+                <details className="relative">
+                  <summary className="btn btn-secondary btn-sm list-none cursor-pointer">
+                    {WRITING_PAGE_COPY.moreActions}
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 grid min-w-36 gap-1 rounded-atelier border border-border bg-surface p-2 shadow-sm">
+                    {workflow.moreActions.map((action) => (
+                      <button
+                        className={clsx("btn btn-sm justify-start", action.danger ? "btn-danger" : "btn-secondary")}
+                        disabled={action.disabled}
+                        key={action.id}
+                        onClick={() => props.onWorkflowAction(action.id)}
+                        type="button"
+                      >
+                        {action.disabled && action.pendingLabel ? action.pendingLabel : action.label}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -162,27 +219,6 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             <span className="rounded-atelier border border-border bg-canvas px-2 py-1 text-xs font-medium text-ink">
               {humanizeChapterStatus(props.activeChapter.status)}
             </span>
-            {getChapterStatusActions(props.activeChapter.status).map((action) => {
-              const disabled = isChapterStatusActionDisabled({
-                dirty: props.dirty,
-                loadingChapter: props.loadingChapter,
-                saving: props.saving,
-                statusUpdating: props.statusUpdating,
-                activeChapterId: props.activeChapter?.id,
-              });
-              return (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  disabled={disabled}
-                  key={action.status}
-                  onClick={() => props.onUpdateChapterStatus(action.status)}
-                  title={props.dirty ? WRITING_PAGE_COPY.statusActionNeedsSaveFirst : undefined}
-                  type="button"
-                >
-                  {props.statusUpdating ? WRITING_PAGE_COPY.statusUpdating : action.label}
-                </button>
-              );
-            })}
           </div>
           <div className="text-[11px] text-subtext">{getWritingStatusHint()}</div>
         </div>

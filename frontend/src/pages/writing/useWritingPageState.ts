@@ -32,8 +32,10 @@ import {
   buildBatchTaskCenterHref,
   buildProjectTaskCenterHref,
   buildWritingTaskCenterHref,
+  hasNonEmptyChapterContent,
   pickFirstProjectTaskId,
   type ChapterAutoUpdatesTriggerResult,
+  type ChapterWorkflowActionId,
 } from "./writingPageModels";
 import {
   getWritingAnalysisHref,
@@ -89,6 +91,7 @@ export function useWritingPageState(): WritingPageState {
   const [memoryUpdateOpen, setMemoryUpdateOpen] = useState(false);
   const [foreshadowOpen, setForeshadowOpen] = useState(false);
   const [autoUpdatesTriggering, setAutoUpdatesTriggering] = useState(false);
+  const [memoryUpdateFailedChapterId, setMemoryUpdateFailedChapterId] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
 
   const writingQuery = useProjectData<WritingLoaded>(projectId, async (id) => {
@@ -161,6 +164,7 @@ export function useWritingPageState(): WritingPageState {
   }, [activeChapter]);
 
   const isDoneReadonly = activeChapter?.status === "done";
+  const memoryUpdateFailed = Boolean(activeChapter?.id && memoryUpdateFailedChapterId === activeChapter.id);
 
   useApplyGenerationRun({
     applyRunId,
@@ -308,42 +312,41 @@ export function useWritingPageState(): WritingPageState {
             }
           : undefined,
       );
+      setMemoryUpdateFailedChapterId((current) => (current === activeChapter.id ? null : current));
     } catch (error) {
       const err =
         error instanceof ApiError
           ? error
           : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+      setMemoryUpdateFailedChapterId(activeChapter.id);
       toast.toastError(`${err.message} (${err.code})`, err.requestId);
     } finally {
       setAutoUpdatesTriggering(false);
     }
   }, [activeChapter, autoUpdatesTriggering, navigate, projectId, saveChapter, toast]);
 
-  const updateChapterStatus = useCallback(
-    async (status: ChapterStatus) => {
-      if (!activeChapter || statusUpdating) return;
-      if (dirty) {
-        toast.toastWarning(WRITING_PAGE_COPY.statusActionNeedsSaveFirst);
-        return;
-      }
-
-      const expectedStatus = activeChapter.status;
+  const updateChapterStatusForChapter = useCallback(
+    async (chapter: typeof activeChapter, status: ChapterStatus) => {
+      if (!chapter || statusUpdating) return false;
+      const expectedStatus = chapter.status;
       if (expectedStatus === "done" && status === "drafting") {
         const ok = await confirm.confirm(WRITING_PAGE_COPY.confirms.reopenChapter);
-        if (!ok) return;
+        if (!ok) return false;
       }
 
       setStatusUpdating(true);
       try {
-        const nextChapter = await chapterStore.updateChapterStatus(activeChapter.id, {
+        const nextChapter = await chapterStore.updateChapterStatus(chapter.id, {
           status,
           expected_status: expectedStatus,
         });
         applyChapterDetail(nextChapter);
+        setMemoryUpdateFailedChapterId((current) => (current === nextChapter.id ? null : current));
         markWizardProjectChanged(nextChapter.project_id);
         bumpWizardLocal();
         await refreshWizard();
         toast.toastSuccess(WRITING_PAGE_COPY.statusUpdateSuccess);
+        return true;
       } catch (error) {
         const err =
           error instanceof ApiError
@@ -352,15 +355,89 @@ export function useWritingPageState(): WritingPageState {
         toast.toastError(`${err.message} (${err.code})`, err.requestId);
         if ((err.details as { reason?: unknown } | undefined)?.reason === "chapter_status_conflict") {
           void chapterStore
-            .loadChapterDetail(activeChapter.id, { force: true })
+            .loadChapterDetail(chapter.id, { force: true })
             .then(applyChapterDetail)
             .catch(() => undefined);
         }
+        return false;
       } finally {
         setStatusUpdating(false);
       }
     },
-    [activeChapter, applyChapterDetail, bumpWizardLocal, confirm, dirty, refreshWizard, statusUpdating, toast],
+    [applyChapterDetail, bumpWizardLocal, confirm, refreshWizard, statusUpdating, toast],
+  );
+
+  const finalizeAfterSave = useCallback(async () => {
+    if (!activeChapter) return;
+    const ok = await saveChapter();
+    if (!ok) return;
+
+    try {
+      const latest = await chapterStore.loadChapterDetail(activeChapter.id, { force: true });
+      applyChapterDetail(latest);
+      if (latest.status !== "drafting") {
+        toast.toastWarning(WRITING_PAGE_COPY.finalizeNeedsDraft);
+        return;
+      }
+      await updateChapterStatusForChapter(latest, "done");
+    } catch (error) {
+      const err =
+        error instanceof ApiError
+          ? error
+          : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    }
+  }, [activeChapter, applyChapterDetail, saveChapter, toast, updateChapterStatusForChapter]);
+
+  const runChapterWorkflowAction = useCallback(
+    async (actionId: ChapterWorkflowActionId) => {
+      if (!activeChapter) return;
+      if (actionId === "save_plan" || actionId === "save_draft") {
+        await saveChapter();
+        return;
+      }
+      if (actionId === "save_and_finalize") {
+        await finalizeAfterSave();
+        return;
+      }
+      if (actionId === "finalize") {
+        await updateChapterStatusForChapter(activeChapter, "done");
+        return;
+      }
+      if (actionId === "reopen_draft") {
+        await updateChapterStatusForChapter(activeChapter, "drafting");
+        return;
+      }
+      if (actionId === "mark_planned") {
+        await updateChapterStatusForChapter(activeChapter, "planned");
+        return;
+      }
+      if (actionId === "update_memory" || actionId === "retry_memory_update") {
+        await saveAndTriggerAutoUpdates();
+        return;
+      }
+      if (actionId === "delete") {
+        if (dirty) {
+          const choice = await confirm.choose(WRITING_PAGE_COPY.confirms.deleteDirtyChapter);
+          if (choice === "cancel") return;
+          if (choice === "confirm") {
+            const ok = await saveChapter();
+            if (!ok) return;
+          }
+        }
+        await chapterCrud.deleteChapter();
+      }
+    },
+    [
+      activeChapter,
+      chapterCrud,
+      confirm,
+      dirty,
+      finalizeAfterSave,
+      saveAndTriggerAutoUpdates,
+      saveChapter,
+      updateChapterStatusForChapter,
+    ],
   );
 
   const saveAndGenerateNext = useCallback(async () => {
@@ -457,10 +534,12 @@ export function useWritingPageState(): WritingPageState {
       saving,
       statusUpdating,
       autoUpdatesTriggering,
+      memoryUpdateFailed,
+      hasNonEmptyContent: hasNonEmptyChapterContent(form?.content_md),
       contentEditorTab,
       onContentEditorTabChange: setContentEditorTab,
       onTitleChange: (value) => setForm((prev) => (prev ? { ...prev, title: value } : prev)),
-      onUpdateChapterStatus: (status) => void updateChapterStatus(status),
+      onWorkflowAction: (actionId) => void runChapterWorkflowAction(actionId),
       onPlanChange: (value) => setForm((prev) => (prev ? { ...prev, plan: value } : prev)),
       onContentChange: (value) => setForm((prev) => (prev ? { ...prev, content_md: value } : prev)),
       onSummaryChange: (value) => setForm((prev) => (prev ? { ...prev, summary: value } : prev)),
@@ -472,9 +551,6 @@ export function useWritingPageState(): WritingPageState {
         if (!projectId || !activeChapter) return;
         navigate(getWritingAnalysisHref(projectId, activeChapter.id));
       },
-      onDeleteChapter: () => void chapterCrud.deleteChapter(),
-      onSaveAndTriggerAutoUpdates: () => void saveAndTriggerAutoUpdates(),
-      onSaveChapter: () => void saveChapter(),
       generationIndicatorLabel:
         genForm.stream && genStreamProgress
           ? getWritingGenerateIndicatorLabel(genStreamProgress.message, genStreamProgress.progress)

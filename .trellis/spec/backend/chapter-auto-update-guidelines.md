@@ -5,7 +5,7 @@
 ### 1. Scope / Trigger
 
 - Trigger: 修改 `PUT /api/chapters/{chapter_id}`、`PATCH /api/chapters/{chapter_id}/status`、`POST /api/chapters/{chapter_id}/trigger_auto_updates` 或写作页“一键保存并触发更新”行为。
-- 普通保存只保存章节数据并标记索引 dirty，不创建任何 `ProjectTask`。
+- 普通保存只保存章节数据并标记索引 dirty，不创建任何 `ProjectTask`。例外：`planned` 章节保存后若最终 `content_md.strip()` 非空，保存接口会自动把状态提升为 `drafting`。
 - `trigger_auto_updates` 用于写作页“一键保存并触发更新”补跑：草稿章节只允许创建 `vector_rebuild`、`search_rebuild`；定稿章节创建索引任务和完整章节自动更新链，不能对草稿章节创建世界书、角色、剧情记忆、图谱、表格或分形记忆任务。
 
 ### 2. Signatures
@@ -19,7 +19,8 @@
 
 ### 3. Contracts
 
-- `PUT /api/chapters/{chapter_id}` 不调用 `schedule_chapter_done_tasks`、`schedule_vector_rebuild_task` 或 `schedule_search_rebuild_task`，且不得修改 `status`。
+- `PUT /api/chapters/{chapter_id}` 不调用 `schedule_chapter_done_tasks`、`schedule_vector_rebuild_task` 或 `schedule_search_rebuild_task`，且请求体不得显式携带 `status`。
+- `PUT /api/chapters/{chapter_id}` 的唯一自动状态变化是：当前状态为 `planned`，保存字段应用后的最终 `content_md.strip()` 非空时，后端把章节状态改为 `drafting`。保存空白正文、标题、计划或摘要不改变 `planned`。
 - `PATCH /api/chapters/{chapter_id}/status` 是章节状态修改唯一入口；允许 `planned -> drafting`、`drafting -> planned`、`drafting -> done`、`done -> drafting`，成功时只修改状态并标记 vector dirty，不创建任何 `ProjectTask`。
 - 写作页前端状态修改必须使用独立状态动作按钮；保存 payload 不得包含 `status`。
 - `POST /trigger_auto_updates` 要求章节必须存在且当前用户有编辑权限；章节 `status == "done"` 时调用完整 `schedule_chapter_done_tasks`，否则只调度 `schedule_vector_rebuild_task` 和 `schedule_search_rebuild_task`。
@@ -33,6 +34,7 @@
 - 章节不存在或无权限 -> 复用 `require_chapter_editor` 的错误语义。
 - `PUT` 请求体包含 `status` -> `AppError.validation(details={"reason": "chapter_status_update_requires_status_endpoint"})`，且不得修改章节或创建 `ProjectTask`。
 - `PUT` 目标章节 `prev_status == "done"` 且尝试修改内容字段 -> `AppError.validation(details={"reason": "chapter_done_readonly"})`，且不得修改章节或创建 `ProjectTask`。
+- `PUT` 目标章节 `prev_status == "planned"` 且最终正文非空 -> 成功保存并返回 `status="drafting"`，不得创建 `ProjectTask`。
 - `PATCH /status` 的 `expected_status` 与数据库当前状态不一致 -> `AppError.conflict(details={"reason": "chapter_status_conflict"})`。
 - `PATCH /status` 非法状态流转 -> `AppError.validation(details={"reason": "invalid_chapter_status_transition"})`。
 - `POST /trigger_auto_updates` 章节 `status != "done"` -> 成功创建索引重建任务，`worldbook_auto_update`、`characters_auto_update`、`plot_auto_update`、`graph_auto_update`、`table_ai_update`、`fractal_rebuild` 等内容更新任务必须为空。
@@ -44,6 +46,7 @@
 - Good: 草稿章节点击“一键保存并触发更新”只补跑 `vector_rebuild` 和 `search_rebuild`，不写入长期记忆、世界书或图谱。
 - Base: 已定稿章节重复触发，调度器按 `chapter_token` 幂等并去重旧 queued 任务。
 - Good: 已定稿章节要编辑时，先 `PATCH /status {"status":"drafting","expected_status":"done"}` 回退，之后再普通保存内容。
+- Good: 计划中章节保存非空正文时自动变为草稿；保存空白正文或仅保存标题/计划/摘要时仍保持计划中。
 - Good: 前端只切换状态且没有未保存内容修改时，调用 `PATCH /status`，成功响应后刷新表单基线。
 - Bad: 普通保存或草稿章节直接调用触发接口也创建 `worldbook_auto_update` / `graph_auto_update` 等任务，污染长期记忆和图谱。
 - Bad: `PUT {"status":"drafting","content_md":"..."}` 一边解锁一边修改正文，绕过状态接口。
@@ -53,6 +56,8 @@
 
 - Endpoint 测试：
   - `PUT` 请求体包含 `status` 时返回 `chapter_status_update_requires_status_endpoint`，数据库内容不变且不新增 `ProjectTask`。
+  - `PUT` 计划中章节保存空白正文时仍为 `planned`，且不新增 `ProjectTask`。
+  - `PUT` 计划中章节保存非空正文时返回并持久化为 `drafting`，且不新增 `ProjectTask`。
   - `PATCH /status` 合法流转可成功且不新增 `ProjectTask`。
   - `PATCH /status` 状态冲突返回 `chapter_status_conflict`。
   - `PATCH /status` 非法流转返回 `invalid_chapter_status_transition`。
@@ -69,17 +74,24 @@
 #### Wrong
 
 ```python
-row = require_chapter_editor(...)
-db.commit()
-schedule_chapter_done_tasks(..., chapter_id=row.id, ...)
+if "status" in changed_fields:
+    row.status = body.status
+if row.status == "done":
+    schedule_chapter_done_tasks(..., chapter_id=row.id, ...)
 ```
 
 #### Correct
 
 ```python
 row = require_chapter_editor(...)
-if str(row.status or "") == "done" and body.model_fields_set != {"status"}:
+if "status" in changed_fields:
+    raise AppError.validation(..., details={"reason": "chapter_status_update_requires_status_endpoint"})
+prev_status = str(row.status or "")
+if prev_status == "done" and changed_fields:
     raise AppError.validation(..., details={"reason": "chapter_done_readonly"})
+...
+if prev_status == "planned" and str(row.content_md or "").strip():
+    row.status = "drafting"
 db.commit()
 
 chapter = require_chapter_editor(...)

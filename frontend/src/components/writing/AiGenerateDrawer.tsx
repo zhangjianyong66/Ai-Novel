@@ -334,7 +334,12 @@ export function AiGenerateDrawer(props: Props) {
                         />
                       </label>
                       <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                        <span>语义历史（semantic_history）</span>
+                        <span className="min-w-0">
+                          <span className="block">语义历史（semantic_history）</span>
+                          <span className="mt-1 block text-xs leading-5 text-subtext">
+                            高级上下文，可能召回相似旧章节；为减少跑偏默认关闭，按需开启。
+                          </span>
+                        </span>
                         <input
                           className="checkbox"
                           checked={props.genForm.memory_modules.semantic_history}
@@ -350,7 +355,12 @@ export function AiGenerateDrawer(props: Props) {
                         />
                       </label>
                       <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                        <span>未回收伏笔（foreshadow_open_loops）</span>
+                        <span className="min-w-0">
+                          <span className="block">未回收伏笔（foreshadow_open_loops）</span>
+                          <span className="mt-1 block text-xs leading-5 text-subtext">
+                            高级上下文，适合回收线索；可能牵引本章走向，默认关闭。
+                          </span>
+                        </span>
                         <input
                           className="checkbox"
                           checked={props.genForm.memory_modules.foreshadow_open_loops}

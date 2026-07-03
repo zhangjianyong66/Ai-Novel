@@ -705,19 +705,30 @@ export function ContextPreviewDrawer(props: Props) {
                 <div className="text-xs text-subtext">modules（section_enabled）</div>
                 {(
                   [
-                    ["worldbook", "世界书（worldbook）"],
-                    ["story_memory", "剧情记忆（story_memory）"],
-                    ["semantic_history", "语义历史（semantic_history）"],
-                    ["foreshadow_open_loops", "未回收伏笔（foreshadow_open_loops）"],
-                    ["structured", "结构化记忆（structured）"],
-                    ["tables", "表格系统（tables）"],
-                    ["vector_rag", "向量 RAG（vector_rag）"],
-                    ["graph", "关系图（graph）"],
-                    ["fractal", "Fractal（fractal）"],
-                  ] as const
-                ).map(([key, label]) => (
+                    { key: "worldbook", label: "世界书（worldbook）" },
+                    { key: "story_memory", label: "剧情记忆（story_memory）" },
+                    {
+                      key: "semantic_history",
+                      label: "语义历史（semantic_history）",
+                      hint: "高级上下文，可能召回相似旧章节；为减少跑偏默认关闭，按需开启。",
+                    },
+                    {
+                      key: "foreshadow_open_loops",
+                      label: "未回收伏笔（foreshadow_open_loops）",
+                      hint: "高级上下文，适合回收线索；可能牵引本章走向，默认关闭。",
+                    },
+                    { key: "structured", label: "结构化记忆（structured）" },
+                    { key: "tables", label: "表格系统（tables）" },
+                    { key: "vector_rag", label: "向量 RAG（vector_rag）" },
+                    { key: "graph", label: "关系图（graph）" },
+                    { key: "fractal", label: "Fractal（fractal）" },
+                  ] satisfies Array<{ key: keyof MemorySectionEnabled; label: string; hint?: string }>
+                ).map(({ key, label, hint }) => (
                   <label key={key} className="flex items-center justify-between gap-3 text-sm text-ink">
-                    <span>{label}</span>
+                    <span className="min-w-0">
+                      <span className="block">{label}</span>
+                      {hint ? <span className="mt-1 block text-xs leading-5 text-subtext">{hint}</span> : null}
+                    </span>
                     <input
                       className="checkbox"
                       checked={previewSections[key]}

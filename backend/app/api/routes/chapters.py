@@ -279,6 +279,29 @@ def _mcp_research_params(*, cfg: McpResearchConfigSvc, applied: bool, tool_run_i
     }
 
 
+def _plan_parse_app_error(
+    *,
+    parse_error: dict[str, object],
+    request_id: str,
+    finish_reason: str | None = None,
+) -> AppError:
+    err_code = str(parse_error.get("code") or "PLAN_PARSE_ERROR")
+    err_msg = str(parse_error.get("message") or "无法解析规划输出")
+    details: dict[str, object] = {
+        "reason": "plan_parse_failed",
+        "parse_error": parse_error,
+        "request_id": request_id,
+    }
+    if finish_reason is not None:
+        details["finish_reason"] = finish_reason
+    return AppError(
+        code="PLAN_PARSE_ERROR",
+        message=f"规划解析失败（{err_code}）：{err_msg}",
+        status_code=400,
+        details=details,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _ChapterMemoryPreparation:
     memory_pack: dict[str, object] | None
@@ -1122,7 +1145,11 @@ def plan_chapter(
     if plan_step.warnings:
         data["warnings"] = plan_step.warnings
     if plan_step.parse_error is not None:
-        data["parse_error"] = plan_step.parse_error
+        raise _plan_parse_app_error(
+            parse_error=plan_step.parse_error,
+            request_id=request_id,
+            finish_reason=plan_step.finish_reason,
+        )
     if plan_step.finish_reason is not None:
         data["finish_reason"] = plan_step.finish_reason
     return ok_payload(request_id=request_id, data=data)
@@ -1448,6 +1475,12 @@ def generate_chapter(
         plan_out, plan_warnings, plan_parse_error = plan_step.plan_out, plan_step.warnings, plan_step.parse_error
         if plan_step.finish_reason is not None:
             plan_out["finish_reason"] = plan_step.finish_reason
+        if plan_parse_error is not None:
+            raise _plan_parse_app_error(
+                parse_error=plan_parse_error,
+                request_id=request_id,
+                finish_reason=plan_step.finish_reason,
+            )
 
         plan_text = str((plan_out or {}).get("plan") or "").strip()
         if plan_text:
@@ -1847,13 +1880,14 @@ def generate_chapter_stream(
                 )
                 plan_out, plan_warnings, plan_parse_error = plan_step.plan_out, plan_step.warnings, plan_step.parse_error
                 if plan_parse_error is not None:
-                    err_code = str(plan_parse_error.get("code") or "PLAN_PARSE_ERROR")
-                    err_msg = str(plan_parse_error.get("message") or "无法解析规划输出")
-                    yield sse_progress(
-                        message=f"规划解析失败（{err_code}）：{err_msg}（将继续生成） (request_id={request_id})",
-                        progress=6,
-                        status="error",
+                    exc = _plan_parse_app_error(
+                        parse_error=plan_parse_error,
+                        request_id=request_id,
+                        finish_reason=plan_step.finish_reason,
                     )
+                    yield sse_error(error=f"{exc.message} ({exc.code})", code=exc.status_code)
+                    yield sse_done()
+                    return
 
                 plan_text = str((plan_out or {}).get("plan") or "").strip()
                 if plan_text:

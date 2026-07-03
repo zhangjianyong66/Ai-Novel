@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 
+from app.llm.utils import default_max_tokens
 from app.services.chapter_context_service import build_post_edit_render_values
 from app.services.generation_service import PreparedLlmCall, call_llm_and_record, with_param_overrides
 from app.models.project import Project
@@ -285,7 +286,11 @@ def run_plan_llm_step(
     prompt_render_log_json: str | None,
     run_params_extra_json: dict[str, object] | None = None,
 ) -> PlanStepResult:
-    plan_call = with_param_overrides(llm_call, {"temperature": 0.2, "max_tokens": 1024})
+    overrides: dict[str, object] = {"temperature": 0.2}
+    configured_max_tokens = llm_call.params.get("max_tokens")
+    if not isinstance(configured_max_tokens, int) or configured_max_tokens <= 0:
+        overrides["max_tokens"] = default_max_tokens(llm_call.provider, llm_call.model)
+    plan_call = with_param_overrides(llm_call, overrides)
     plan_result = call_llm_and_record(
         logger=logger,
         request_id=request_id,

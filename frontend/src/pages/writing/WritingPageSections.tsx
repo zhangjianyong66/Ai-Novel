@@ -3,6 +3,7 @@ import clsx from "clsx";
 
 import { GhostwriterIndicator } from "../../components/atelier/GhostwriterIndicator";
 import { MarkdownEditor } from "../../components/atelier/MarkdownEditor";
+import { Badge } from "../../components/ui/Badge";
 import { Drawer } from "../../components/ui/Drawer";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { AiGenerateDrawer } from "../../components/writing/AiGenerateDrawer";
@@ -19,7 +20,6 @@ import { PostEditCompareDrawer } from "../../components/writing/PostEditCompareD
 import { PromptInspectorDrawer } from "../../components/writing/PromptInspectorDrawer";
 import { TablesPanel } from "../../components/writing/TablesPanel";
 import { WritingToolbar } from "../../components/writing/WritingToolbar";
-import { humanizeChapterStatus } from "../../lib/humanize";
 import type { Chapter, ChapterListItem } from "../../types";
 
 import type { ChapterForm } from "./writingUtils";
@@ -33,7 +33,6 @@ import {
   getWritingChapterHeading,
   getWritingGenerateIndicatorLabel,
   getWritingReadonlyCallout,
-  getWritingStatusHint,
   WRITING_PAGE_COPY,
 } from "./writingPageCopy";
 
@@ -73,7 +72,7 @@ function WorkflowActionButton(props: {
   return (
     <button
       className={clsx(
-        "btn btn-sm",
+        "btn min-h-10 px-4 shadow-sm",
         action.danger ? "btn-danger" : props.variant === "primary" ? "btn-primary" : "btn-secondary",
       )}
       disabled={action.disabled}
@@ -82,6 +81,42 @@ function WorkflowActionButton(props: {
     >
       {action.disabled && action.pendingLabel ? action.pendingLabel : action.label}
     </button>
+  );
+}
+
+type WorkflowStatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+function getStatusToneClasses(tone: WorkflowStatusTone): string {
+  if (tone === "success") return "bg-success/10 text-success";
+  if (tone === "warning") return "bg-warning/10 text-warning";
+  if (tone === "danger") return "bg-danger/10 text-danger";
+  if (tone === "info") return "bg-info/10 text-info";
+  return "bg-surface text-subtext";
+}
+
+function getMemoryStatusTone(label: string): WorkflowStatusTone {
+  if (label.includes("失败")) return "danger";
+  if (label.includes("更新中")) return "info";
+  if (label.includes("不可")) return "neutral";
+  return "warning";
+}
+
+function WorkflowStatusBadge(props: { label: string; value: string; tone?: WorkflowStatusTone }) {
+  const tone = props.tone ?? "neutral";
+
+  return (
+    <span className="inline-flex h-7 items-center gap-2 rounded-md bg-surface/70 px-2.5 text-xs text-subtext">
+      <span>{props.label}</span>
+      <span
+        className={clsx(
+          "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-semibold",
+          getStatusToneClasses(tone),
+        )}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+        {props.value}
+      </span>
+    </span>
   );
 }
 
@@ -115,8 +150,8 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="grid min-w-0 flex-1 gap-4 xl:max-w-[420px]">
           <div className="font-content text-2xl text-ink">
             {getWritingChapterHeading(props.activeChapter.number)}{" "}
             <span className="text-subtext">{props.dirty ? WRITING_PAGE_COPY.dirtyBadge : ""}</span>
@@ -124,42 +159,39 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
           <div className="mt-1 text-xs text-subtext">
             {WRITING_PAGE_COPY.updatedAtPrefix} {props.activeChapter.updated_at}
           </div>
+          <label className="grid gap-1">
+            <span className="text-xs text-subtext">{WRITING_PAGE_COPY.titleLabel}</span>
+            <input
+              className="input-underline font-content text-xl"
+              name="title"
+              value={props.form.title}
+              readOnly={props.isDoneReadonly}
+              onChange={(event) => props.onTitleChange(event.target.value)}
+            />
+          </label>
         </div>
-        <div className="grid gap-3 xl:min-w-[320px] xl:max-w-[420px]">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={props.loadingChapter || props.generating}
-              onClick={props.onOpenAnalysis}
-              type="button"
-            >
-              {WRITING_PAGE_COPY.analysis}
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={props.loadingChapter || props.generating}
-              onClick={props.onOpenChapterTrace}
-              type="button"
-            >
-              {WRITING_PAGE_COPY.trace}
-            </button>
-          </div>
-
-          <div className="grid gap-2 text-xs">
+        <div className="grid gap-3 xl:min-w-[560px] xl:max-w-[720px]">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="rounded-atelier border border-border bg-canvas px-2 py-1 font-medium text-ink">
-                {WRITING_PAGE_COPY.writingStatusLabel}: {workflow.writingStatusLabel}
-              </span>
-              <span className="rounded-atelier border border-border bg-canvas px-2 py-1 font-medium text-subtext">
-                {WRITING_PAGE_COPY.memoryStatusLabel}: {workflow.memoryStatusLabel}
-              </span>
-              {workflow.dirtyLabel ? (
-                <span className="rounded-atelier border border-warning/40 bg-warning/10 px-2 py-1 font-medium text-warning">
-                  {workflow.dirtyLabel}
-                </span>
-              ) : null}
+              <button
+                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                disabled={props.loadingChapter || props.generating}
+                onClick={props.onOpenAnalysis}
+                type="button"
+              >
+                {WRITING_PAGE_COPY.analysis}
+              </button>
+              <button
+                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                disabled={props.loadingChapter || props.generating}
+                onClick={props.onOpenChapterTrace}
+                type="button"
+              >
+                {WRITING_PAGE_COPY.trace}
+              </button>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="h-8 w-px bg-border/80" aria-hidden="true" />
+            <div className="flex flex-wrap items-center justify-end gap-2.5">
               <WorkflowActionButton
                 action={workflow.secondaryAction}
                 onWorkflowAction={props.onWorkflowAction}
@@ -172,13 +204,16 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
               />
               {workflow.moreActions.length ? (
                 <details className="relative">
-                  <summary className="btn btn-secondary btn-sm list-none cursor-pointer">
+                  <summary className="btn btn-secondary min-h-10 cursor-pointer list-none px-4 shadow-sm">
                     {WRITING_PAGE_COPY.moreActions}
                   </summary>
-                  <div className="absolute right-0 z-20 mt-2 grid min-w-36 gap-1 rounded-atelier border border-border bg-surface p-2 shadow-sm">
+                  <div className="absolute bottom-full right-0 z-30 mb-2 grid min-w-28 gap-1 rounded-atelier border border-border bg-surface p-1 shadow-panel">
                     {workflow.moreActions.map((action) => (
                       <button
-                        className={clsx("btn btn-sm justify-start", action.danger ? "btn-danger" : "btn-secondary")}
+                        className={clsx(
+                          "ui-focus-ring ui-transition-fast flex min-h-8 w-full items-center justify-start rounded-md px-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60",
+                          action.danger ? "text-danger hover:bg-danger/10" : "text-ink hover:bg-canvas",
+                        )}
                         disabled={action.disabled}
                         key={action.id}
                         onClick={() => props.onWorkflowAction(action.id)}
@@ -192,6 +227,29 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
               ) : null}
             </div>
           </div>
+
+          <div className="grid justify-items-end gap-3">
+            <div
+              className="flex flex-wrap items-center justify-end gap-1.5 rounded-atelier border border-border/70 bg-canvas/50 p-1 shadow-inner"
+              aria-live="polite"
+            >
+              <WorkflowStatusBadge
+                label={WRITING_PAGE_COPY.writingStatusLabel}
+                value={workflow.writingStatusLabel}
+                tone={props.activeChapter.status === "done" ? "success" : "neutral"}
+              />
+              <WorkflowStatusBadge
+                label={WRITING_PAGE_COPY.memoryStatusLabel}
+                value={workflow.memoryStatusLabel}
+                tone={getMemoryStatusTone(workflow.memoryStatusLabel)}
+              />
+              {workflow.dirtyLabel ? (
+                <Badge className="rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-warning/30" tone="warning">
+                  {workflow.dirtyLabel}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -201,28 +259,6 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
           label={props.generationIndicatorLabel ?? getWritingGenerateIndicatorLabel()}
         />
       ) : null}
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <label className="grid gap-1 sm:col-span-2">
-          <span className="text-xs text-subtext">{WRITING_PAGE_COPY.titleLabel}</span>
-          <input
-            className="input-underline font-content text-xl"
-            name="title"
-            value={props.form.title}
-            readOnly={props.isDoneReadonly}
-            onChange={(event) => props.onTitleChange(event.target.value)}
-          />
-        </label>
-        <div className="grid gap-1 sm:col-span-1">
-          <span className="text-xs text-subtext">{WRITING_PAGE_COPY.statusLabel}</span>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="rounded-atelier border border-border bg-canvas px-2 py-1 text-xs font-medium text-ink">
-              {humanizeChapterStatus(props.activeChapter.status)}
-            </span>
-          </div>
-          <div className="text-[11px] text-subtext">{getWritingStatusHint()}</div>
-        </div>
-      </div>
 
       <div className="mt-4 grid gap-3">
         <label className="grid gap-1">

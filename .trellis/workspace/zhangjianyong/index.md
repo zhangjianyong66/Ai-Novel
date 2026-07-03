@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
-- **Last Active**: 2026-07-02
+- **Total Sessions**: 12
+- **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~368 | Active |
+| `journal-1.md` | ~401 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-03 | 优化章节状态工作流交互 | `ac3fc48` | `main` |
 | 11 | 2026-07-02 | 拆分章节状态修改动作 | `335012c` | `main` |
 | 10 | 2026-07-02 | 修复定稿章节回退草稿保存失败 | `920e00c` | `main` |
 | 9 | 2026-07-02 | 调整章节一键保存触发更新 | `c6793b5` | `main` |

@@ -366,3 +366,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 优化章节状态工作流交互
+
+**Date**: 2026-07-03
+**Task**: 优化章节状态工作流交互
+**Branch**: `main`
+
+### Summary
+
+完成写作页章节状态工作流 UI、计划中保存正文自动转草稿、定稿/退回/记忆更新入口与测试验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac3fc48` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

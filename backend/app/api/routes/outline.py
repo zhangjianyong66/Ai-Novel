@@ -2489,7 +2489,7 @@ def generate_outline(
             if repair is None:
                 raise AppError(code="OUTLINE_FIX_UNSUPPORTED", message="该任务不支持输出修复", status_code=400)
             fix_system, fix_user, fix_run_type = repair
-            fix_call = with_param_overrides(prepared.llm_call, {"temperature": 0, "max_tokens": 1024})
+            fix_call = with_param_overrides(prepared.llm_call, {"temperature": 0})
             fixed = call_llm_and_record(
                 logger=logger,
                 request_id=request_id,
@@ -2864,7 +2864,7 @@ def generate_outline_stream(
                 if repair is None:
                     raise AppError(code="OUTLINE_FIX_UNSUPPORTED", message="该任务不支持输出修复", status_code=400)
                 fix_system, fix_user, fix_run_type = repair
-                fix_call = with_param_overrides(llm_call, {"temperature": 0, "max_tokens": 1024})
+                fix_call = with_param_overrides(llm_call, {"temperature": 0})
                 try:
                     fixed = call_llm_and_record(
                         logger=logger,

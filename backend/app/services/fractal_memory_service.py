@@ -827,7 +827,7 @@ def rebuild_fractal_memory_v2(
 
     from app.services.generation_service import call_llm_and_record, with_param_overrides
 
-    llm_v2_call = with_param_overrides(llm_call, {"temperature": 0.3, "max_tokens": 1024})
+    llm_v2_call = with_param_overrides(llm_call, {"temperature": 0.3})
     try:
         result = call_llm_and_record(
             logger=logger,

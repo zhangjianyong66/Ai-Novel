@@ -13,8 +13,8 @@ class TestJsonRepairService(unittest.TestCase):
             model="gpt-test",
             base_url="https://example.invalid",
             timeout_seconds=30,
-            params={},
-            params_json="{}",
+            params={"temperature": 0.7, "max_tokens": 12000},
+            params_json='{"temperature": 0.7, "max_tokens": 12000}',
             extra={},
         )
         recorded = RecordedLlmResult(
@@ -25,9 +25,15 @@ class TestJsonRepairService(unittest.TestCase):
             run_id="run-repair",
         )
 
+        captured = []
+
+        def fake_call_llm_and_record_with_retries(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            return recorded, [{"attempt": 1, "request_id": "rid", "run_id": "run-repair"}]
+
         with patch(
             "app.services.json_repair_service.call_llm_and_record_with_retries",
-            return_value=(recorded, [{"attempt": 1, "request_id": "rid", "run_id": "run-repair"}]),
+            side_effect=fake_call_llm_and_record_with_retries,
         ):
             res = repair_json_once(
                 request_id="rid",
@@ -46,6 +52,8 @@ class TestJsonRepairService(unittest.TestCase):
         self.assertTrue(res.get("ok"))
         self.assertEqual(res.get("repair_run_id"), "run-repair")
         self.assertIsInstance(res.get("value"), dict)
+        self.assertEqual(captured[0].params["temperature"], 0)
+        self.assertEqual(captured[0].params["max_tokens"], 12000)
 
     def test_repair_parse_failed_returns_parse_error(self) -> None:
         llm_call = PreparedLlmCall(

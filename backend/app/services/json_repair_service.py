@@ -88,7 +88,7 @@ def repair_json_once(
     system, user = build_json_repair_prompt(schema=schema_text, raw_output=raw)
 
     try:
-        llm_call2 = with_param_overrides(llm_call, {"temperature": 0, "max_tokens": 2048})
+        llm_call2 = with_param_overrides(llm_call, {"temperature": 0})
         max_attempts = task_llm_max_attempts(default=3)
         recorded, _attempts = call_llm_and_record_with_retries(
             logger=logger,

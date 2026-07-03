@@ -27,6 +27,7 @@ from app.services.fractal_memory_service import (
     rebuild_fractal_memory,
     rebuild_fractal_memory_v2,
 )
+from app.services.generation_service import PreparedLlmCall
 
 
 def _default_fractal_cfg() -> FractalConfig:
@@ -266,6 +267,48 @@ class TestFractalMemoryStorageLoop(unittest.TestCase):
         self.assertEqual(prompt_block_v2.get("identifier"), "sys.memory.fractal_v2")
         self.assertEqual(prompt_block_v2.get("role"), "system")
         self.assertEqual(prompt_block_v2.get("text_md"), "")
+
+    def test_rebuild_v2_keeps_configured_max_tokens(self) -> None:
+        llm_call = PreparedLlmCall(
+            provider="openai",
+            model="gpt-test",
+            base_url="https://example.invalid",
+            timeout_seconds=30,
+            params={"temperature": 0.7, "max_tokens": 12000},
+            params_json='{"temperature": 0.7, "max_tokens": 12000}',
+            extra={},
+        )
+        captured = []
+
+        def fake_call_llm_and_record(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            return type(
+                "Result",
+                (),
+                {
+                    "text": '<fractal_v2>{"summary_md":"ok"}</fractal_v2>',
+                    "run_id": "run-v2",
+                    "finish_reason": "stop",
+                    "latency_ms": 1,
+                    "dropped_params": [],
+                },
+            )()
+
+        with self.SessionLocal() as db:
+            self._seed_project(db=db, chapter_count=3)
+            with patch("app.services.generation_service.call_llm_and_record", side_effect=fake_call_llm_and_record):
+                rebuild_fractal_memory_v2(
+                    db=db,
+                    project_id="p1",
+                    reason="test_v2_llm",
+                    request_id="rid-test-v2",
+                    actor_user_id="u1",
+                    api_key="sk-test",
+                    llm_call=llm_call,
+                )
+
+        self.assertEqual(captured[0].params["temperature"], 0.3)
+        self.assertEqual(captured[0].params["max_tokens"], 12000)
 
 
 class TestFractalMemoryRaceRecovery(unittest.TestCase):

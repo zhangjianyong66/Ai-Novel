@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import asyncio
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from app.api.routes.outline import (
     OUTLINE_SEGMENT_INDEX_MAX_CHARS,
+    _PreparedOutlineGeneration,
     _build_outline_missing_chapters_prompts,
     _build_outline_segment_chapter_index,
     _build_outline_segment_prompts,
@@ -26,6 +28,8 @@ from app.api.routes.outline import (
     _recommend_outline_max_tokens,
     _strip_segment_conflicting_prompt_sections,
     _should_use_outline_segmented_mode,
+    generate_outline,
+    generate_outline_stream,
 )
 from app.core.errors import AppError
 from app.services.generation_service import PreparedLlmCall
@@ -33,6 +37,96 @@ from app.services.prompting import render_template
 
 
 class TestOutlineGenerationGuidance(unittest.TestCase):
+    def _prepared_outline(self, *, max_tokens: int = 12000) -> _PreparedOutlineGeneration:
+        llm_call = PreparedLlmCall(
+            provider="openai",
+            model="gpt-test",
+            base_url="https://example.invalid",
+            timeout_seconds=30,
+            params={"temperature": 0.7, "max_tokens": max_tokens},
+            params_json=json.dumps({"temperature": 0.7, "max_tokens": max_tokens}, ensure_ascii=False),
+            extra={},
+        )
+        return _PreparedOutlineGeneration(
+            resolved_api_key="sk-test",
+            prompt_system="sys",
+            prompt_user="user",
+            prompt_messages=[],
+            prompt_render_log_json=None,
+            llm_call=llm_call,
+            run_params_extra_json={},
+            target_chapter_count=None,
+        )
+
+    def test_outline_json_fix_keeps_configured_max_tokens(self) -> None:
+        prepared = self._prepared_outline(max_tokens=12000)
+        captured: list[PreparedLlmCall] = []
+        fixed_text = json.dumps(
+            {"outline_md": "ok", "chapters": [{"number": 1, "title": "第一章", "beats": ["事件"]}]},
+            ensure_ascii=False,
+        )
+
+        def fake_call_llm_and_record(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            if len(captured) == 1:
+                return SimpleNamespace(
+                    text="not json",
+                    finish_reason="stop",
+                    run_id="run-outline",
+                    latency_ms=1,
+                    dropped_params=[],
+                )
+            return SimpleNamespace(text=fixed_text, finish_reason="stop", run_id="run-fix", latency_ms=1, dropped_params=[])
+
+        request = SimpleNamespace(state=SimpleNamespace(request_id="rid-outline-fix"))
+        with patch("app.api.routes.outline._prepare_outline_generation", return_value=prepared), patch(
+            "app.api.routes.outline.call_llm_and_record", side_effect=fake_call_llm_and_record
+        ):
+            res = generate_outline(
+                request=request,
+                project_id="p1",
+                body=SimpleNamespace(),
+                user_id="u1",
+            )
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(captured[1].params["temperature"], 0)
+        self.assertEqual(captured[1].params["max_tokens"], 12000)
+
+    def test_outline_stream_json_fix_keeps_configured_max_tokens(self) -> None:
+        prepared = self._prepared_outline(max_tokens=12000)
+        captured: list[PreparedLlmCall] = []
+        fixed_text = json.dumps(
+            {"outline_md": "ok", "chapters": [{"number": 1, "title": "第一章", "beats": ["事件"]}]},
+            ensure_ascii=False,
+        )
+
+        def fake_call_llm_and_record(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            return SimpleNamespace(text=fixed_text, finish_reason="stop", run_id="run-fix")
+
+        state = SimpleNamespace(finish_reason="stop", dropped_params=[], latency_ms=1)
+        request = SimpleNamespace(state=SimpleNamespace(request_id="rid-outline-stream-fix"))
+        with patch("app.api.routes.outline._prepare_outline_generation", return_value=prepared), patch(
+            "app.api.routes.outline.call_llm_stream_messages", return_value=(iter(["not json"]), state)
+        ), patch("app.api.routes.outline.write_generation_run", return_value="run-stream"), patch(
+            "app.api.routes.outline.call_llm_and_record", side_effect=fake_call_llm_and_record
+        ):
+            response = generate_outline_stream(
+                request=request,
+                project_id="p1",
+                body=SimpleNamespace(),
+                user_id="u1",
+            )
+            async def drain_response() -> None:
+                async for _chunk in response.body_iterator:
+                    pass
+
+            asyncio.run(drain_response())
+
+        self.assertEqual(captured[0].params["temperature"], 0)
+        self.assertEqual(captured[0].params["max_tokens"], 12000)
+
     def test_extract_target_chapter_count(self) -> None:
         self.assertEqual(_extract_target_chapter_count({"chapter_count": 200}), 200)
         self.assertEqual(_extract_target_chapter_count({"chapter_count": "120"}), 120)

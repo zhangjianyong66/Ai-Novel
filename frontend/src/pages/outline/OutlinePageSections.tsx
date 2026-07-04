@@ -204,8 +204,9 @@ export type OutlineGenerationModalProps = {
   onCancelGenerate: () => void;
   onGenerate: () => void;
   onClearPreview: () => void;
-  onOverwriteCurrent: () => void;
-  onSaveAsNew: () => void;
+  autoSaveFailed: boolean;
+  onRetrySaveGeneratedOutline: () => void;
+  onCopyGeneratedOutlineResult: () => void;
   onPreviewContentChange: (value: string) => void;
 };
 
@@ -387,12 +388,16 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
               <button className="btn btn-secondary" onClick={props.onClearPreview} type="button">
                 {OUTLINE_COPY.previewCancel}
               </button>
-              <button className="btn btn-secondary" onClick={props.onOverwriteCurrent} type="button">
-                {OUTLINE_COPY.overwriteAndSave}
-              </button>
-              <button className="btn btn-primary" onClick={props.onSaveAsNew} type="button">
-                {OUTLINE_COPY.saveAsNew}
-              </button>
+              {props.autoSaveFailed ? (
+                <>
+                  <button className="btn btn-secondary" onClick={props.onCopyGeneratedOutlineResult} type="button">
+                    {OUTLINE_COPY.copyGeneratedResult}
+                  </button>
+                  <button className="btn btn-primary" onClick={props.onRetrySaveGeneratedOutline} type="button">
+                    {OUTLINE_COPY.retrySaveAsNew}
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="mt-3">

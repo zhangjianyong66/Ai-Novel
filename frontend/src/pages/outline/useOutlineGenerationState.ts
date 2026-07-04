@@ -12,7 +12,7 @@ import {
   DEFAULT_OUTLINE_PACING_OPTIONS,
   DEFAULT_OUTLINE_TONE_OPTIONS,
   appendCappedRawText,
-  buildGeneratedOutlineTitle,
+  buildUniqueGeneratedOutlineTitle,
   DEFAULT_OUTLINE_GEN_FORM,
   mergeOutlineGenerationOptions,
   STREAM_RAW_MAX_CHARS,
@@ -32,21 +32,28 @@ type SaveOutline = (
   opts?: { silent?: boolean; snapshotContent?: string },
 ) => Promise<boolean>;
 
-type CreateOutline = (title: string, contentMd: string, structure: unknown) => Promise<void>;
+type CreateOutline = (
+  title: string,
+  contentMd: string,
+  structure: unknown,
+  opts?: { silent?: boolean },
+) => Promise<boolean>;
 
 export function useOutlineGenerationState(args: {
   projectId?: string;
   preset: LLMPreset | null;
   dirty: boolean;
+  existingOutlineTitles: string[];
   save: SaveOutline;
   createOutline: CreateOutline;
   confirm: ConfirmApi;
   toast: ToastApi;
 }) {
-  const { projectId, preset, dirty, save, createOutline, confirm, toast } = args;
+  const { projectId, preset, dirty, existingOutlineTitles, save, createOutline, confirm, toast } = args;
   const [open, setOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<OutlineGenResult | null>(null);
+  const [autoSaveFailed, setAutoSaveFailed] = useState(false);
   const [genForm, setGenForm] = useState<OutlineGenForm>(DEFAULT_OUTLINE_GEN_FORM);
   const [streamEnabled, setStreamEnabled] = useState(false);
   const [streamProgress, setStreamProgress] = useState<OutlineStreamProgress | null>(null);
@@ -76,6 +83,7 @@ export function useOutlineGenerationState(args: {
 
   const clearPreview = useCallback(() => {
     setGenPreview(null);
+    setAutoSaveFailed(false);
   }, []);
 
   const refreshGenerationPreferences = useCallback(async () => {
@@ -119,20 +127,67 @@ export function useOutlineGenerationState(args: {
     }
   }, [genForm.pacing, genForm.tone, projectId]);
 
-  const overwriteCurrentOutline = useCallback(async () => {
-    if (!genPreview) return;
-    const ok = !dirty ? true : await confirm.confirm({ ...OUTLINE_COPY.confirms.overwriteDirty, danger: true });
-    if (!ok) return;
-    setOpen(false);
-    await save(genPreview.outline_md, { chapters: genPreview.chapters });
-    setGenPreview(null);
-  }, [confirm, dirty, genPreview, save]);
+  const persistGeneratedOutline = useCallback(
+    async (result: OutlineGenResult): Promise<boolean> => {
+      setGenPreview(result);
+      if (result.parse_error || result.chapters.length === 0) {
+        setAutoSaveFailed(true);
+        toast.toastError(OUTLINE_COPY.generateAutoSaveSkipped);
+        return false;
+      }
 
-  const saveAsNewOutline = useCallback(async () => {
+      const title = buildUniqueGeneratedOutlineTitle(existingOutlineTitles);
+      const ok = await createOutline(title, result.outline_md, { chapters: result.chapters }, { silent: true });
+      if (!ok) {
+        setAutoSaveFailed(true);
+        toast.toastError(OUTLINE_COPY.generateAutoSaveFailed);
+        return false;
+      }
+
+      setGenPreview(null);
+      setAutoSaveFailed(false);
+      setOpen(false);
+      toast.toastSuccess(
+        result.warnings?.length ? OUTLINE_COPY.generateSavedWithWarnings : OUTLINE_COPY.generateSavedAsNew,
+      );
+      return true;
+    },
+    [createOutline, existingOutlineTitles, toast],
+  );
+
+  const retrySaveGeneratedOutline = useCallback(async () => {
     if (!projectId || !genPreview) return;
+    if (genPreview.parse_error || genPreview.chapters.length === 0) {
+      toast.toastError(OUTLINE_COPY.generateAutoSaveSkipped);
+      return;
+    }
+
+    await persistGeneratedOutline(genPreview);
+  }, [genPreview, persistGeneratedOutline, projectId, toast]);
+
+  const copyGeneratedOutlineResult = useCallback(async () => {
+    if (!genPreview) return;
+    const text = JSON.stringify(
+      {
+        outline_md: genPreview.outline_md,
+        chapters: genPreview.chapters,
+      },
+      null,
+      2,
+    );
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.toastSuccess(OUTLINE_COPY.generateCopied);
+    } catch {
+      toast.toastError(OUTLINE_COPY.generateCopyFailed);
+    }
+  }, [genPreview, toast]);
+
+  const generate = useCallback(async () => {
+    if (!projectId || !preset) return;
 
     if (dirty) {
-      const choice = await confirm.choose(OUTLINE_COPY.confirms.saveAsNewDirty);
+      const choice = await confirm.choose(OUTLINE_COPY.confirms.generateWithDirtyOutline);
       if (choice === "cancel") return;
       if (choice === "confirm") {
         const ok = await save();
@@ -140,17 +195,11 @@ export function useOutlineGenerationState(args: {
       }
     }
 
-    setOpen(false);
-    await createOutline(buildGeneratedOutlineTitle(), genPreview.outline_md, { chapters: genPreview.chapters });
-    setGenPreview(null);
-  }, [confirm, createOutline, dirty, genPreview, projectId, save]);
-
-  const generate = useCallback(async () => {
-    if (!projectId || !preset) return;
     setGenerating(true);
     streamClientRef.current = null;
     streamHasChunkRef.current = false;
     setGenPreview(null);
+    setAutoSaveFailed(false);
     setStreamRawText("");
     setStreamPreviewJson("");
     setStreamProgress(null);
@@ -177,8 +226,8 @@ export function useOutlineGenerationState(args: {
           headers,
           body: JSON.stringify(payload),
         });
-        setGenPreview(response.data);
-        toast.toastSuccess(OUTLINE_COPY.generateDone);
+        const normalized = normalizeOutlineGenResult(response.data, "") ?? response.data;
+        await persistGeneratedOutline(normalized);
         return;
       }
 
@@ -264,7 +313,7 @@ export function useOutlineGenerationState(args: {
           return;
         }
         setStreamProgress((prev) => (prev ? { ...prev, message: "完成", progress: 100, status: "success" } : prev));
-        toast.toastSuccess(OUTLINE_COPY.generateDone);
+        await persistGeneratedOutline(streamResult);
       } catch (error) {
         if (error instanceof SSEError && error.code !== "SSE_SERVER_ERROR" && error.code !== "ABORTED") {
           if (!streamHasChunkRef.current) {
@@ -275,13 +324,10 @@ export function useOutlineGenerationState(args: {
               headers,
               body: JSON.stringify(payload),
             });
-            const normalized = normalizeOutlineGenResult(response.data, "");
-            setGenPreview(normalized ?? response.data);
-            if (normalized) {
-              setStreamPreviewJson(toFinalPreviewJson(normalized));
-            }
+            const normalized = normalizeOutlineGenResult(response.data, "") ?? response.data;
+            setStreamPreviewJson(toFinalPreviewJson(normalized));
             setStreamProgress(null);
-            toast.toastSuccess(OUTLINE_COPY.generateDone);
+            await persistGeneratedOutline(normalized);
           } else {
             setStreamProgress((prev) => ({
               message: "流式连接中断，可重试生成",
@@ -333,7 +379,18 @@ export function useOutlineGenerationState(args: {
       streamClientRef.current = null;
       setGenerating(false);
     }
-  }, [genForm, preset, projectId, saveGenerationPreferences, streamEnabled, toast]);
+  }, [
+    confirm,
+    dirty,
+    genForm,
+    persistGeneratedOutline,
+    preset,
+    projectId,
+    save,
+    saveGenerationPreferences,
+    streamEnabled,
+    toast,
+  ]);
 
   return {
     open,
@@ -342,6 +399,7 @@ export function useOutlineGenerationState(args: {
     generating,
     genPreview,
     setGenPreview,
+    autoSaveFailed,
     genForm,
     setGenForm,
     streamEnabled,
@@ -354,7 +412,7 @@ export function useOutlineGenerationState(args: {
     generate,
     cancelGenerate,
     clearPreview,
-    overwriteCurrentOutline,
-    saveAsNewOutline,
+    retrySaveGeneratedOutline,
+    copyGeneratedOutlineResult,
   };
 }

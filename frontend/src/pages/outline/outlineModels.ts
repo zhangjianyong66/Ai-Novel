@@ -95,3 +95,15 @@ export function buildNextOutlineTitle(outlineCount: number): string {
 export function buildGeneratedOutlineTitle(now = new Date()): string {
   return `AI 大纲 ${now.toISOString().slice(0, 16).replace("T", " ")}`;
 }
+
+export function buildUniqueGeneratedOutlineTitle(existingTitles: readonly string[], now = new Date()): string {
+  const base = buildGeneratedOutlineTitle(now);
+  const existing = new Set(existingTitles.map((title) => title.trim()).filter(Boolean));
+  if (!existing.has(base)) return base;
+
+  let index = 2;
+  while (existing.has(`${base} (${index})`)) {
+    index += 1;
+  }
+  return `${base} (${index})`;
+}

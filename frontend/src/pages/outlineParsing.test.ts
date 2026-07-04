@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveOutlineFromStoredContent, parseOutlineGenResultFromText } from "./outlineParsing";
+import {
+  deriveOutlineFromStoredContent,
+  normalizeOutlineGenResult,
+  parseOutlineGenResultFromText,
+} from "./outlineParsing";
 
 const RAW_PAYLOAD = JSON.stringify(
   {
@@ -39,5 +43,15 @@ describe("outlineParsing", () => {
     expect(derived.normalizedContentMd).toBe("plain markdown");
     expect(derived.chapters).toHaveLength(1);
     expect(derived.chapters[0]?.number).toBe(9);
+  });
+
+  it("preserves generation warnings when normalizing results", () => {
+    const normalized = normalizeOutlineGenResult({
+      outline_md: "# 大纲",
+      chapters: [{ number: 1, title: "开篇", beats: ["事件"] }],
+      warnings: ["outline_chapter_number_deduped", 123],
+    });
+
+    expect(normalized?.warnings).toEqual(["outline_chapter_number_deduped", "123"]);
   });
 });

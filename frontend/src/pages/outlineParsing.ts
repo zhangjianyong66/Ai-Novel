@@ -4,6 +4,7 @@ export type OutlineGenResult = {
   chapters: OutlineGenChapter[];
   raw_output: string;
   parse_error?: { code: string; message: string };
+  warnings?: string[];
 };
 
 export function extractOutlineChapters(structure: unknown): OutlineGenChapter[] {
@@ -29,6 +30,7 @@ export function normalizeOutlineGenResult(raw: unknown, fallbackRawOutput = ""):
     chapters?: unknown;
     raw_output?: unknown;
     parse_error?: unknown;
+    warnings?: unknown;
   };
   const outline_md = typeof data.outline_md === "string" ? data.outline_md : "";
   const chapters = extractOutlineChapters({ chapters: data.chapters });
@@ -40,8 +42,9 @@ export function normalizeOutlineGenResult(raw: unknown, fallbackRawOutput = ""):
           message: String((data.parse_error as { message?: unknown }).message ?? ""),
         }
       : undefined;
+  const warnings = Array.isArray(data.warnings) ? data.warnings.map((item) => String(item)).filter(Boolean) : undefined;
   if (!outline_md && chapters.length === 0 && !raw_output) return null;
-  return { outline_md, chapters, raw_output, parse_error };
+  return { outline_md, chapters, raw_output, parse_error, warnings };
 }
 
 export function parseOutlineGenResultFromText(text: string): OutlineGenResult | null {

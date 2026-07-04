@@ -6,6 +6,7 @@ import {
   appendCappedRawText,
   buildGeneratedOutlineTitle,
   buildNextOutlineTitle,
+  buildUniqueGeneratedOutlineTitle,
   mergeOutlineGenerationOptions,
 } from "./outlineModels";
 
@@ -22,6 +23,15 @@ describe("outlineModels", () => {
     expect(buildNextOutlineTitle(0)).toBe("大纲 v1");
     expect(buildNextOutlineTitle(3)).toBe("大纲 v4");
     expect(buildGeneratedOutlineTitle(new Date("2026-03-14T01:35:00Z"))).toBe("AI 大纲 2026-03-14 01:35");
+  });
+
+  it("deduplicates generated outline titles within the same minute", () => {
+    const now = new Date("2026-03-14T01:35:00Z");
+
+    expect(buildUniqueGeneratedOutlineTitle(["AI 大纲 2026-03-14 01:35"], now)).toBe("AI 大纲 2026-03-14 01:35 (2)");
+    expect(buildUniqueGeneratedOutlineTitle(["AI 大纲 2026-03-14 01:35", "AI 大纲 2026-03-14 01:35 (2)"], now)).toBe(
+      "AI 大纲 2026-03-14 01:35 (3)",
+    );
   });
 
   it("provides built-in tone and pacing options", () => {

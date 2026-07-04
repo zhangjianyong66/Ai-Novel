@@ -208,10 +208,11 @@ export function useOutlinePageState(): OutlinePageState {
 
   const refreshOutline = outlineQuery.refresh;
   const activeOutlineId = activeOutline?.id ?? "";
+  const existingOutlineTitles = useMemo(() => outlines.map((outline) => outline.title), [outlines]);
 
   const createOutline = useCallback(
-    async (title: string, contentMd: string, structure: unknown) => {
-      if (!projectId) return;
+    async (title: string, contentMd: string, structure: unknown, opts?: { silent?: boolean }) => {
+      if (!projectId) return false;
       try {
         await apiJson<{ outline: Outline }>(`/api/projects/${projectId}/outlines`, {
           method: "POST",
@@ -221,10 +222,16 @@ export function useOutlinePageState(): OutlinePageState {
         bumpWizardLocal();
         await refreshOutline();
         await refreshWizard();
-        toast.toastSuccess(OUTLINE_COPY.createdAndSwitched);
+        if (!opts?.silent) {
+          toast.toastSuccess(OUTLINE_COPY.createdAndSwitched);
+        }
+        return true;
       } catch (error) {
         const err = error as ApiError;
-        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        if (!opts?.silent) {
+          toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        }
+        return false;
       }
     },
     [bumpWizardLocal, projectId, refreshOutline, refreshWizard, toast],
@@ -305,6 +312,7 @@ export function useOutlinePageState(): OutlinePageState {
     projectId,
     preset,
     dirty,
+    existingOutlineTitles,
     save,
     createOutline,
     confirm,
@@ -462,8 +470,9 @@ export function useOutlinePageState(): OutlinePageState {
       onCancelGenerate: generation.cancelGenerate,
       onGenerate: () => void generation.generate(),
       onClearPreview: generation.clearPreview,
-      onOverwriteCurrent: () => void generation.overwriteCurrentOutline(),
-      onSaveAsNew: () => void generation.saveAsNewOutline(),
+      autoSaveFailed: generation.autoSaveFailed,
+      onRetrySaveGeneratedOutline: () => void generation.retrySaveGeneratedOutline(),
+      onCopyGeneratedOutlineResult: () => void generation.copyGeneratedOutlineResult(),
       onPreviewContentChange: (next) =>
         generation.setGenPreview((prev) => (prev ? { ...prev, outline_md: next } : null)),
     },

@@ -42,6 +42,20 @@ class TestPromptPresetResources(unittest.TestCase):
             res = load_preset_resource(key)
             self.assertEqual(res.category, expected_category)
 
+    def test_outline_default_prompt_requires_named_character_payoff(self) -> None:
+        res = load_preset_resource("outline_generate_v3")
+        blocks = {block.identifier: block.template for block in res.blocks}
+
+        role_template = blocks["sys.outline.role"]
+        contract_template = blocks["sys.outline.contract.json"]
+
+        self.assertIn("命名即承诺", role_template)
+        self.assertIn("不要为了单章刺激、单章互动或气氛烘托随意新增有名有姓的人物", role_template)
+        self.assertIn("如果某人物只在一章出现", role_template)
+        self.assertIn("人物功能表", contract_template)
+        self.assertIn("后续出现/影响", contract_template)
+        self.assertIn("退场或回收方式", contract_template)
+
 
 class TestPromptPresetDefaultCategoryRepair(unittest.TestCase):
     def setUp(self) -> None:

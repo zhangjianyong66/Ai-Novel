@@ -210,6 +210,21 @@ export function useOutlinePageState(): OutlinePageState {
   const activeOutlineId = activeOutline?.id ?? "";
   const existingOutlineTitles = useMemo(() => outlines.map((outline) => outline.title), [outlines]);
 
+  const refreshSavedOutline = useCallback(async () => {
+    if (!projectId) return false;
+    try {
+      markWizardProjectChanged(projectId);
+      bumpWizardLocal();
+      await refreshOutline();
+      await refreshWizard();
+      return true;
+    } catch (error) {
+      const err = error as ApiError;
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      return false;
+    }
+  }, [bumpWizardLocal, projectId, refreshOutline, refreshWizard, toast]);
+
   const createOutline = useCallback(
     async (title: string, contentMd: string, structure: unknown, opts?: { silent?: boolean }) => {
       if (!projectId) return false;
@@ -315,6 +330,7 @@ export function useOutlinePageState(): OutlinePageState {
     existingOutlineTitles,
     save,
     createOutline,
+    refreshSavedOutline,
     confirm,
     toast,
   });

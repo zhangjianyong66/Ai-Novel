@@ -39,6 +39,8 @@ type CreateOutline = (
   opts?: { silent?: boolean },
 ) => Promise<boolean>;
 
+type RefreshSavedOutline = () => Promise<boolean>;
+
 export function useOutlineGenerationState(args: {
   projectId?: string;
   preset: LLMPreset | null;
@@ -46,10 +48,11 @@ export function useOutlineGenerationState(args: {
   existingOutlineTitles: string[];
   save: SaveOutline;
   createOutline: CreateOutline;
+  refreshSavedOutline: RefreshSavedOutline;
   confirm: ConfirmApi;
   toast: ToastApi;
 }) {
-  const { projectId, preset, dirty, existingOutlineTitles, save, createOutline, confirm, toast } = args;
+  const { projectId, preset, dirty, existingOutlineTitles, save, createOutline, refreshSavedOutline, confirm, toast } = args;
   const [open, setOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<OutlineGenResult | null>(null);
@@ -136,6 +139,22 @@ export function useOutlineGenerationState(args: {
         return false;
       }
 
+      if (result.saved_outline) {
+        const refreshed = await refreshSavedOutline();
+        if (!refreshed) {
+          setAutoSaveFailed(true);
+          toast.toastError(OUTLINE_COPY.generateAutoSaveFailed);
+          return false;
+        }
+        setGenPreview(null);
+        setAutoSaveFailed(false);
+        setOpen(false);
+        toast.toastSuccess(
+          result.warnings?.length ? OUTLINE_COPY.generateSavedWithWarnings : OUTLINE_COPY.generateSavedAsNew,
+        );
+        return true;
+      }
+
       const title = buildUniqueGeneratedOutlineTitle(existingOutlineTitles);
       const ok = await createOutline(title, result.outline_md, { chapters: result.chapters }, { silent: true });
       if (!ok) {
@@ -152,7 +171,7 @@ export function useOutlineGenerationState(args: {
       );
       return true;
     },
-    [createOutline, existingOutlineTitles, toast],
+    [createOutline, existingOutlineTitles, refreshSavedOutline, toast],
   );
 
   const retrySaveGeneratedOutline = useCallback(async () => {

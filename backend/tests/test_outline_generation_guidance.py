@@ -8,6 +8,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 from app.api.routes.outline import (
     OUTLINE_SEGMENT_INDEX_MAX_CHARS,
     _PreparedOutlineGeneration,
@@ -32,6 +36,11 @@ from app.api.routes.outline import (
     generate_outline_stream,
 )
 from app.core.errors import AppError
+from app.db.base import Base
+from app.models.outline import Outline
+from app.models.project import Project
+from app.models.project_settings import ProjectSettings
+from app.models.user import User
 from app.services.generation_service import PreparedLlmCall
 from app.services.prompting import render_template
 
@@ -81,6 +90,8 @@ class TestOutlineGenerationGuidance(unittest.TestCase):
         request = SimpleNamespace(state=SimpleNamespace(request_id="rid-outline-fix"))
         with patch("app.api.routes.outline._prepare_outline_generation", return_value=prepared), patch(
             "app.api.routes.outline.call_llm_and_record", side_effect=fake_call_llm_and_record
+        ), patch(
+            "app.api.routes.outline._save_generated_outline_if_usable", return_value=None
         ):
             res = generate_outline(
                 request=request,
@@ -92,6 +103,78 @@ class TestOutlineGenerationGuidance(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(captured[1].params["temperature"], 0)
         self.assertEqual(captured[1].params["max_tokens"], 12000)
+
+    def test_generate_outline_saves_successful_result_as_active_outline(self) -> None:
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        self.addCleanup(engine.dispose)
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                User.__table__,
+                Project.__table__,
+                ProjectSettings.__table__,
+                Outline.__table__,
+            ],
+        )
+        SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+        with SessionLocal() as db:
+            db.add(User(id="u1", display_name="owner"))
+            db.add(Project(id="p1", owner_user_id="u1", name="Project 1", genre=None, logline=None))
+            db.add(ProjectSettings(project_id="p1", vector_index_dirty=False))
+            db.add(Outline(id="o1", project_id="p1", title="默认大纲", content_md="", structure_json=None))
+            db.commit()
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.commit()
+
+        prepared = self._prepared_outline()
+        generated_text = json.dumps(
+            {
+                "outline_md": "# 新大纲",
+                "chapters": [{"number": 1, "title": "第一章", "beats": ["事件"]}],
+            },
+            ensure_ascii=False,
+        )
+        request = SimpleNamespace(state=SimpleNamespace(request_id="rid-outline-save"))
+
+        with patch("app.api.routes.outline.SessionLocal", SessionLocal), patch(
+            "app.api.routes.outline._prepare_outline_generation", return_value=prepared
+        ), patch(
+            "app.api.routes.outline.call_llm_and_record",
+            return_value=SimpleNamespace(
+                text=generated_text,
+                finish_reason="stop",
+                run_id="run-outline",
+                latency_ms=1,
+                dropped_params=[],
+            ),
+        ), patch("app.api.routes.outline.schedule_vector_rebuild_task", return_value=None), patch(
+            "app.api.routes.outline.schedule_search_rebuild_task", return_value=None
+        ):
+            res = generate_outline(
+                request=request,
+                project_id="p1",
+                body=SimpleNamespace(),
+                user_id="u1",
+            )
+
+        self.assertTrue(res["ok"])
+        saved_outline = res["data"].get("saved_outline")
+        self.assertIsInstance(saved_outline, dict)
+        self.assertEqual(saved_outline["content_md"], "# 新大纲")
+        self.assertEqual(saved_outline["structure"]["chapters"][0]["title"], "第一章")
+
+        with SessionLocal() as db:
+            outlines = db.query(Outline).filter(Outline.project_id == "p1").order_by(Outline.created_at.asc()).all()
+            self.assertEqual(len(outlines), 2)
+            project = db.get(Project, "p1")
+            assert project is not None
+            self.assertEqual(project.active_outline_id, saved_outline["id"])
 
     def test_outline_stream_json_fix_keeps_configured_max_tokens(self) -> None:
         prepared = self._prepared_outline(max_tokens=12000)

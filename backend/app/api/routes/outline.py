@@ -16,6 +16,7 @@ from app.api.deps import DbDep, UserIdDep, require_project_editor, require_proje
 from app.core.errors import AppError, ok_payload
 from app.core.logging import log_event
 from app.db.session import SessionLocal
+from app.db.utils import new_id, utc_now
 from app.llm.capabilities import max_output_tokens_limit
 from app.llm.client import call_llm_stream_messages
 from app.llm.messages import ChatMessage
@@ -92,6 +93,75 @@ def _outline_out(row: Outline) -> dict[str, object]:
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
+
+
+def _build_generated_outline_title(existing_titles: list[str]) -> str:
+    base = f"AI 大纲 {utc_now().isoformat()[:16].replace('T', ' ')}"
+    existing = {title.strip() for title in existing_titles if title and title.strip()}
+    if base not in existing:
+        return base
+    index = 2
+    while f"{base} ({index})" in existing:
+        index += 1
+    return f"{base} ({index})"
+
+
+def _save_generated_outline_if_usable(
+    *,
+    project_id: str,
+    user_id: str,
+    request_id: str,
+    data: dict[str, object],
+    parse_error: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if parse_error is not None:
+        return None
+
+    chapters, _warnings = _normalize_outline_chapters(data.get("chapters"))
+    if not chapters:
+        return None
+
+    outline_md = str(data.get("outline_md") or "")
+    structure = {"chapters": chapters}
+
+    db = SessionLocal()
+    try:
+        project = require_project_editor(db, project_id=project_id, user_id=user_id)
+        existing_titles = (
+            db.execute(select(Outline.title).where(Outline.project_id == project_id))
+            .scalars()
+            .all()
+        )
+        row = Outline(
+            id=new_id(),
+            project_id=project_id,
+            title=_build_generated_outline_title([str(title) for title in existing_titles]),
+            content_md=outline_md,
+            structure_json=json.dumps(structure, ensure_ascii=False),
+        )
+        db.add(row)
+        project.active_outline_id = row.id
+        _mark_vector_index_dirty(db, project_id=project_id)
+        db.commit()
+        db.refresh(row)
+        payload = _outline_out(row)
+        schedule_vector_rebuild_task(
+            db=db,
+            project_id=project_id,
+            actor_user_id=user_id,
+            request_id=request_id,
+            reason="outline_generate_auto_save",
+        )
+        schedule_search_rebuild_task(
+            db=db,
+            project_id=project_id,
+            actor_user_id=user_id,
+            request_id=request_id,
+            reason="outline_generate_auto_save",
+        )
+        return payload
+    finally:
+        db.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -2454,6 +2524,15 @@ def generate_outline(
             data["finish_reason"] = segmented.finish_reasons[-1]
             data["finish_reasons"] = segmented.finish_reasons
         data["segmented_generation"] = segmented.meta
+        saved_outline = _save_generated_outline_if_usable(
+            project_id=project_id,
+            user_id=user_id,
+            request_id=request_id,
+            data=data,
+            parse_error=segmented.parse_error,
+        )
+        if saved_outline is not None:
+            data["saved_outline"] = saved_outline
         return ok_payload(request_id=request_id, data=data)
 
     llm_result = call_llm_and_record(
@@ -2548,6 +2627,15 @@ def generate_outline(
         data["dropped_params"] = llm_result.dropped_params
     if finish_reason is not None:
         data["finish_reason"] = finish_reason
+    saved_outline = _save_generated_outline_if_usable(
+        project_id=project_id,
+        user_id=user_id,
+        request_id=request_id,
+        data=data,
+        parse_error=parse_error,
+    )
+    if saved_outline is not None:
+        data["saved_outline"] = saved_outline
     return ok_payload(request_id=request_id, data=data)
 
 
@@ -2755,6 +2843,15 @@ def generate_outline_stream(
                 data["finish_reason"] = segmented.finish_reasons[-1]
                 data["finish_reasons"] = segmented.finish_reasons
             data["segmented_generation"] = segmented.meta
+            saved_outline = _save_generated_outline_if_usable(
+                project_id=project_id,
+                user_id=user_id,
+                request_id=request_id,
+                data=data,
+                parse_error=segmented.parse_error,
+            )
+            if saved_outline is not None:
+                data["saved_outline"] = saved_outline
 
             result_data = dict(data)
             result_data.pop("raw_output", None)
@@ -2988,6 +3085,15 @@ def generate_outline_stream(
                 data["dropped_params"] = dropped_params
             if generation_run_id is not None:
                 data["generation_run_id"] = generation_run_id
+            saved_outline = _save_generated_outline_if_usable(
+                project_id=project_id,
+                user_id=user_id,
+                request_id=request_id,
+                data=data,
+                parse_error=parse_error,
+            )
+            if saved_outline is not None:
+                data["saved_outline"] = saved_outline
 
             # Keep stream result payload compact to reduce client-side SSE parse failures on large outputs.
             result_data = dict(data)

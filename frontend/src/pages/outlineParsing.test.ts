@@ -54,4 +54,23 @@ describe("outlineParsing", () => {
 
     expect(normalized?.warnings).toEqual(["outline_chapter_number_deduped", "123"]);
   });
+
+  it("preserves backend saved outline when normalizing generation results", () => {
+    const normalized = normalizeOutlineGenResult({
+      outline_md: "# 大纲",
+      chapters: [{ number: 1, title: "开篇", beats: ["事件"] }],
+      saved_outline: {
+        id: "o2",
+        project_id: "p1",
+        title: "AI 大纲 2026-07-04 15:49",
+        content_md: "# 大纲",
+        structure: { chapters: [{ number: 1, title: "开篇", beats: ["事件"] }] },
+        created_at: "2026-07-04T15:49:00Z",
+        updated_at: "2026-07-04T15:49:00Z",
+      },
+    });
+
+    expect(normalized?.saved_outline?.id).toBe("o2");
+    expect(normalized?.saved_outline?.title).toContain("AI 大纲");
+  });
 });

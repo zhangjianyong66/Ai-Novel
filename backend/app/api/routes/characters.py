@@ -49,13 +49,15 @@ def update_character(request: Request, db: DbDep, user_id: UserIdDep, character_
     request_id = request.state.request_id
     row = require_character_editor(db, character_id=character_id, user_id=user_id)
 
-    if body.name is not None:
+    fields = body.model_fields_set
+
+    if "name" in fields and body.name is not None:
         row.name = body.name
-    if body.role is not None:
+    if "role" in fields:
         row.role = body.role
-    if body.profile is not None:
+    if "profile" in fields:
         row.profile = body.profile
-    if body.notes is not None:
+    if "notes" in fields:
         row.notes = body.notes
 
     db.commit()

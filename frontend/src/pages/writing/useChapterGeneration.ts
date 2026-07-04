@@ -20,6 +20,7 @@ import {
 import { appendMarkdown } from "./writingUtils";
 import type { ChapterForm } from "./writingUtils";
 import { mergeChapterGenerationInstructionOptions } from "./chapterGenerationInstructionOptions";
+import { buildChapterGenerateRequestInit } from "./chapterGenerateRequest";
 
 type StreamProgress = {
   message: string;
@@ -548,11 +549,10 @@ export function useChapterGeneration(args: {
             if (err instanceof SSEError && err.code !== "SSE_SERVER_ERROR") {
               if (!genStreamHasChunkRef.current && !advancedTransportRequired) {
                 toast.toastError(WRITING_PAGE_COPY.generateFallback, err.requestId ?? requestId);
-                const res = await apiJson<GenerateResponse>(`/api/chapters/${activeChapter.id}/generate`, {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify(payload),
-                });
+                const res = await apiJson<GenerateResponse>(
+                  `/api/chapters/${activeChapter.id}/generate`,
+                  buildChapterGenerateRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+                );
 
                 const postEditRawTrimmed = (res.data.post_edit_raw_content_md ?? "").trim();
                 const postEditEditedTrimmed = (res.data.post_edit_edited_content_md ?? "").trim();
@@ -657,11 +657,10 @@ export function useChapterGeneration(args: {
             toast.toastError(WRITING_PAGE_COPY.generateFailed);
           }
         } else {
-          const res = await apiJson<GenerateResponse>(`/api/chapters/${activeChapter.id}/generate`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(payload),
-          });
+          const res = await apiJson<GenerateResponse>(
+            `/api/chapters/${activeChapter.id}/generate`,
+            buildChapterGenerateRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+          );
 
           const postEditRawTrimmed = (res.data.post_edit_raw_content_md ?? "").trim();
           const postEditEditedTrimmed = (res.data.post_edit_edited_content_md ?? "").trim();

@@ -71,6 +71,7 @@
 - `PUT /api/chapters/{chapter_id}` 只保存标题、计划、正文和摘要；请求体只要包含 `status` 就返回 `details.reason=chapter_status_update_requires_status_endpoint`。已定稿章节仍默认只读，直接通过 `PUT` 修改内容返回 `details.reason=chapter_done_readonly`。
 - 前端写作页状态修改必须使用状态徽标和合法动作按钮，不能使用状态下拉框或把 `status` 放入保存 payload；有未保存内容修改时应先保存，`done -> drafting` 必须二次确认。
 - 任务中心展示 `ProjectTask.kind` 时应显示中文任务类型并保留原码值，例如“世界书自动更新（worldbook_auto_update）”，未知 kind 原样显示码值。
+- 前端章节非流式生成 `POST /api/chapters/{chapter_id}/generate` 不应使用通用 `apiClient` 120 秒默认超时；应读取当前 LLM preset 的 `timeout_seconds` 并增加响应处理余量。否则请求可能在后端 LLM 调用成功前被浏览器中止，nginx 记录为 499，编辑器也不会收到生成内容。
 
 ## StoryMemory 与伏笔生命周期约定
 

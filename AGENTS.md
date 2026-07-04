@@ -44,6 +44,7 @@
 ## LLM 调用参数约定
 
 - 大纲 JSON 修复、通用 JSON 修复、Fractal v2 等基于既有 `PreparedLlmCall` 派生的 LLM 调用，应保留模型配置页或任务预设解析后的 `max_tokens`；只覆盖必要的 `temperature` 等采样参数，避免固定小上限截断结构化输出。
+- 排查实际 LLM 调用模型时，以 `generation_runs` 表为准；该表任务类型字段名是 `type`（例如 `chapter_analyze`、`chapter_rewrite`），不是 `run_type`。任务级模型覆盖配置在 `llm_task_presets.task_key/provider/model` 中，项目默认配置在 `llm_presets.provider/model` 中。
 
 ## 世界书自动更新约定
 

@@ -498,3 +498,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 修复大纲生成后切换
+
+**Date**: 2026-07-05
+**Task**: 修复大纲生成后切换
+**Branch**: `main`
+
+### Summary
+
+修复 AI 生成大纲后前端未自动切换到后端已保存的新大纲，补充 saved_outline 同步约定和回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6f50e6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

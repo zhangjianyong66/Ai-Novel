@@ -27,9 +27,8 @@ from app.services.chapter_context_service import (
     inject_plan_into_render_values,
     load_previous_chapter_context,
 )
-from app.services.generation_service import PreparedLlmCall, with_param_overrides
+from app.services.generation_service import PreparedLlmCall
 from app.services.generation_pipeline import run_chapter_generate_llm_step, run_content_optimize_step, run_plan_llm_step, run_post_edit_step
-from app.services.length_control import estimate_max_tokens
 from app.services.llm_task_preset_resolver import resolve_task_llm_config
 from app.services.project_task_event_service import append_project_task_event, reset_project_task_to_queued
 from app.services.project_task_runtime_service import touch_project_task_heartbeat
@@ -755,12 +754,6 @@ def run_batch_generation_task(*, task_id: str) -> None:
                     provider=llm_call.provider,
                 )
             prompt_render_log_json = json.dumps(render_log, ensure_ascii=False)
-
-            if params.target_word_count is not None:
-                llm_call = with_param_overrides(
-                    llm_call,
-                    {"max_tokens": estimate_max_tokens(target_word_count=params.target_word_count, provider=llm_call.provider, model=llm_call.model)},
-                )
 
             gen_step = run_chapter_generate_llm_step(
                 logger=logger,

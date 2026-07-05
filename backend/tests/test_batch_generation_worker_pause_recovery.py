@@ -20,6 +20,8 @@ from app.models.project_task import ProjectTask
 from app.models.project_task_event import ProjectTaskEvent
 from app.models.user import User
 from app.services import batch_generation_service
+from app.services.generation_pipeline import ChapterGenerateStepResult
+from app.services.generation_service import PreparedLlmCall
 
 
 class TestBatchGenerationWorkerPauseRecovery(unittest.TestCase):
@@ -176,3 +178,62 @@ class TestBatchGenerationWorkerPauseRecovery(unittest.TestCase):
                 .order_by(ProjectTaskEvent.seq.asc())
             ).scalars().all()
             self.assertEqual(event_types, ["running", "step_started", "step_failed", "paused"])
+
+    def test_worker_keeps_configured_max_tokens_when_target_word_count_set(self) -> None:
+        with self.SessionLocal() as db:
+            task = db.get(BatchGenerationTask, "task-1")
+            self.assertIsNotNone(task)
+            assert task is not None
+            params = json.loads(str(task.params_json or "{}"))
+            params["target_word_count"] = 3000
+            task.params_json = json.dumps(params, ensure_ascii=False)
+            db.commit()
+
+        fake_project = SimpleNamespace(id="p1")
+        fake_call = PreparedLlmCall(
+            provider="openai_compatible",
+            model="deepseek-v4-pro",
+            base_url="http://llm.local/v1",
+            timeout_seconds=180,
+            params={"temperature": 0.7, "max_tokens": 12000},
+            params_json=json.dumps({"temperature": 0.7, "max_tokens": 12000}, ensure_ascii=False),
+            extra={},
+        )
+        captured: list[PreparedLlmCall] = []
+
+        def fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            return ChapterGenerateStepResult(
+                data={"content_md": "正文", "summary": "摘要"},
+                warnings=[],
+                parse_error=None,
+                finish_reason="stop",
+                latency_ms=1,
+                dropped_params=[],
+                run_id="run-batch",
+            )
+
+        with patch.object(batch_generation_service, "SessionLocal", self.SessionLocal), patch.object(
+            batch_generation_service,
+            "_prepare_project_context",
+            return_value=(fake_project, fake_call, "sk-test", "", "", "", "", "", {}),
+        ), patch.object(
+            batch_generation_service,
+            "assemble_chapter_generate_render_values",
+            return_value=({}, {}),
+        ), patch.object(
+            batch_generation_service,
+            "render_preset_for_task",
+            return_value=("sys", "user", None, None, None, None, {}),
+        ), patch.object(
+            batch_generation_service,
+            "touch_project_task_heartbeat",
+            return_value=None,
+        ), patch.object(
+            batch_generation_service,
+            "run_chapter_generate_llm_step",
+            side_effect=fake_generate,
+        ):
+            batch_generation_service.run_batch_generation_task(task_id="task-1")
+
+        self.assertEqual(captured[0].params["max_tokens"], 12000)

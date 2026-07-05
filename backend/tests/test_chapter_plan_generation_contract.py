@@ -11,7 +11,7 @@ from app.core.errors import AppError
 from app.schemas.chapter_generate import ChapterGenerateRequest
 from app.schemas.chapter_plan import ChapterPlanRequest
 from app.services import generation_pipeline
-from app.services.generation_pipeline import PlanStepResult
+from app.services.generation_pipeline import ChapterGenerateStepResult, PlanStepResult
 from app.services.generation_service import PreparedLlmCall, RecordedLlmResult
 
 
@@ -226,6 +226,48 @@ class TestChapterPlanGenerationContract(unittest.TestCase):
 
         self.assertFalse(generate_called)
         self.assertEqual(cm.exception.code, "PLAN_PARSE_ERROR")
+
+    def test_generate_chapter_keeps_configured_max_tokens_when_target_word_count_set(self) -> None:
+        captured: list[PreparedLlmCall] = []
+
+        def fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+            captured.append(kwargs["llm_call"])
+            return ChapterGenerateStepResult(
+                data={"content_md": "正文", "summary": "摘要"},
+                warnings=[],
+                parse_error=None,
+                finish_reason="stop",
+                latency_ms=1,
+                dropped_params=[],
+                run_id="run-chapter",
+            )
+
+        with patch.object(chapters, "SessionLocal", return_value=_FakeDb()):
+            with patch.object(chapters, "require_chapter_editor", return_value=self._chapter()):
+                with patch.object(
+                    chapters,
+                    "_resolve_task_llm_for_call",
+                    return_value=SimpleNamespace(api_key="sk-test", llm_call=self._prepared_call(max_tokens=12000)),
+                ):
+                    with patch.object(chapters, "build_chapter_generate_render_values", return_value=({}, "instruction", {}, {})):
+                        with patch.object(chapters, "_prepare_chapter_memory_injection") as prep:
+                            prep.return_value = SimpleNamespace(
+                                memory_pack=None,
+                                memory_injection_config={},
+                                memory_retrieval_log_json={},
+                            )
+                            with patch.object(chapters, "run_mcp_research_step", return_value=SimpleNamespace(context_md="", warnings=[], applied=False, tool_runs=[])):
+                                with patch.object(chapters, "render_preset_for_task", return_value=("system", "user", [], None, None, None, {})):
+                                    with patch.object(chapters, "run_chapter_generate_llm_step", side_effect=fake_generate):
+                                        with patch.object(chapters, "_save_generated_chapter_version", return_value={}):
+                                            chapters.generate_chapter(
+                                                request=self._request(),
+                                                chapter_id="chapter-1",
+                                                body=ChapterGenerateRequest(mode="replace", target_word_count=3000),
+                                                user_id="user-1",
+                                            )
+
+        self.assertEqual(captured[0].params["max_tokens"], 12000)
 
     def test_generate_stream_stops_when_plan_parse_fails(self) -> None:
         generate_called = False

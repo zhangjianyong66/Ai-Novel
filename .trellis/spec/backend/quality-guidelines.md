@@ -16,7 +16,8 @@
 - 响应使用 `ok_payload` / `AppError` 契约。
 - 配置集中在 `backend/app/core/config.py` 的 `Settings`，新增环境变量必须有默认值、类型和必要 validator。
 - LLM 调用、生成 run、prompt、错误审计要沿用现有 `llm/` 与 `services/run_store.py` 路径。
-- 章节分析、章节改写、记忆更新自动提议等生成类路由必须保留模型配置页的 `max_tokens`/`max_output_tokens`；只覆盖必要的 `temperature` 等采样参数，避免低上限截断 JSON 契约输出。
+- 大纲生成/分段补全/缺口修复、章节生成、批量章节生成、章节分析、章节改写、记忆更新自动提议等生成类路由必须保留模型配置页或任务预设解析后的 `max_tokens`/`max_output_tokens`；只覆盖必要的 `temperature` 等采样参数，避免低上限截断正文或 JSON 契约输出。
+- `target_word_count` 只用于 prompt 变量和写作要求，不得用于估算并覆盖 `PreparedLlmCall.params["max_tokens"]`；回归测试需断言设置目标字数时仍保留配置的 `max_tokens`。
 - 生成、记忆、RAG、批量任务改动必须同步或新增测试。
 
 ## 测试选择

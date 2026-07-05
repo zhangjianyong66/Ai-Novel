@@ -72,7 +72,6 @@ from app.services.llm_retry import (
     task_llm_retry_jitter,
     task_llm_retry_max_seconds,
 )
-from app.services.length_control import estimate_max_tokens
 from app.services.mcp.service import McpResearchConfig as McpResearchConfigSvc
 from app.services.mcp.service import McpToolCall as McpToolCallSvc
 from app.services.output_contracts import contract_for_task
@@ -1619,16 +1618,6 @@ def generate_chapter(
             final_prompt_messages=prompt_messages,
         )
 
-    if body.target_word_count is not None:
-        llm_call = with_param_overrides(
-            llm_call,
-            {
-                "max_tokens": estimate_max_tokens(
-                    target_word_count=body.target_word_count, provider=llm_call.provider, model=llm_call.model
-                )
-            },
-        )
-
     gen_step = run_chapter_generate_llm_step(
         logger=logger,
         request_id=request_id,
@@ -2051,12 +2040,6 @@ def generate_chapter_stream(
                     params_json=llm_call.params_json,
                     memory_retrieval_log_json=None,
                     extra_json=run_params_extra_json,
-                )
-
-            if body.target_word_count is not None:
-                llm_call = with_param_overrides(
-                    llm_call,
-                    {"max_tokens": estimate_max_tokens(target_word_count=body.target_word_count, provider=llm_call.provider, model=llm_call.model)},
                 )
 
             yield sse_progress(message="调用模型...", progress=10)

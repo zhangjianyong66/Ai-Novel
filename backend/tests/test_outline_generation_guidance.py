@@ -29,7 +29,7 @@ from app.api.routes.outline import (
     _outline_fill_progress_message,
     _outline_segment_batch_size_for_target,
     _parse_outline_batch_output,
-    _recommend_outline_max_tokens,
+    _prepare_outline_generation,
     _strip_segment_conflicting_prompt_sections,
     _should_use_outline_segmented_mode,
     generate_outline,
@@ -41,6 +41,7 @@ from app.models.outline import Outline
 from app.models.project import Project
 from app.models.project_settings import ProjectSettings
 from app.models.user import User
+from app.schemas.outline_generate import OutlineGenerateRequest
 from app.services.generation_service import PreparedLlmCall
 from app.services.prompting import render_template
 
@@ -244,65 +245,38 @@ class TestOutlineGenerationGuidance(unittest.TestCase):
         self.assertEqual(_outline_segment_batch_size_for_target(200), 10)
         self.assertEqual(_outline_segment_batch_size_for_target(900), 8)
 
-    def test_recommend_outline_max_tokens(self) -> None:
-        # gpt-4o-mini output limit is 16384; 200 chapters should recommend 12000 when current max is lower.
-        self.assertEqual(
-            _recommend_outline_max_tokens(
-                target_chapter_count=200,
-                provider="openai",
-                model="gpt-4o-mini",
-                current_max_tokens=4096,
-            ),
-            12000,
+    def test_outline_generation_keeps_configured_max_tokens_for_large_outline(self) -> None:
+        db = SimpleNamespace(get=lambda _model, _id: None)
+        project = SimpleNamespace(id="project-1", name="Project", genre="", logline="")
+        llm_call = PreparedLlmCall(
+            provider="openai",
+            model="gpt-4o-mini",
+            base_url="https://example.invalid",
+            timeout_seconds=30,
+            params={"temperature": 0.7, "max_tokens": 4096},
+            params_json=json.dumps({"temperature": 0.7, "max_tokens": 4096}, ensure_ascii=False),
+            extra={},
         )
-        # 50 chapters should use aggressive max_tokens to avoid truncation.
-        self.assertEqual(
-            _recommend_outline_max_tokens(
-                target_chapter_count=50,
-                provider="openai",
-                model="gpt-4o-mini",
-                current_max_tokens=4096,
-            ),
-            12000,
-        )
-        # 40 chapters recommendation is lower than >40 bracket.
-        self.assertEqual(
-            _recommend_outline_max_tokens(
-                target_chapter_count=40,
-                provider="openai",
-                model="gpt-4o-mini",
-                current_max_tokens=4096,
-            ),
-            8192,
-        )
-        # gpt-4 output limit is 8192; recommendation should be clamped.
-        self.assertEqual(
-            _recommend_outline_max_tokens(
-                target_chapter_count=200,
-                provider="openai",
-                model="gpt-4",
-                current_max_tokens=4096,
-            ),
-            8192,
-        )
-        # If current max_tokens is already high enough, no override is needed.
-        self.assertIsNone(
-            _recommend_outline_max_tokens(
-                target_chapter_count=200,
-                provider="openai",
-                model="gpt-4o-mini",
-                current_max_tokens=12000,
+
+        with patch("app.api.routes.outline.require_project_editor", return_value=project), patch(
+            "app.api.routes.outline.resolve_task_llm_config",
+            return_value=SimpleNamespace(api_key="sk-test", llm_call=llm_call),
+        ), patch("app.api.routes.outline.resolve_style_guide", return_value=("", {"style_id": None, "source": "settings"})), patch(
+            "app.api.routes.outline.render_preset_for_task",
+            return_value=("sys", "user", [], None, None, None, {}),
+        ):
+            prepared = _prepare_outline_generation(
+                db=db,
+                project_id="project-1",
+                body=OutlineGenerateRequest(requirements={"chapter_count": 50}, context={"include_characters": False}),
+                user_id="user-1",
+                request_id="req-1",
+                x_llm_provider=None,
+                x_llm_api_key=None,
             )
-        )
-        # Small chapter count should not override.
-        self.assertIsNone(
-            _recommend_outline_max_tokens(
-                target_chapter_count=20,
-                provider="openai",
-                model="gpt-4o-mini",
-                current_max_tokens=4096,
-            )
-        )
+
+        self.assertEqual(prepared.llm_call.params["max_tokens"], 4096)
+        self.assertNotIn("outline_auto_max_tokens", prepared.run_params_extra_json)
 
     def test_outline_contract_template_uses_dynamic_rules(self) -> None:
         template_path = Path("app/resources/prompt_presets/outline_generate_v3/templates/sys.outline.contract.json.md")

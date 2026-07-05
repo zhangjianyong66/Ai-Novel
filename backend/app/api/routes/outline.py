@@ -17,7 +17,6 @@ from app.core.errors import AppError, ok_payload
 from app.core.logging import log_event
 from app.db.session import SessionLocal
 from app.db.utils import new_id, utc_now
-from app.llm.capabilities import max_output_tokens_limit
 from app.llm.client import call_llm_stream_messages
 from app.llm.messages import ChatMessage
 from app.models.character import Character
@@ -273,30 +272,13 @@ def _prepare_outline_generation(
     )
     prompt_render_log_json = json.dumps(render_log, ensure_ascii=False)
 
-    llm_call = resolved_outline.llm_call
-    current_max_tokens = llm_call.params.get("max_tokens")
-    current_max_tokens_int = int(current_max_tokens) if isinstance(current_max_tokens, int) else None
-    wanted_max_tokens = _recommend_outline_max_tokens(
-        target_chapter_count=target_chapter_count,
-        provider=llm_call.provider,
-        model=llm_call.model,
-        current_max_tokens=current_max_tokens_int,
-    )
-    if isinstance(wanted_max_tokens, int) and wanted_max_tokens > 0:
-        llm_call = with_param_overrides(llm_call, {"max_tokens": wanted_max_tokens})
-        run_params_extra_json["outline_auto_max_tokens"] = {
-            "target_chapter_count": target_chapter_count,
-            "from": current_max_tokens_int,
-            "to": wanted_max_tokens,
-        }
-
     return _PreparedOutlineGeneration(
         resolved_api_key=resolved_api_key,
         prompt_system=prompt_system,
         prompt_user=prompt_user,
         prompt_messages=prompt_messages,
         prompt_render_log_json=prompt_render_log_json,
-        llm_call=llm_call,
+        llm_call=resolved_outline.llm_call,
         target_chapter_count=target_chapter_count,
         run_params_extra_json=run_params_extra_json,
     )
@@ -432,29 +414,6 @@ def _outline_fill_style_samples(existing_chapters: list[dict[str, object]]) -> s
     return json.dumps(samples, ensure_ascii=False)
 
 
-def _recommend_outline_max_tokens(
-    *,
-    target_chapter_count: int | None,
-    provider: str,
-    model: str | None,
-    current_max_tokens: int | None,
-) -> int | None:
-    if not target_chapter_count or target_chapter_count <= 20:
-        return None
-    if target_chapter_count <= 40:
-        wanted = 8192
-    else:
-        wanted = 12000
-
-    limit = max_output_tokens_limit(provider, model)
-    if isinstance(limit, int) and limit > 0:
-        wanted = min(wanted, int(limit))
-
-    if isinstance(current_max_tokens, int) and current_max_tokens >= wanted:
-        return None
-    return wanted if wanted > 0 else None
-
-
 def _should_use_outline_segmented_mode(target_chapter_count: int | None) -> bool:
     return bool(target_chapter_count and target_chapter_count >= OUTLINE_SEGMENT_TRIGGER_CHAPTER_COUNT)
 
@@ -581,24 +540,6 @@ def _build_outline_segment_recent_window(chapters: list[dict[str, object]]) -> s
             }
         )
     return json.dumps(compact, ensure_ascii=False)
-
-
-def _recommend_outline_segment_max_tokens(
-    *,
-    requested_count: int,
-    provider: str,
-    model: str | None,
-    current_max_tokens: int | None,
-) -> int | None:
-    if requested_count <= 0:
-        return None
-    wanted = max(1800, min(4200, 1200 + requested_count * 230))
-    limit = max_output_tokens_limit(provider, model)
-    if isinstance(limit, int) and limit > 0:
-        wanted = min(wanted, int(limit))
-    if isinstance(current_max_tokens, int) and current_max_tokens >= wanted:
-        return None
-    return wanted if wanted > 0 else None
 
 
 def _build_outline_stream_raw_preview(
@@ -902,16 +843,6 @@ def _generate_outline_segmented_with_llm(
                 previous_failure_reason=last_failure_reason,
             )
 
-            current_max_tokens = llm_call.params.get("max_tokens")
-            current_max_tokens_int = int(current_max_tokens) if isinstance(current_max_tokens, int) else None
-            segment_max_tokens = _recommend_outline_segment_max_tokens(
-                requested_count=len(missing_numbers),
-                provider=llm_call.provider,
-                model=llm_call.model,
-                current_max_tokens=current_max_tokens_int,
-            )
-            segment_call = with_param_overrides(llm_call, {"max_tokens": segment_max_tokens}) if segment_max_tokens else llm_call
-
             segment_extra = dict(run_params_extra_json or {})
             segment_extra["outline_segment"] = {
                 "batch_index": batch_index,
@@ -932,7 +863,7 @@ def _generate_outline_segmented_with_llm(
                     api_key=api_key,
                     prompt_system=segment_system,
                     prompt_user=segment_user,
-                    llm_call=segment_call,
+                    llm_call=llm_call,
                     run_params_extra_json=segment_extra,
                 )
             except AppError as exc:
@@ -1753,15 +1684,6 @@ def _repair_outline_remaining_gaps_with_llm(
             previous_failure_reason=last_failure_reason,
         )
 
-        current_max_tokens = llm_call.params.get("max_tokens")
-        current_max_tokens_int = int(current_max_tokens) if isinstance(current_max_tokens, int) else None
-        repair_max_tokens = _recommend_outline_segment_max_tokens(
-            requested_count=len(batch_missing),
-            provider=llm_call.provider,
-            model=llm_call.model,
-            current_max_tokens=current_max_tokens_int,
-        )
-        repair_call = with_param_overrides(llm_call, {"max_tokens": repair_max_tokens}) if repair_max_tokens else llm_call
         repair_extra = dict(run_params_extra_json or {})
         repair_extra["outline_gap_repair"] = {
             "attempt": attempt,
@@ -1780,7 +1702,7 @@ def _repair_outline_remaining_gaps_with_llm(
                 api_key=api_key,
                 prompt_system=repair_system,
                 prompt_user=repair_user,
-                llm_call=repair_call,
+                llm_call=llm_call,
                 run_params_extra_json=repair_extra,
             )
         except AppError as exc:
@@ -2019,15 +1941,6 @@ def _repair_outline_remaining_gaps_final_sweep_with_llm(
                 previous_output_numbers=last_output_numbers,
                 previous_failure_reason=last_failure_reason,
             )
-            current_max_tokens = llm_call.params.get("max_tokens")
-            current_max_tokens_int = int(current_max_tokens) if isinstance(current_max_tokens, int) else None
-            repair_max_tokens = _recommend_outline_segment_max_tokens(
-                requested_count=1,
-                provider=llm_call.provider,
-                model=llm_call.model,
-                current_max_tokens=current_max_tokens_int,
-            )
-            repair_call = with_param_overrides(llm_call, {"max_tokens": repair_max_tokens}) if repair_max_tokens else llm_call
             repair_extra = dict(run_params_extra_json or {})
             repair_extra["outline_gap_repair_final_sweep"] = {
                 "attempt": attempt,
@@ -2046,7 +1959,7 @@ def _repair_outline_remaining_gaps_final_sweep_with_llm(
                     api_key=api_key,
                     prompt_system=repair_system,
                     prompt_user=repair_user,
-                    llm_call=repair_call,
+                    llm_call=llm_call,
                     run_params_extra_json=repair_extra,
                 )
             except AppError as exc:
@@ -2207,15 +2120,6 @@ def _fill_outline_missing_chapters_with_llm(
             existing_chapters=chapters_now,
             outline_md=str(data.get("outline_md") or ""),
         )
-        current_max_tokens = llm_call.params.get("max_tokens")
-        current_max_tokens_int = int(current_max_tokens) if isinstance(current_max_tokens, int) else None
-        fill_max_tokens = _recommend_outline_max_tokens(
-            target_chapter_count=max(41, len(batch_missing) + 20),
-            provider=llm_call.provider,
-            model=llm_call.model,
-            current_max_tokens=current_max_tokens_int,
-        )
-        fill_call = with_param_overrides(llm_call, {"max_tokens": fill_max_tokens}) if fill_max_tokens else llm_call
         fill_extra = dict(run_params_extra_json or {})
         fill_extra["outline_fill_missing"] = {
             "attempt": attempt,
@@ -2234,7 +2138,7 @@ def _fill_outline_missing_chapters_with_llm(
                 api_key=api_key,
                 prompt_system=fill_system,
                 prompt_user=fill_user,
-                llm_call=fill_call,
+                llm_call=llm_call,
                 run_params_extra_json=fill_extra,
             )
         except AppError as exc:

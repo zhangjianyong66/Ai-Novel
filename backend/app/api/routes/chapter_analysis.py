@@ -16,6 +16,7 @@ from app.schemas.chapter_analysis import ChapterAnalyzeRequest, ChapterAnalysisA
 from app.schemas.memory_update import MemoryUpdateV1Request
 from app.services.annotations_service import build_annotations_from_story_memories
 from app.services.chapter_context_service import build_chapter_analyze_render_values, build_chapter_rewrite_render_values
+from app.services.chapter_version_service import create_and_activate_chapter_version, chapter_version_summary
 from app.services.generation_service import call_llm_and_record, with_param_overrides
 from app.services.llm_task_preset_resolver import resolve_task_llm_config
 from app.services.memory_update_service import propose_chapter_memory_change_set
@@ -53,6 +54,35 @@ def _resolve_task_llm_for_call(
     if x_llm_api_key and x_llm_provider and resolved.llm_call.provider != x_llm_provider:
         raise AppError(code="LLM_CONFIG_ERROR", message="当前任务 provider 与请求头不一致，请先保存/切换", status_code=400)
     return resolved
+
+
+def _save_rewrite_version(
+    *,
+    chapter_id: str,
+    user_id: str,
+    content_md: str,
+    generation_run_id: str | None,
+    provider: str | None,
+    model: str | None,
+) -> dict[str, object]:
+    final_content = str(content_md or "")
+    if not final_content.strip():
+        return {}
+    with SessionLocal() as db:
+        chapter = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+        version = create_and_activate_chapter_version(
+            db=db,
+            chapter=chapter,
+            content_md=final_content,
+            source="ai_optimize",
+            generation_run_id=generation_run_id,
+            provider=provider,
+            model=model,
+            meta={"task": "chapter_rewrite"},
+        )
+        db.commit()
+        active = chapter_version_summary(version, active_version_id=chapter.active_version_id)
+        return {"saved_version": active, "active_version": active}
 
 
 @router.post("/chapters/{chapter_id}/analyze")
@@ -403,6 +433,17 @@ def rewrite_chapter(
         data["parse_error"] = parse_error
     if llm_result.finish_reason is not None:
         data["finish_reason"] = llm_result.finish_reason
+    if parse_error is None:
+        data.update(
+            _save_rewrite_version(
+                chapter_id=chapter_id,
+                user_id=user_id,
+                content_md=str(data.get("content_md") or ""),
+                generation_run_id=llm_result.run_id,
+                provider=llm_call.provider,
+                model=llm_call.model,
+            )
+        )
     return ok_payload(request_id=request_id, data=data)
 
 

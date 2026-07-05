@@ -6,6 +6,7 @@ import type { ToastApi } from "../../components/ui/toast";
 import { UI_COPY } from "../../lib/uiCopy";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { ApiError, apiJson } from "../../services/apiClient";
+import { chapterStore } from "../../services/chapterStore";
 import type { Chapter, LLMPreset } from "../../types";
 import { getWritingApplyMemorySuccess, WRITING_PAGE_COPY } from "./writingPageCopy";
 import type { ChapterForm } from "./writingUtils";
@@ -16,11 +17,12 @@ export function useChapterAnalysis(args: {
   genForm: GenerateForm;
   form: ChapterForm | null;
   setForm: React.Dispatch<React.SetStateAction<ChapterForm | null>>;
+  onChapterPersisted?: (chapter: Chapter) => void;
   dirty?: boolean;
   saveChapter?: (opts?: { silent?: boolean }) => Promise<boolean>;
   toast: ToastApi;
 }) {
-  const { activeChapter, preset, genForm, form, setForm, dirty = false, saveChapter, toast } = args;
+  const { activeChapter, preset, genForm, form, setForm, onChapterPersisted, dirty = false, saveChapter, toast } = args;
 
   const [open, setOpen] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -176,8 +178,14 @@ export function useChapterAnalysis(args: {
         return;
       }
 
-      setForm((prev) => (prev ? { ...prev, content_md: nextContent } : prev));
-      toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedUnsaved, res.request_id);
+      if (res.data.saved_version || res.data.active_version) {
+        const latest = await chapterStore.loadChapterDetail(activeChapter.id, { force: true });
+        onChapterPersisted?.(latest);
+        toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedSaved, res.request_id);
+      } else {
+        setForm((prev) => (prev ? { ...prev, content_md: nextContent } : prev));
+        toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedUnsaved, res.request_id);
+      }
       const droppedParams = res.data.dropped_params ?? [];
       if (droppedParams.length > 0) {
         toast.toastSuccess(`${UI_COPY.common.droppedParamsPrefix}${droppedParams.join("、")}`, res.request_id);
@@ -191,7 +199,17 @@ export function useChapterAnalysis(args: {
         setRewriteLoading(false);
       }
     }
-  }, [activeChapter, analysisResult?.analysis, form, genForm, preset, rewriteInstruction, setForm, toast]);
+  }, [
+    activeChapter,
+    analysisResult?.analysis,
+    form,
+    genForm,
+    onChapterPersisted,
+    preset,
+    rewriteInstruction,
+    setForm,
+    toast,
+  ]);
 
   const applyAnalysisToMemory = useCallback(async () => {
     if (!activeChapter || !form) return;

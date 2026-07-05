@@ -4,6 +4,8 @@ import type {
   ChapterDetail,
   ChapterListItem,
   ChapterMetaPage,
+  ChapterVersionDetail,
+  ChapterVersionSummary,
   CreateChapterInput,
   UpdateChapterStatusInput,
   UpdateChapterInput,
@@ -98,6 +100,31 @@ export async function updateChapterStatus(
     body: JSON.stringify(payload),
   });
   return res.data.chapter;
+}
+
+export async function fetchChapterVersions(
+  chapterId: string,
+): Promise<{ active_version_id: string | null; versions: ChapterVersionSummary[] }> {
+  const res = await apiJson<{ active_version_id: string | null; versions: ChapterVersionSummary[] }>(
+    `/api/chapters/${chapterId}/versions`,
+  );
+  return res.data;
+}
+
+export async function fetchChapterVersionDetail(chapterId: string, versionId: string): Promise<ChapterVersionDetail> {
+  const res = await apiJson<{ version: ChapterVersionDetail }>(`/api/chapters/${chapterId}/versions/${versionId}`);
+  return res.data.version;
+}
+
+export async function activateChapterVersion(
+  chapterId: string,
+  versionId: string,
+): Promise<{ chapter: ChapterDetail; active_version: ChapterVersionSummary }> {
+  const res = await apiJson<{ chapter: ChapterDetail; active_version: ChapterVersionSummary }>(
+    `/api/chapters/${chapterId}/versions/${versionId}/activate`,
+    { method: "POST" },
+  );
+  return res.data;
 }
 
 export async function deleteChapter(chapterId: string): Promise<void> {

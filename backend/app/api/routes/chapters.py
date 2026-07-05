@@ -30,6 +30,7 @@ from app.llm.client import call_llm_messages, call_llm_stream_messages
 from app.llm.messages import ChatMessage, coalesce_system, flatten_messages
 from app.llm.redaction import redact_text
 from app.models.chapter import Chapter
+from app.models.chapter_version import ChapterVersion
 from app.models.character import Character
 from app.models.generation_run import GenerationRun
 from app.models.outline import Outline
@@ -44,6 +45,8 @@ from app.schemas.chapters import (
     ChapterOut,
     ChapterStatusUpdate,
     ChapterUpdate,
+    ChapterVersionDetailOut,
+    ChapterVersionSummaryOut,
 )
 from app.schemas.chapter_generate import ChapterGenerateRequest
 from app.schemas.chapter_generation_instruction_preferences import ChapterGenerationInstructionPreferencesSave
@@ -77,6 +80,14 @@ from app.services.outline_store import ensure_active_outline
 from app.services.chapter_context_service import (
     build_chapter_generate_render_values,
     inject_plan_into_render_values,
+)
+from app.services.chapter_version_service import (
+    activate_chapter_version,
+    chapter_version_detail,
+    chapter_version_summary,
+    create_and_activate_chapter_version,
+    get_active_chapter_version_summary,
+    list_chapter_versions,
 )
 from app.services.memory_query_service import normalize_query_text, parse_query_preprocessing_config
 from app.services.memory_retrieval_service import build_memory_retrieval_log_json, retrieve_memory_context_pack
@@ -475,6 +486,48 @@ def _find_missing_prereq_numbers(
     return missing
 
 
+def _chapter_detail_data(db: Session, row: Chapter) -> dict[str, object]:
+    data = ChapterDetailOut.model_validate(row).model_dump()
+    data["active_version"] = get_active_chapter_version_summary(db, row)
+    return data
+
+
+def _save_generated_chapter_version(
+    *,
+    chapter_id: str,
+    user_id: str,
+    content_md: str,
+    source: Literal["ai_generate", "ai_optimize"],
+    generation_run_id: str | None,
+    provider: str | None,
+    model: str | None,
+    meta: dict[str, object] | None = None,
+) -> dict[str, object]:
+    final_content = str(content_md or "")
+    if not final_content.strip():
+        return {}
+    with SessionLocal() as db:
+        chapter = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+        version = create_and_activate_chapter_version(
+            db=db,
+            chapter=chapter,
+            content_md=final_content,
+            source=source,
+            generation_run_id=generation_run_id,
+            provider=provider,
+            model=model,
+            meta=meta,
+        )
+        db.commit()
+        db.refresh(chapter)
+        active = chapter_version_summary(version, active_version_id=chapter.active_version_id)
+        return {
+            "saved_version": active,
+            "active_version": active,
+            "chapter": _chapter_detail_data(db, chapter),
+        }
+
+
 def _load_previous_chapter_context(
     db: Session,
     *,
@@ -791,7 +844,52 @@ def bulk_create(
 def get_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str) -> dict:
     request_id = request.state.request_id
     row = require_chapter_viewer(db, chapter_id=chapter_id, user_id=user_id)
-    return ok_payload(request_id=request_id, data={"chapter": ChapterDetailOut.model_validate(row).model_dump()})
+    return ok_payload(request_id=request_id, data={"chapter": _chapter_detail_data(db, row)})
+
+
+@router.get("/chapters/{chapter_id}/versions")
+def list_versions(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_viewer(db, chapter_id=chapter_id, user_id=user_id)
+    versions = [
+        ChapterVersionSummaryOut.model_validate(
+            chapter_version_summary(version, active_version_id=chapter.active_version_id)
+        ).model_dump()
+        for version in list_chapter_versions(db=db, chapter=chapter)
+    ]
+    return ok_payload(
+        request_id=request_id,
+        data={"active_version_id": chapter.active_version_id, "versions": versions},
+    )
+
+
+@router.get("/chapters/{chapter_id}/versions/{version_id}")
+def get_version(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str, version_id: str) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_viewer(db, chapter_id=chapter_id, user_id=user_id)
+    version = db.get(ChapterVersion, version_id)
+    if version is None or str(version.chapter_id) != str(chapter.id):
+        raise AppError.not_found("章节版本不存在")
+    data = ChapterVersionDetailOut.model_validate(
+        chapter_version_detail(version, active_version_id=chapter.active_version_id)
+    ).model_dump()
+    return ok_payload(request_id=request_id, data={"version": data})
+
+
+@router.post("/chapters/{chapter_id}/versions/{version_id}/activate")
+def activate_version(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: str, version_id: str) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+    version = activate_chapter_version(db=db, chapter=chapter, version_id=version_id)
+    db.commit()
+    db.refresh(chapter)
+    data = ChapterVersionSummaryOut.model_validate(
+        chapter_version_summary(version, active_version_id=chapter.active_version_id)
+    ).model_dump()
+    return ok_payload(
+        request_id=request_id,
+        data={"chapter": _chapter_detail_data(db, chapter), "active_version": data},
+    )
 
 
 @router.put("/chapters/{chapter_id}")
@@ -821,6 +919,7 @@ def update_chapter(request: Request, db: DbDep, user_id: UserIdDep, chapter_id: 
         row.plan = body.plan
     if body.content_md is not None:
         row.content_md = body.content_md
+        row.active_version_id = None
     if body.summary is not None:
         row.summary = body.summary
     if prev_status == "planned" and str(row.content_md or "").strip():
@@ -1638,6 +1737,28 @@ def generate_chapter(
         data["dropped_params"] = gen_step.dropped_params
     if gen_step.finish_reason is not None:
         data["finish_reason"] = gen_step.finish_reason
+    if parse_error is None:
+        final_content = str(data.get("content_md") or "")
+        version_source: Literal["ai_generate", "ai_optimize"] = (
+            "ai_optimize" if bool(data.get("content_optimize_applied")) else "ai_generate"
+        )
+        version_run_id = str(data.get("content_optimize_run_id") or gen_step.run_id or "").strip() or None
+        saved = _save_generated_chapter_version(
+            chapter_id=chapter_id,
+            user_id=user_id,
+            content_md=final_content,
+            source=version_source,
+            generation_run_id=version_run_id,
+            provider=llm_call.provider,
+            model=llm_call.model,
+            meta={
+                "task": "chapter_generate",
+                "mode": body.mode,
+                "post_edit_applied": bool(data.get("post_edit_applied")),
+                "content_optimize_applied": bool(data.get("content_optimize_applied")),
+            },
+        )
+        data.update({k: v for k, v in saved.items() if k != "chapter"})
     return ok_payload(request_id=request_id, data=data)
 
 
@@ -2263,6 +2384,28 @@ def generate_chapter_stream(
                 data["dropped_params"] = dropped_params
             if generation_run_id is not None:
                 data["generation_run_id"] = generation_run_id
+            if parse_error is None:
+                final_content = str(data.get("content_md") or "")
+                version_source: Literal["ai_generate", "ai_optimize"] = (
+                    "ai_optimize" if bool(data.get("content_optimize_applied")) else "ai_generate"
+                )
+                version_run_id = str(data.get("content_optimize_run_id") or generation_run_id or "").strip() or None
+                saved = _save_generated_chapter_version(
+                    chapter_id=chapter_id,
+                    user_id=user_id,
+                    content_md=final_content,
+                    source=version_source,
+                    generation_run_id=version_run_id,
+                    provider=llm_call.provider,
+                    model=llm_call.model,
+                    meta={
+                        "task": "chapter_generate_stream",
+                        "mode": body.mode,
+                        "post_edit_applied": bool(data.get("post_edit_applied")),
+                        "content_optimize_applied": bool(data.get("content_optimize_applied")),
+                    },
+                )
+                data.update({k: v for k, v in saved.items() if k != "chapter"})
 
             yield sse_progress(message="完成", progress=100, status="success")
             yield sse_result(data)

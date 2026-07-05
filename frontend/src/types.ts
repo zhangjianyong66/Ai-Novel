@@ -126,6 +126,7 @@ export interface ChapterBase {
   number: number;
   title?: string | null;
   status: ChapterStatus;
+  active_version_id?: string | null;
   updated_at: string;
 }
 
@@ -133,6 +134,7 @@ export interface ChapterDetail extends ChapterBase {
   plan?: string | null;
   content_md?: string | null;
   summary?: string | null;
+  active_version?: ChapterVersionSummary | null;
 }
 
 export type Chapter = ChapterDetail;
@@ -168,6 +170,26 @@ export interface UpdateChapterInput {
 export interface UpdateChapterStatusInput {
   status: ChapterStatus;
   expected_status: ChapterStatus;
+}
+
+export type ChapterVersionSource = "ai_generate" | "ai_optimize" | "manual_snapshot" | string;
+
+export interface ChapterVersionSummary {
+  id: string;
+  chapter_id: string;
+  project_id: string;
+  source: ChapterVersionSource;
+  word_count: number;
+  generation_run_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  meta?: Record<string, unknown> | null;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface ChapterVersionDetail extends ChapterVersionSummary {
+  content_md: string;
 }
 
 export interface BulkCreateChapterInput {

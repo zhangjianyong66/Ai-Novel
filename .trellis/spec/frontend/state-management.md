@@ -31,6 +31,8 @@
 - API 请求统一走 `apiJson<T>()`，成功后读取 `res.data`。
 - 领域 service 返回页面需要的类型，不把 `ApiOkPayload` 泄露给大多数组件。
 - 长连接/流式生成使用 `SSEPostClient`，回调拆分 `onProgress`、`onChunk`、`onResult`、`onDone`、`onError`。
+- 写作页收到章节 AI 生成/优化响应中的 `saved_version` 或 `active_version` 时，表示后端已保存并激活正文版本；前端必须强制刷新章节详情并重置表单基线，不能继续提示“确认后保存”或只把正文塞进本地 dirty 表单。
+- 写作页激活历史版本前必须检查本地 dirty 状态和章节状态；有未保存修改或章节为 `done` 时，不调用激活 API。
 - 401 且错误码为真正鉴权错误时，通过 `ainovel:unauthorized` 事件触发 Auth 状态更新；LLM key 错误不能误登出，测试见 `src/services/unauthorizedPolicy.test.ts`。
 
 ## 派生状态

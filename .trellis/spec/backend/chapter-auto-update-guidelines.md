@@ -80,6 +80,98 @@ if row.status == "done":
     schedule_chapter_done_tasks(..., chapter_id=row.id, ...)
 ```
 
+## Scenario: 章节 AI 正文版本即时保存
+
+### 1. Scope / Trigger
+
+- Trigger: 修改章节 AI 生成、流式生成、章节优化/改写、章节详情、章节版本列表/预览/激活或 `chapters.content_md` 保存行为。
+- 后端拿到完整 AI 正文后必须立即落库为章节正文版本并激活，不能依赖前端确认保存。
+- 版本只管理 `content_md`，不回滚标题、计划、摘要或状态。
+
+### 2. Signatures
+
+- DB:
+  - `chapter_versions(id, project_id, chapter_id, source, content_md, word_count, generation_run_id, provider, model, meta_json, created_at)`
+  - `chapters.active_version_id -> chapter_versions.id`
+- AI endpoints:
+  - `POST /api/chapters/{chapter_id}/generate`
+  - `POST /api/chapters/{chapter_id}/generate-stream`
+  - `POST /api/chapters/{chapter_id}/rewrite`
+- Version endpoints:
+  - `GET /api/chapters/{chapter_id}/versions`
+  - `GET /api/chapters/{chapter_id}/versions/{version_id}`
+  - `POST /api/chapters/{chapter_id}/versions/{version_id}/activate`
+
+### 3. Contracts
+
+- AI 生成/优化最终 `content_md` 非空且无 `parse_error` 时，调用统一版本服务创建并激活版本。
+- `source` 取值：
+  - `ai_generate`: 章节生成最终正文。
+  - `ai_optimize`: 正文优化、章节改写最终正文。
+  - `manual_snapshot`: AI 覆盖前的当前正文快照。
+- AI 覆盖前如果 `chapters.active_version_id` 为空、版本不存在、版本章节不匹配或版本正文不等于 `chapters.content_md`，先创建 `manual_snapshot`；如果当前正文已等于激活版本，不重复创建快照。
+- 激活版本必须同步：
+  - `chapters.content_md = chapter_versions.content_md`
+  - `chapters.active_version_id = chapter_versions.id`
+  - `project_settings.vector_index_dirty = true`
+- 手动 `PUT /api/chapters/{chapter_id}` 保存 `content_md` 时不创建版本，并清空 `chapters.active_version_id`，表示当前正文没有对应版本。
+- AI 接口保留旧正文字段，同时新增 `saved_version` 和 `active_version` 摘要字段。
+
+### 4. Validation & Error Matrix
+
+- 章节不存在或无读取权限 -> 版本列表/详情复用章节读取权限错误。
+- 章节不存在或无编辑权限 -> 激活版本复用章节编辑权限错误。
+- `version_id` 不存在或不属于该章节 -> `AppError.not_found("章节版本不存在")`。
+- `chapter.status == "done"` 时激活版本 -> `AppError.validation(details={"reason": "chapter_done_readonly"})`。
+- AI 最终正文为空或存在 `parse_error` -> 不创建版本，按既有生成响应/错误契约返回。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 非流式生成成功后，响应含 `saved_version`，刷新章节详情时 `content_md` 已是生成正文。
+- Good: 流式生成只在最终结果事件前保存一次版本，中间 token 不写库。
+- Good: 用户手动修改正文并保存后 `active_version_id` 为空；下一次 AI 操作先创建 `manual_snapshot`。
+- Base: 两次 AI 并发生成都保存为历史版本，最后完成者成为当前版本。
+- Bad: 前端收到 AI 正文后等待用户确认才保存，网络中断会丢失模型结果。
+- Bad: 版本激活直接创建 `ProjectTask`，绕过显式 `trigger_auto_updates` 语义。
+
+### 6. Tests Required
+
+- 服务测试：
+  - 首次 AI 保存创建 `manual_snapshot` 和 AI 版本，并同步章节正文/active 指针。
+  - 当前正文等于 active version 时，连续 AI 保存不重复创建快照。
+  - 激活历史版本同步 `chapters.content_md` 和 `active_version_id`。
+  - `done` 章节激活版本返回 `chapter_done_readonly`。
+- 路由测试：
+  - viewer 可列表/预览版本，不能激活版本。
+  - editor 可激活版本。
+  - 手动保存 `content_md` 清空 `active_version_id`。
+- 迁移测试：
+  - SQLite 临时库可 `alembic upgrade head`。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+data = run_chapter_generate(...)
+return ok_payload(data=data)  # 等前端确认后再 PUT /chapters/{id}
+```
+
+#### Correct
+
+```python
+data = run_chapter_generate(...)
+version = create_and_activate_chapter_version(
+    db=db,
+    chapter=chapter,
+    content_md=data["content_md"],
+    source="ai_generate",
+    generation_run_id=data["generation_run_id"],
+)
+data["saved_version"] = chapter_version_summary(version, active_version_id=chapter.active_version_id)
+return ok_payload(data=data)
+```
+
 #### Correct
 
 ```python

@@ -52,11 +52,30 @@ class ChapterOut(ORMModel):
     content_md: str | None = None
     summary: str | None = None
     status: ChapterStatus
+    active_version_id: str | None = None
     updated_at: datetime
 
 
+class ChapterVersionSummaryOut(ORMModel):
+    id: str
+    chapter_id: str
+    project_id: str
+    source: str
+    word_count: int
+    generation_run_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    meta: dict[str, object] | None = None
+    created_at: datetime
+    is_active: bool = False
+
+
+class ChapterVersionDetailOut(ChapterVersionSummaryOut):
+    content_md: str
+
+
 class ChapterDetailOut(ChapterOut):
-    pass
+    active_version: ChapterVersionSummaryOut | None = None
 
 
 class ChapterListItemOut(ORMModel):

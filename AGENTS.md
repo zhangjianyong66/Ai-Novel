@@ -67,6 +67,10 @@
 
 - 写作页/章节接口的 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 可由已保存章节或无未保存修改的章节显式触发；章节为草稿时只创建 `vector_rebuild`、`search_rebuild`，章节为 `status=done` 时创建 `vector_rebuild`、`search_rebuild` 和完整章节自动更新链。
 - `PUT /api/chapters/{chapter_id}` 普通保存不创建任何 `ProjectTask`，包括 `vector_rebuild`、`search_rebuild` 和各类内容自动更新；只有显式调用 `trigger_auto_updates` 才触发后台更新任务。
+- 章节 AI 生成、流式生成最终结果、章节 AI 优化/改写拿到完整正文后，应由后端立即保存为 `chapter_versions` 新版本并激活，同步写回 `chapters.content_md` 和 `chapters.active_version_id`，避免前端网络中断导致结果丢失。
+- 章节正文版本只管理 `content_md`，不回滚标题、计划、摘要或状态；AI 覆盖前如果当前正文没有匹配的激活版本，应懒创建 `manual_snapshot`，当前正文已等于激活版本时不重复创建快照。
+- 版本激活与普通正文保存一样只标记 vector dirty，不自动创建 `ProjectTask`；`done` 章节不能直接激活历史版本，必须先通过状态接口回退到 `drafting`。
+- 写作页切换章节历史版本必须先预览再激活；有未保存修改时禁止激活历史版本，生成/优化接口响应中的 `saved_version` / `active_version` 表示后端已保存并激活，前端应刷新章节详情而不是继续提示“确认后保存”。
 - `PATCH /api/chapters/{chapter_id}/status` 是章节状态修改的唯一入口，请求体包含 `status` 和 `expected_status`；合法流转为 `planned -> drafting`、`drafting -> planned`、`drafting -> done`、`done -> drafting`。状态修改只改状态、标记 vector dirty，不创建任何 `ProjectTask`。
 - `PUT /api/chapters/{chapter_id}` 只保存标题、计划、正文和摘要；请求体只要包含 `status` 就返回 `details.reason=chapter_status_update_requires_status_endpoint`。已定稿章节仍默认只读，直接通过 `PUT` 修改内容返回 `details.reason=chapter_done_readonly`。
 - 前端写作页状态修改必须使用状态徽标和合法动作按钮，不能使用状态下拉框或把 `status` 放入保存 payload；有未保存内容修改时应先保存，`done -> drafting` 必须二次确认。

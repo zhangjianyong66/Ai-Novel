@@ -159,4 +159,6 @@ export type ChapterRewriteResult = {
   finish_reason?: string;
   dropped_params?: string[];
   generation_run_id: string;
+  saved_version?: unknown;
+  active_version?: unknown;
 };

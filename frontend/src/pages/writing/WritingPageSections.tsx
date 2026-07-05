@@ -10,6 +10,7 @@ import { AiGenerateDrawer } from "../../components/writing/AiGenerateDrawer";
 import { BatchGenerationModal } from "../../components/writing/BatchGenerationModal";
 import { ChapterAnalysisModal } from "../../components/writing/ChapterAnalysisModal";
 import { ChapterListPanel } from "../../components/writing/ChapterListPanel";
+import { ChapterVersionsDrawer } from "../../components/writing/ChapterVersionsDrawer";
 import { ContentOptimizeCompareDrawer } from "../../components/writing/ContentOptimizeCompareDrawer";
 import { ContextPreviewDrawer } from "../../components/writing/ContextPreviewDrawer";
 import { CreateChapterDialog } from "../../components/writing/CreateChapterDialog";
@@ -58,6 +59,7 @@ export type WritingEditorSectionProps = {
   onContentTextareaRef: (element: HTMLTextAreaElement | null) => void;
   onOpenAnalysis: () => void;
   onOpenChapterTrace: () => void;
+  onOpenVersions: () => void;
   generationIndicatorLabel?: string;
 };
 
@@ -173,6 +175,14 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
         <div className="grid gap-3 xl:min-w-[560px] xl:max-w-[720px]">
           <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                disabled={props.loadingChapter || props.generating}
+                onClick={props.onOpenVersions}
+                type="button"
+              >
+                {WRITING_PAGE_COPY.versions}
+              </button>
               <button
                 className="btn btn-secondary min-h-10 px-4 shadow-sm"
                 disabled={props.loadingChapter || props.generating}
@@ -424,6 +434,7 @@ export type WritingPageOverlaysProps = {
   aiGenerateDrawerProps: ComponentProps<typeof AiGenerateDrawer>;
   postEditCompareDrawerProps: ComponentProps<typeof PostEditCompareDrawer>;
   contentOptimizeCompareDrawerProps: ComponentProps<typeof ContentOptimizeCompareDrawer>;
+  chapterVersionsDrawerProps: ComponentProps<typeof ChapterVersionsDrawer>;
   promptInspectorDrawerProps: ComponentProps<typeof PromptInspectorDrawer>;
   contextPreviewDrawerProps: ComponentProps<typeof ContextPreviewDrawer>;
   tablesPanelProps: ComponentProps<typeof TablesPanel>;
@@ -441,6 +452,7 @@ export function WritingPageOverlays(props: WritingPageOverlaysProps) {
       <AiGenerateDrawer {...props.aiGenerateDrawerProps} />
       <PostEditCompareDrawer {...props.postEditCompareDrawerProps} />
       <ContentOptimizeCompareDrawer {...props.contentOptimizeCompareDrawerProps} />
+      <ChapterVersionsDrawer {...props.chapterVersionsDrawerProps} />
       <PromptInspectorDrawer {...props.promptInspectorDrawerProps} />
       <ContextPreviewDrawer {...props.contextPreviewDrawerProps} />
       <TablesPanel {...props.tablesPanelProps} />

@@ -10,8 +10,17 @@ import { useProjectData } from "../../hooks/useProjectData";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { chapterStore } from "../../services/chapterStore";
+import { activateChapterVersion, fetchChapterVersionDetail, fetchChapterVersions } from "../../services/chaptersApi";
 import { getWizardProjectChangedAt, markWizardProjectChanged } from "../../services/wizard";
-import type { ChapterStatus, Character, LLMPreset, Outline, OutlineListItem } from "../../types";
+import type {
+  ChapterStatus,
+  ChapterVersionDetail,
+  ChapterVersionSummary,
+  Character,
+  LLMPreset,
+  Outline,
+  OutlineListItem,
+} from "../../types";
 
 import type {
   WritingChapterListDrawerProps,
@@ -90,6 +99,12 @@ export function useWritingPageState(): WritingPageState {
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const [memoryUpdateOpen, setMemoryUpdateOpen] = useState(false);
   const [foreshadowOpen, setForeshadowOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionDetailLoading, setVersionDetailLoading] = useState(false);
+  const [versionActivating, setVersionActivating] = useState(false);
+  const [chapterVersions, setChapterVersions] = useState<ChapterVersionSummary[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<ChapterVersionDetail | null>(null);
   const [autoUpdatesTriggering, setAutoUpdatesTriggering] = useState(false);
   const [memoryUpdateFailedChapterId, setMemoryUpdateFailedChapterId] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -209,6 +224,7 @@ export function useWritingPageState(): WritingPageState {
     dirty,
     saveChapter,
     requestSelectChapter,
+    onChapterPersisted: applyChapterDetail,
     toast,
     confirm,
   });
@@ -237,8 +253,110 @@ export function useWritingPageState(): WritingPageState {
     requestSelectChapter,
     toast,
   });
-  const analysis = useChapterAnalysis({ activeChapter, preset, genForm, form, setForm, dirty, saveChapter, toast });
+  const analysis = useChapterAnalysis({
+    activeChapter,
+    preset,
+    genForm,
+    form,
+    setForm,
+    onChapterPersisted: applyChapterDetail,
+    dirty,
+    saveChapter,
+    toast,
+  });
   const history = useGenerationHistory({ projectId, toast });
+
+  const loadChapterVersions = useCallback(async () => {
+    if (!activeChapter) return;
+    setVersionsLoading(true);
+    try {
+      const data = await fetchChapterVersions(activeChapter.id);
+      setChapterVersions(data.versions ?? []);
+      const first = (data.versions ?? [])[0] ?? null;
+      if (first) {
+        setVersionDetailLoading(true);
+        try {
+          setSelectedVersion(await fetchChapterVersionDetail(activeChapter.id, first.id));
+        } finally {
+          setVersionDetailLoading(false);
+        }
+      } else {
+        setSelectedVersion(null);
+      }
+    } catch (error) {
+      const err =
+        error instanceof ApiError
+          ? error
+          : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, [activeChapter, toast]);
+
+  const openVersions = useCallback(() => {
+    setVersionsOpen(true);
+    void loadChapterVersions();
+  }, [loadChapterVersions]);
+
+  const selectVersion = useCallback(
+    async (versionId: string) => {
+      if (!activeChapter) return;
+      setVersionDetailLoading(true);
+      try {
+        setSelectedVersion(await fetchChapterVersionDetail(activeChapter.id, versionId));
+      } catch (error) {
+        const err =
+          error instanceof ApiError
+            ? error
+            : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      } finally {
+        setVersionDetailLoading(false);
+      }
+    },
+    [activeChapter, toast],
+  );
+
+  const activateSelectedVersion = useCallback(async () => {
+    if (!activeChapter || !selectedVersion || versionActivating) return;
+    if (dirty) {
+      toast.toastWarning(WRITING_PAGE_COPY.versionActivateNeedsSaveFirst);
+      return;
+    }
+    if (activeChapter.status === "done") {
+      toast.toastWarning(WRITING_PAGE_COPY.versionActivateDoneReadonly);
+      return;
+    }
+    setVersionActivating(true);
+    try {
+      const result = await activateChapterVersion(activeChapter.id, selectedVersion.id);
+      applyChapterDetail(result.chapter);
+      setChapterVersions((prev) => prev.map((v) => ({ ...v, is_active: v.id === result.active_version.id })));
+      setSelectedVersion((prev) => (prev ? { ...prev, is_active: prev.id === result.active_version.id } : prev));
+      markWizardProjectChanged(result.chapter.project_id);
+      bumpWizardLocal();
+      await refreshWizard();
+      toast.toastSuccess(WRITING_PAGE_COPY.versionActivated);
+    } catch (error) {
+      const err =
+        error instanceof ApiError
+          ? error
+          : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    } finally {
+      setVersionActivating(false);
+    }
+  }, [
+    activeChapter,
+    applyChapterDetail,
+    bumpWizardLocal,
+    dirty,
+    refreshWizard,
+    selectedVersion,
+    toast,
+    versionActivating,
+  ]);
 
   const activeOutlineId = outline?.id ?? "";
   const switchOutline = useOutlineSwitcher({
@@ -547,6 +665,7 @@ export function useWritingPageState(): WritingPageState {
         contentTextareaRef.current = element;
       },
       onOpenAnalysis: analysis.openModal,
+      onOpenVersions: openVersions,
       onOpenChapterTrace: () => {
         if (!projectId || !activeChapter) return;
         navigate(getWritingAnalysisHref(projectId, activeChapter.id));
@@ -657,6 +776,24 @@ export function useWritingPageState(): WritingPageState {
       appliedChoice: contentOptimizeCompare?.appliedChoice ?? "content_optimize",
       onApplyRaw: () => void applyContentOptimizeVariant("raw"),
       onApplyOptimized: () => void applyContentOptimizeVariant("content_optimize"),
+    },
+    chapterVersionsDrawerProps: {
+      open: versionsOpen,
+      loading: versionsLoading,
+      detailLoading: versionDetailLoading,
+      activating: versionActivating,
+      versions: chapterVersions,
+      selectedVersion,
+      activeVersionId: activeChapter?.active_version_id ?? activeChapter?.active_version?.id ?? null,
+      canActivate: Boolean(activeChapter && !dirty && activeChapter.status !== "done"),
+      blockReason: dirty
+        ? WRITING_PAGE_COPY.versionActivateNeedsSaveFirst
+        : activeChapter?.status === "done"
+          ? WRITING_PAGE_COPY.versionActivateDoneReadonly
+          : null,
+      onClose: () => setVersionsOpen(false),
+      onSelectVersion: (versionId) => void selectVersion(versionId),
+      onActivateVersion: () => void activateSelectedVersion(),
     },
     promptInspectorDrawerProps: {
       open: promptInspectorOpen,

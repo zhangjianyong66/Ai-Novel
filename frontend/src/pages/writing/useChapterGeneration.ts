@@ -7,6 +7,7 @@ import type { ToastApi } from "../../components/ui/toast";
 import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { createChapterMarkerStreamParser } from "../../services/chapterMarkerStreamParser";
+import { chapterStore } from "../../services/chapterStore";
 import { getCurrentUserId } from "../../services/currentUser";
 import { SSEError, SSEPostClient } from "../../services/sseClient";
 import { writingMemoryInjectionEnabledStorageKey } from "../../services/uiState";
@@ -43,6 +44,8 @@ type GenerateResponse = {
   content_optimize_raw_content_md?: string;
   content_optimize_optimized_content_md?: string;
   content_optimize_run_id?: string;
+  saved_version?: unknown;
+  active_version?: unknown;
 };
 
 type ChapterGenerationInstructionPreferences = {
@@ -119,6 +122,7 @@ export function useChapterGeneration(args: {
   dirty: boolean;
   saveChapter: () => Promise<boolean>;
   requestSelectChapter: (chapterId: string) => Promise<void>;
+  onChapterPersisted: (chapter: Chapter) => void;
   toast: ToastApi;
   confirm: ConfirmApi;
 }) {
@@ -132,6 +136,7 @@ export function useChapterGeneration(args: {
     dirty,
     saveChapter,
     requestSelectChapter,
+    onChapterPersisted,
     toast,
     confirm,
   } = args;
@@ -231,6 +236,12 @@ export function useChapterGeneration(args: {
     () => mergeChapterGenerationInstructionOptions(instructionHistory),
     [instructionHistory],
   );
+
+  const refreshPersistedChapter = useCallback(async () => {
+    if (!activeChapter) return;
+    const latest = await chapterStore.loadChapterDetail(activeChapter.id, { force: true });
+    onChapterPersisted(latest);
+  }, [activeChapter, onChapterPersisted]);
 
   const applyPostEditVariant = useCallback(
     async (choice: PostEditCompare["appliedChoice"]) => {
@@ -384,6 +395,7 @@ export function useChapterGeneration(args: {
           let requestId: string | undefined;
           let nonFatalNoticed = false;
           let droppedParams: string[] = [];
+          let savedVersionReceived = false;
 
           const processChunk = (chunk: string) => {
             const out = parser.push(chunk);
@@ -444,6 +456,7 @@ export function useChapterGeneration(args: {
                 ? obj.dropped_params.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
                 : [];
               droppedParams = dropped;
+              savedVersionReceived = Boolean(obj?.saved_version || obj?.active_version);
               const parseErrObj =
                 obj?.parse_error && typeof obj.parse_error === "object"
                   ? (obj.parse_error as Record<string, unknown>)
@@ -517,13 +530,22 @@ export function useChapterGeneration(args: {
               } else {
                 setContentOptimizeCompare(null);
               }
+              if (savedVersionReceived) {
+                void refreshPersistedChapter().catch((e) => {
+                  const err = e as ApiError;
+                  toast.toastWarning(`${err.message} (${err.code})`, err.requestId);
+                });
+              }
             },
           });
           genStreamClientRef.current = client;
 
           try {
             await client.connect();
-            toast.toastSuccess(WRITING_PAGE_COPY.generateDoneUnsaved, requestId);
+            toast.toastSuccess(
+              savedVersionReceived ? WRITING_PAGE_COPY.generateDoneSaved : WRITING_PAGE_COPY.generateDoneUnsaved,
+              requestId,
+            );
             if (!genStreamHasChunkRef.current) {
               toast.toastSuccess(WRITING_PAGE_COPY.generateEmptyStream, requestId);
             }
@@ -620,7 +642,15 @@ export function useChapterGeneration(args: {
                   setContentOptimizeCompare(null);
                 }
 
-                toast.toastSuccess(WRITING_PAGE_COPY.generateDoneUnsaved, res.request_id);
+                if (res.data.saved_version || res.data.active_version) {
+                  await refreshPersistedChapter();
+                }
+                toast.toastSuccess(
+                  res.data.saved_version || res.data.active_version
+                    ? WRITING_PAGE_COPY.generateDoneSaved
+                    : WRITING_PAGE_COPY.generateDoneUnsaved,
+                  res.request_id,
+                );
                 const dp = res.data.dropped_params ?? [];
                 if (dp.length > 0) {
                   toast.toastSuccess(`${UI_COPY.common.droppedParamsPrefix}${dp.join("、")}`, res.request_id);
@@ -725,7 +755,15 @@ export function useChapterGeneration(args: {
             setContentOptimizeCompare(null);
           }
 
-          toast.toastSuccess(WRITING_PAGE_COPY.generateDoneUnsaved, res.request_id);
+          if (res.data.saved_version || res.data.active_version) {
+            await refreshPersistedChapter();
+          }
+          toast.toastSuccess(
+            res.data.saved_version || res.data.active_version
+              ? WRITING_PAGE_COPY.generateDoneSaved
+              : WRITING_PAGE_COPY.generateDoneUnsaved,
+            res.request_id,
+          );
           const dp = res.data.dropped_params ?? [];
           if (dp.length > 0) {
             toast.toastSuccess(`${UI_COPY.common.droppedParamsPrefix}${dp.join("、")}`, res.request_id);
@@ -762,6 +800,7 @@ export function useChapterGeneration(args: {
       form,
       genForm,
       preset,
+      refreshPersistedChapter,
       requestSelectChapter,
       saveChapter,
       saveInstructionPreference,

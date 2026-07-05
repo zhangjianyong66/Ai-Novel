@@ -21,6 +21,10 @@ class Chapter(Base):
     content_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned")
+    active_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chapter_versions.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (UniqueConstraint("outline_id", "number", name="uq_chapters_outline_id_number"),)
@@ -28,3 +32,4 @@ class Chapter(Base):
 
 Index("ix_chapters_project_id", Chapter.project_id)
 Index("ix_chapters_outline_id", Chapter.outline_id)
+Index("ix_chapters_active_version_id", Chapter.active_version_id)

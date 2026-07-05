@@ -465,3 +465,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 章节版本差异对比
+
+**Date**: 2026-07-05
+**Task**: 章节版本差异对比
+**Branch**: `main`
+
+### Summary
+
+实现章节版本通用差异对比，支持版本抽屉选择基准版本与写作页快捷对比上一个版本，并补充 diff 单元测试和前端验证记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `580ba4f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

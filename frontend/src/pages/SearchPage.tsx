@@ -48,6 +48,15 @@ function dedupeItems(items: SearchItem[]): SearchItem[] {
   return out;
 }
 
+function parseLocator(locatorJson?: string | null): Record<string, unknown> {
+  try {
+    const value = JSON.parse(String(locatorJson || "{}"));
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function SearchPage() {
   const { projectId } = useParams();
   const toast = useToast();
@@ -55,6 +64,8 @@ export function SearchPage() {
 
   const [query, setQuery] = useState("");
   const [sourcesState, setSourcesState] = useState<Record<string, boolean>>({});
+  const [storyMemoryScope, setStoryMemoryScope] = useState("all");
+  const [storyMemoryOutlineId, setStoryMemoryOutlineId] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SearchItem[]>([]);
@@ -81,6 +92,8 @@ export function SearchPage() {
           body: JSON.stringify({
             q,
             sources: selectedSources ?? [],
+            story_memory_scope: storyMemoryScope,
+            story_memory_outline_id: storyMemoryOutlineId.trim() || null,
             limit: 20,
             offset,
           }),
@@ -101,7 +114,7 @@ export function SearchPage() {
         setLoading(false);
       }
     },
-    [loading, nextOffset, projectId, query, selectedSources, toast],
+    [loading, nextOffset, projectId, query, selectedSources, storyMemoryOutlineId, storyMemoryScope, toast],
   );
 
   const clear = useCallback(() => {
@@ -281,6 +294,33 @@ export function SearchPage() {
               </label>
             ))}
           </div>
+          <div className="grid gap-2 rounded-atelier border border-border bg-surface p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+            <label className="grid gap-1 text-xs text-subtext">
+              StoryMemory 范围
+              <select
+                className="select"
+                value={storyMemoryScope}
+                onChange={(e) => setStoryMemoryScope(e.target.value)}
+                aria-label="search_story_memory_scope"
+              >
+                <option value="all">全部历史</option>
+                <option value="current_outline">当前大纲 + 项目全局</option>
+                <option value="outline">指定大纲</option>
+                <option value="project">项目全局</option>
+                <option value="unassigned">未归属</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs text-subtext">
+              大纲 ID
+              <input
+                className="input"
+                value={storyMemoryOutlineId}
+                onChange={(e) => setStoryMemoryOutlineId(e.target.value)}
+                placeholder="用于 current_outline / outline 过滤"
+                aria-label="search_story_memory_outline_id"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="grid gap-2" aria-label="search_results">
@@ -296,6 +336,16 @@ export function SearchPage() {
                       <span>{sourceLabel(it.source_type)}</span>
                       <span className="font-mono">{it.source_type}</span>
                       <span className="font-mono break-all">{it.source_id}</span>
+                      {it.source_type === "story_memory" ? (
+                        <>
+                          <span>{String(parseLocator(it.locator_json).scope ?? "unassigned")}</span>
+                          {parseLocator(it.locator_json).outline_id ? (
+                            <span className="font-mono break-all">
+                              {String(parseLocator(it.locator_json).outline_id)}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

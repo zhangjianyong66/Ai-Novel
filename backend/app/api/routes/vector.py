@@ -114,6 +114,7 @@ class VectorQueryRequest(BaseModel):
     sources: list[VectorSource] = Field(
         default_factory=lambda: ["worldbook", "outline", "chapter", "story_memory"], max_length=10
     )
+    story_memory_outline_id: str | None = Field(default=None, max_length=36)
     rerank_hybrid_alpha: float | None = Field(default=None, ge=0.0, le=1.0)
     super_sort: dict[str, Any] | None = Field(default=None)
 
@@ -491,6 +492,7 @@ def query_vector_index(request: Request, user_id: UserIdDep, project_id: str, bo
         embedding=embedding,
         rerank=rerank,
         super_sort=body.super_sort,
+        story_memory_outline_id=body.story_memory_outline_id,
         kb_weights=kb_weights,
         kb_orders=kb_orders,
         kb_priority_groups=kb_priority_groups,

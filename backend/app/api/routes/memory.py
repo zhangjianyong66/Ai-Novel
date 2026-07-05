@@ -101,11 +101,18 @@ def retrieve_project_memory(
     user_id: UserIdDep,
     project_id: str,
     query_text: str = Query(default="", max_length=5000),
+    outline_id: str | None = Query(default=None, max_length=36),
     include_deleted: bool = Query(default=False),
 ) -> dict:
     request_id = request.state.request_id
     require_project_viewer(db, project_id=project_id, user_id=user_id)
-    pack = retrieve_memory_context_pack(db=db, project_id=project_id, query_text=query_text, include_deleted=include_deleted)
+    pack = retrieve_memory_context_pack(
+        db=db,
+        project_id=project_id,
+        outline_id=outline_id,
+        query_text=query_text,
+        include_deleted=include_deleted,
+    )
     return ok_payload(request_id=request_id, data=pack.model_dump())
 
 
@@ -122,6 +129,7 @@ def preview_project_memory(
     pack = retrieve_memory_context_pack(
         db=db,
         project_id=project_id,
+        outline_id=body.outline_id,
         query_text=body.query_text,
         include_deleted=False,
         section_enabled=body.section_enabled,

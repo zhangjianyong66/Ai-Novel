@@ -14,6 +14,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   projectId?: string;
+  outlineId?: string;
   memoryInjectionEnabled: boolean;
   onChangeMemoryInjectionEnabled?: (enabled: boolean) => void;
   genInstruction?: string;
@@ -492,6 +493,7 @@ export function ContextPreviewDrawer(props: Props) {
           method: "POST",
           body: JSON.stringify({
             query_text: safeQueryText,
+            outline_id: props.outlineId ?? null,
             section_enabled: params.sections,
             budget_overrides: params.budgets,
           }),
@@ -508,7 +510,7 @@ export function ContextPreviewDrawer(props: Props) {
         setLoading(false);
       }
     },
-    [projectId],
+    [projectId, props.outlineId],
   );
 
   const syncPreviewFromGenerate = useCallback(async () => {

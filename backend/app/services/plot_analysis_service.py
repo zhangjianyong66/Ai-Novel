@@ -413,6 +413,16 @@ def extract_story_memory_seeds(
     return seeds
 
 
+def _safe_chapter_outline_id(db: Session, *, project_id: str, chapter_id: str) -> str | None:
+    try:
+        chapter = db.get(Chapter, chapter_id)
+    except (OperationalError, IntegrityError):
+        return None
+    if chapter is None or str(getattr(chapter, "project_id", "") or "") != str(project_id):
+        return None
+    return str(getattr(chapter, "outline_id", "") or "").strip() or None
+
+
 def apply_chapter_analysis(
     *,
     db: Session,
@@ -454,6 +464,8 @@ def apply_chapter_analysis(
 
     content_md = draft_content_md or ""
     seeds = extract_story_memory_seeds(chapter_number=chapter_number, analysis=validated, content_md=content_md)
+    outline_id = _safe_chapter_outline_id(db, project_id=project_id, chapter_id=chapter_id)
+    scope = "outline" if outline_id else "unassigned"
 
     now = utc_now()
     try:
@@ -501,6 +513,8 @@ def apply_chapter_analysis(
                     id=new_id(),
                     project_id=project_id,
                     chapter_id=chapter_id,
+                    outline_id=outline_id,
+                    scope=scope,
                     memory_type=str(seed.get("memory_type") or ""),
                     title=seed.get("title"),
                     content=str(seed.get("content") or ""),
@@ -588,6 +602,8 @@ def _story_memory_out(row: StoryMemory) -> dict[str, Any]:
         "id": row.id,
         "project_id": row.project_id,
         "chapter_id": row.chapter_id,
+        "outline_id": getattr(row, "outline_id", None),
+        "scope": getattr(row, "scope", None) or "unassigned",
         "memory_type": row.memory_type,
         "title": row.title,
         "content": row.content,

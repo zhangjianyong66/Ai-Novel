@@ -101,6 +101,46 @@ class TestSearchQueryEndpoint(unittest.TestCase):
                 content="一种神秘的石头",
                 url_path="/p1/worldbook/w1",
             )
+            upsert_search_document(
+                db=db,
+                project_id="p1",
+                source_type="story_memory",
+                source_id="sm-current",
+                title="当前大纲记忆",
+                content="ScopeToken 当前大纲内容",
+                url_path="/p1/chapter-analysis",
+                locator_json='{"story_memory_id":"sm-current","scope":"outline","outline_id":"o-current"}',
+            )
+            upsert_search_document(
+                db=db,
+                project_id="p1",
+                source_type="story_memory",
+                source_id="sm-project",
+                title="项目全局记忆",
+                content="ScopeToken 项目全局内容",
+                url_path="/p1/chapter-analysis",
+                locator_json='{"story_memory_id":"sm-project","scope":"project","outline_id":null}',
+            )
+            upsert_search_document(
+                db=db,
+                project_id="p1",
+                source_type="story_memory",
+                source_id="sm-other",
+                title="其他大纲记忆",
+                content="ScopeToken 其他大纲内容",
+                url_path="/p1/chapter-analysis",
+                locator_json='{"story_memory_id":"sm-other","scope":"outline","outline_id":"o-other"}',
+            )
+            upsert_search_document(
+                db=db,
+                project_id="p1",
+                source_type="story_memory",
+                source_id="sm-unassigned",
+                title="未归属记忆",
+                content="ScopeToken 未归属内容",
+                url_path="/p1/chapter-analysis",
+                locator_json='{"story_memory_id":"sm-unassigned","scope":"unassigned","outline_id":null}',
+            )
             db.commit()
 
     def test_query_returns_items_and_supports_source_filter(self) -> None:
@@ -125,3 +165,24 @@ class TestSearchQueryEndpoint(unittest.TestCase):
         items2 = (resp2.json().get("data") or {}).get("items") or []
         self.assertTrue(items2)
         self.assertEqual({it.get("source_type") for it in items2}, {"worldbook_entry"})
+
+    def test_story_memory_scope_filter_defaults_to_current_outline_and_project(self) -> None:
+        client = TestClient(self.app)
+
+        resp = client.post(
+            "/api/projects/p1/search/query",
+            headers={"X-Test-User": "u_owner"},
+            json={
+                "q": "ScopeToken",
+                "sources": ["story_memory"],
+                "story_memory_outline_id": "o-current",
+                "story_memory_scope": "current_outline",
+                "limit": 20,
+                "offset": 0,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        items = (resp.json().get("data") or {}).get("items") or []
+        ids = {it.get("source_id") for it in items}
+        self.assertEqual(ids, {"sm-current", "sm-project"})

@@ -375,6 +375,7 @@ def _prepare_chapter_memory_injection(
         pack = retrieve_memory_context_pack(
             db=db,
             project_id=project_id,
+            outline_id=str(getattr(chapter, "outline_id", "") or "") or None,
             query_text=memory_query_text,
             section_enabled=memory_modules,
         )

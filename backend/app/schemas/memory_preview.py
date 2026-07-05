@@ -7,6 +7,6 @@ from app.schemas.base import RequestModel
 
 class MemoryPreviewRequest(RequestModel):
     query_text: str = Field(default="", max_length=5000)
+    outline_id: str | None = Field(default=None, max_length=36)
     section_enabled: dict[str, bool] = Field(default_factory=dict)
     budget_overrides: dict[str, int] = Field(default_factory=dict)
-

@@ -96,6 +96,18 @@ def _render_table_row_text(data_json: str | None) -> str:
         return raw
 
 
+def _story_memory_search_locator(memory: StoryMemory) -> str:
+    return json.dumps(
+        {
+            "story_memory_id": str(memory.id),
+            "chapter_id": _trim(getattr(memory, "chapter_id", None)) or None,
+            "scope": _trim(getattr(memory, "scope", None)) or "unassigned",
+            "outline_id": _trim(getattr(memory, "outline_id", None)) or None,
+        },
+        ensure_ascii=False,
+    )
+
+
 def _sqlite_table_exists(db: Session, *, name: str) -> bool:
     try:
         dialect = str(getattr(db.get_bind().dialect, "name", "") or "")
@@ -329,10 +341,7 @@ def build_project_search_docs(*, db: Session, project_id: str) -> list[SearchDoc
                 url_path=f"/projects/{pid}/chapter-analysis?chapterId={str(getattr(m, 'chapter_id', '') or '').strip()}"
                 if _trim(getattr(m, 'chapter_id', '') or '')
                 else f"/projects/{pid}/chapter-analysis",
-                locator_json=json.dumps(
-                    {"story_memory_id": str(m.id), "chapter_id": str(getattr(m, "chapter_id", "") or "").strip() or None},
-                    ensure_ascii=False,
-                ),
+                locator_json=_story_memory_search_locator(m),
             )
         )
 
@@ -692,6 +701,63 @@ def _like_snippet(*, content: str, q: str, window: int = 120) -> str:
     return f"{prefix}{text_s[start:end]}{suffix}"
 
 
+def _story_memory_search_item_allowed(
+    locator_json: str | None,
+    *,
+    outline_id: str | None,
+    scope: str | None,
+) -> bool:
+    scope_norm = str(scope or "").strip() or "all"
+    if scope_norm == "all":
+        return True
+
+    try:
+        locator = json.loads(str(locator_json or "{}"))
+    except Exception:
+        locator = {}
+    if not isinstance(locator, dict):
+        locator = {}
+
+    item_scope = str(locator.get("scope") or "").strip() or "unassigned"
+    item_outline_id = str(locator.get("outline_id") or "").strip() or None
+    current_outline_id = str(outline_id or "").strip() or None
+
+    if scope_norm == "project":
+        return item_scope == "project"
+    if scope_norm == "unassigned":
+        return item_scope == "unassigned"
+    if scope_norm == "outline":
+        if current_outline_id:
+            return item_scope == "outline" and item_outline_id == current_outline_id
+        return item_scope == "outline"
+    if scope_norm == "current_outline":
+        return item_scope == "project" or (bool(current_outline_id) and item_scope == "outline" and item_outline_id == current_outline_id)
+    return True
+
+
+def _filter_story_memory_search_items(
+    items: list[dict[str, Any]],
+    *,
+    story_memory_outline_id: str | None,
+    story_memory_scope: str | None,
+) -> list[dict[str, Any]]:
+    scope_norm = str(story_memory_scope or "").strip() or "all"
+    if scope_norm == "all":
+        return items
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if str(item.get("source_type") or "") != "story_memory":
+            out.append(item)
+            continue
+        if _story_memory_search_item_allowed(
+            str(item.get("locator_json") or ""),
+            outline_id=story_memory_outline_id,
+            scope=scope_norm,
+        ):
+            out.append(item)
+    return out
+
+
 def query_project_search(
     *,
     db: Session,
@@ -700,6 +766,8 @@ def query_project_search(
     sources: list[str] | None,
     limit: int,
     offset: int,
+    story_memory_outline_id: str | None = None,
+    story_memory_scope: str | None = None,
 ) -> dict[str, Any]:
     pid = str(project_id or "").strip()
     q_raw = str(q or "").strip()
@@ -752,6 +820,11 @@ def query_project_search(
             }
             for r in rows
         ]
+        items = _filter_story_memory_search_items(
+            items,
+            story_memory_outline_id=story_memory_outline_id,
+            story_memory_scope=story_memory_scope,
+        )
         next_offset = (offset + limit) if len(items) >= limit else None
         return {"items": items, "next_offset": next_offset, "mode": "fts", "fts_enabled": True}
 
@@ -810,6 +883,11 @@ def query_project_search(
         }
         for r in rows2
     ]
+    items2 = _filter_story_memory_search_items(
+        items2,
+        story_memory_outline_id=story_memory_outline_id,
+        story_memory_scope=story_memory_scope,
+    )
     next_offset2 = (offset + limit) if len(items2) >= limit else None
     return {"items": items2, "next_offset": next_offset2, "mode": "like", "fts_enabled": False}
 

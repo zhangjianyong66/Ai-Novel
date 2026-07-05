@@ -161,7 +161,25 @@ class TestVectorRoutesRerankOverrides(unittest.TestCase):
         self.assertEqual(rerank.get("has_api_key"), True)
         self.assertEqual(rerank.get("masked_api_key"), "rk-****1234")
 
+    def test_vector_query_passes_story_memory_outline_scope_to_query_project(self) -> None:
+        captured: dict[str, object] = {}
+
+        def _fake_query_project(**kwargs: object) -> dict:
+            captured.update(kwargs)
+            return {"enabled": True, "candidates": [], "final": {"chunks": [], "text_md": ""}}
+
+        with patch.object(vector_routes, "SessionLocal", self.SessionLocal):
+            with patch.object(vector_routes, "query_project", side_effect=_fake_query_project):
+                client = TestClient(self.app)
+                resp = client.post(
+                    "/api/projects/p1/vector/query",
+                    headers={"X-Test-User": "u_owner"},
+                    json={"query_text": "hello", "story_memory_outline_id": "o-current"},
+                )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(captured.get("story_memory_outline_id"), "o-current")
+
 
 if __name__ == "__main__":
     unittest.main()
-

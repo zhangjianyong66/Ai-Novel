@@ -8,9 +8,31 @@ import { UI_COPY } from "../lib/uiCopy";
 import { createRequestSeqGuard } from "../lib/requestSeqGuard";
 import type { ApiError } from "../services/apiClient";
 import { apiJson } from "../services/apiClient";
+import { listStoryMemories, type StoryMemory } from "../services/storyMemoryApi";
 import type { Chapter } from "../types";
+import type { Project } from "../types";
 import { useToast } from "../components/ui/toast";
 import { RequestIdBadge } from "../components/ui/RequestIdBadge";
+
+function storyMemoryToAnnotation(memory: StoryMemory): MemoryAnnotation {
+  return {
+    id: memory.id,
+    type: memory.memory_type || "plot_point",
+    title: memory.title ?? null,
+    content: memory.content ?? "",
+    importance: Number.isFinite(memory.importance_score) ? memory.importance_score : 0,
+    position: Number.isFinite(memory.text_position) ? memory.text_position : -1,
+    length: Number.isFinite(memory.text_length) ? memory.text_length : 0,
+    tags: Array.isArray(memory.tags) ? memory.tags : [],
+    metadata: {
+      done: Boolean(memory.done),
+      scope: memory.scope ?? "unassigned",
+      outline_id: memory.outline_id ?? null,
+      chapter_id: memory.chapter_id ?? null,
+      injectable_for_current_outline: Boolean(memory.injectable_for_current_outline),
+    },
+  };
+}
 
 export function ChapterAnalysisPage() {
   const { projectId } = useParams();
@@ -22,6 +44,7 @@ export function ChapterAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [annotations, setAnnotations] = useState<MemoryAnnotation[]>([]);
+  const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [scrollToAnnotationId, setScrollToAnnotationId] = useState<string | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -37,26 +60,45 @@ export function ChapterAnalysisPage() {
     setLoading(false);
     setChapter(null);
     setAnnotations([]);
+    setActiveOutlineId(null);
     setActiveAnnotationId(null);
     setScrollToAnnotationId(null);
     setRequestId(null);
   }, [chapterId]);
 
   const refresh = useCallback(async () => {
-    if (!chapterId) return;
+    if (!projectId && !chapterId) return;
 
     const seq = loadGuardRef.current.next();
     setLoading(true);
     try {
-      const [chapterRes, annotationsRes] = await Promise.all([
-        apiJson<{ chapter: Chapter }>(`/api/chapters/${chapterId}`),
-        apiJson<{ annotations: MemoryAnnotation[] }>(`/api/chapters/${chapterId}/annotations`),
-      ]);
+      if (chapterId) {
+        const [chapterRes, annotationsRes] = await Promise.all([
+          apiJson<{ chapter: Chapter }>(`/api/chapters/${chapterId}`),
+          apiJson<{ annotations: MemoryAnnotation[] }>(`/api/chapters/${chapterId}/annotations`),
+        ]);
+        if (!loadGuardRef.current.isLatest(seq)) return;
+
+        setChapter(chapterRes.data.chapter);
+        setActiveOutlineId(chapterRes.data.chapter.outline_id ?? null);
+        setAnnotations(annotationsRes.data.annotations ?? []);
+        setRequestId(annotationsRes.request_id ?? chapterRes.request_id ?? null);
+        return;
+      }
+
+      if (!projectId) return;
+      const projectRes = await apiJson<{ project: Project }>(`/api/projects/${projectId}`);
+      const outlineId = projectRes.data.project.active_outline_id ?? null;
+      const memories = await listStoryMemories(projectId, {
+        injectable_for_outline_id: outlineId,
+        limit: 200,
+      });
       if (!loadGuardRef.current.isLatest(seq)) return;
 
-      setChapter(chapterRes.data.chapter);
-      setAnnotations(annotationsRes.data.annotations ?? []);
-      setRequestId(annotationsRes.request_id ?? chapterRes.request_id ?? null);
+      setChapter(null);
+      setActiveOutlineId(outlineId);
+      setAnnotations(memories.items.map(storyMemoryToAnnotation));
+      setRequestId(projectRes.request_id ?? null);
     } catch (e) {
       if (!loadGuardRef.current.isLatest(seq)) return;
       const err = e as ApiError;
@@ -69,17 +111,22 @@ export function ChapterAnalysisPage() {
         setLoading(false);
       }
     }
-  }, [chapterId, toast]);
+  }, [chapterId, projectId, toast]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   const content = chapter?.content_md ?? "";
+  const hasTraceContext = Boolean(chapterId);
   const { validAnnotations, validIds, invalidCount } = useMemo(() => {
     const valid: MemoryAnnotation[] = [];
     const validIds = new Set<string>();
     let invalid = 0;
+    if (!chapterId) {
+      for (const ann of annotations) validIds.add(ann.id);
+      return { validAnnotations: valid, validIds, invalidCount: 0 };
+    }
     const textLen = content.length;
     for (const ann of annotations) {
       const position = ann.position;
@@ -93,7 +140,7 @@ export function ChapterAnalysisPage() {
       }
     }
     return { validAnnotations: valid, validIds, invalidCount: invalid };
-  }, [annotations, content]);
+  }, [annotations, chapterId, content]);
 
   const selectAnnotation = useCallback(
     (ann: MemoryAnnotation, opts?: { scroll?: boolean }) => {
@@ -109,23 +156,25 @@ export function ChapterAnalysisPage() {
   return (
     <div className="grid min-w-0 gap-4 overflow-x-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="font-content text-2xl text-ink">章节标注回溯</div>
+        <div className="min-w-0">
+          <div className="font-content text-2xl text-ink">剧情记忆</div>
           <div className="mt-1 text-xs text-subtext">
             {chapter ? (
               <>
-                第 {chapter.number} 章 · {(chapter.title ?? "").trim() || "（无标题）"}
+                标注回溯 · 第 {chapter.number} 章 · {(chapter.title ?? "").trim() || "（无标题）"}
               </>
             ) : chapterId ? (
-              <span className="font-mono break-all">{chapterId}</span>
+              <>
+                标注回溯 · <span className="font-mono break-all">{chapterId}</span>
+              </>
             ) : (
-              "请从写作页进入（需要 chapterId）"
+              "浏览、筛选和维护当前项目的剧情记忆。"
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <RequestIdBadge requestId={requestId} />
+          {hasTraceContext ? <RequestIdBadge requestId={requestId} /> : null}
           <button
             className="btn btn-secondary"
             type="button"
@@ -143,7 +192,7 @@ export function ChapterAnalysisPage() {
             className="btn btn-secondary"
             type="button"
             onClick={() => void refresh()}
-            disabled={!chapterId || loading}
+            disabled={loading || (!projectId && !chapterId)}
           >
             {loading ? UI_COPY.common.loading : "刷新"}
           </button>
@@ -164,11 +213,18 @@ export function ChapterAnalysisPage() {
         </div>
       </div>
 
-      <div className="panel p-4 text-sm text-subtext">
-        <div className="text-ink">{UI_COPY.chapterAnalysis.introTitle}</div>
-        <div className="mt-1">{UI_COPY.chapterAnalysis.introLine1}</div>
-        <div className="mt-2 callout-info">{UI_COPY.chapterAnalysis.introLine2}</div>
-        <div className="mt-2">{UI_COPY.chapterAnalysis.entryLine}</div>
+      <div className="rounded-atelier border border-border bg-surface p-3 text-sm text-subtext">
+        {hasTraceContext ? (
+          <>
+            <span className="text-ink">{UI_COPY.chapterAnalysis.introTitle}：</span>
+            {UI_COPY.chapterAnalysis.introLine1}
+          </>
+        ) : (
+          <>
+            <span className="text-ink">当前为全局浏览模式：</span>
+            未选择章节时展示全部剧情记忆；从写作页进入可查看标注回溯。
+          </>
+        )}
       </div>
 
       {invalidCount > 0 ? (
@@ -177,7 +233,7 @@ export function ChapterAnalysisPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start 2xl:grid-cols-[minmax(0,1fr)_300px]">
+      {hasTraceContext ? (
         <section className="min-h-0 min-w-0 rounded-atelier border border-border bg-surface p-3">
           {loading ? (
             <div className="rounded-atelier border border-border bg-canvas p-4" aria-busy="true" aria-live="polite">
@@ -192,8 +248,6 @@ export function ChapterAnalysisPage() {
                 <div className="skeleton h-4 w-3/4" />
               </div>
             </div>
-          ) : !chapterId ? (
-            <div className="p-3 text-sm text-subtext">请从写作页进入：需要在 URL 上带 `?chapterId=...`。</div>
           ) : !chapter ? (
             <div className="p-3 text-sm text-subtext">未加载到章节。</div>
           ) : !(chapter.content_md ?? "").trim() ? (
@@ -210,41 +264,43 @@ export function ChapterAnalysisPage() {
             </div>
           )}
         </section>
+      ) : null}
 
-        <div className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-12rem)] lg:overflow-auto">
-          {loading ? (
-            <aside className="min-w-0 grid gap-3" aria-busy="true" aria-live="polite">
-              <span className="sr-only">{UI_COPY.common.loading}</span>
-              <div className="rounded-atelier border border-border bg-surface p-3">
-                <div className="skeleton h-4 w-24" />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <div className="skeleton h-7 w-20" />
-                  <div className="skeleton h-7 w-24" />
-                  <div className="skeleton h-7 w-16" />
-                </div>
+      <div className="min-w-0">
+        {loading ? (
+          <aside className="min-w-0 grid gap-3" aria-busy="true" aria-live="polite">
+            <span className="sr-only">{UI_COPY.common.loading}</span>
+            <div className="rounded-atelier border border-border bg-surface p-3">
+              <div className="skeleton h-4 w-24" />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="skeleton h-7 w-20" />
+                <div className="skeleton h-7 w-24" />
+                <div className="skeleton h-7 w-16" />
               </div>
-              <div className="rounded-atelier border border-border bg-surface p-2">
-                <div className="grid gap-2 p-3">
-                  <div className="skeleton h-4 w-32" />
-                  <div className="skeleton h-12 w-full" />
-                  <div className="skeleton h-12 w-full" />
-                  <div className="skeleton h-12 w-full" />
-                </div>
+            </div>
+            <div className="rounded-atelier border border-border bg-surface p-2">
+              <div className="grid gap-2 p-3">
+                <div className="skeleton h-4 w-32" />
+                <div className="skeleton h-12 w-full" />
+                <div className="skeleton h-12 w-full" />
+                <div className="skeleton h-12 w-full" />
               </div>
-            </aside>
-          ) : (
-            <MemorySidebar
-              projectId={projectId}
-              chapterId={chapterId}
-              annotations={annotations}
-              validIds={validIds}
-              activeAnnotationId={activeAnnotationId}
-              onSelect={(a) => selectAnnotation(a, { scroll: true })}
-              onRefresh={refresh}
-              onSetActiveAnnotationId={setActiveAnnotationId}
-            />
-          )}
-        </div>
+            </div>
+          </aside>
+        ) : (
+          <MemorySidebar
+            projectId={projectId}
+            chapterId={chapterId}
+            activeOutlineId={activeOutlineId}
+            annotations={annotations}
+            validIds={validIds}
+            activeAnnotationId={activeAnnotationId}
+            variant={hasTraceContext ? "trace" : "main"}
+            onSelect={(a) => selectAnnotation(a, { scroll: true })}
+            onRefresh={refresh}
+            onSetActiveAnnotationId={setActiveAnnotationId}
+          />
+        )}
       </div>
     </div>
   );

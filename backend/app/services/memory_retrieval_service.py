@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -36,6 +36,14 @@ _ALLOWED_SECTIONS = {
     "graph",
     "fractal",
 }
+
+
+def _story_memory_scope_clause(*, outline_id: str | None):
+    oid = str(outline_id or "").strip() or None
+    clauses = [StoryMemory.scope == "project"]
+    if oid:
+        clauses.append(and_(StoryMemory.scope == "outline", StoryMemory.outline_id == oid))
+    return or_(*clauses)
 _MAX_BUDGET_CHAR_LIMIT = 50000
 
 
@@ -236,6 +244,7 @@ def retrieve_memory_context_pack(
     *,
     db: Session,
     project_id: str,
+    outline_id: str | None = None,
     query_text: str = "",
     include_deleted: bool = False,
     section_enabled: dict[str, bool] | None = None,
@@ -335,6 +344,7 @@ def retrieve_memory_context_pack(
             stmt = (
                 select(StoryMemory)
                 .where(StoryMemory.project_id == project_id)
+                .where(_story_memory_scope_clause(outline_id=outline_id))
                 .order_by(StoryMemory.importance_score.desc(), StoryMemory.updated_at.desc())
             )
             if tokens:
@@ -405,6 +415,7 @@ def retrieve_memory_context_pack(
                 sources=["story_memory"],
                 embedding=embedding_overrides,
                 rerank=rerank_config,
+                story_memory_outline_id=outline_id,
             )
             vector_out = out if isinstance(out, dict) else None
         except Exception as exc:
@@ -455,6 +466,7 @@ def retrieve_memory_context_pack(
                     db.execute(
                         select(StoryMemory.id)
                         .where(StoryMemory.project_id == project_id)
+                        .where(_story_memory_scope_clause(outline_id=outline_id))
                         .where(StoryMemory.memory_type == "chapter_summary")
                         .limit(1)
                     ).first()
@@ -470,7 +482,14 @@ def retrieve_memory_context_pack(
                 }
             else:
                 mem_rows = (
-                    db.execute(select(StoryMemory).where(StoryMemory.id.in_(picked_memory_ids))).scalars().all()
+                    db.execute(
+                        select(StoryMemory)
+                        .where(StoryMemory.id.in_(picked_memory_ids))
+                        .where(StoryMemory.project_id == project_id)
+                        .where(_story_memory_scope_clause(outline_id=outline_id))
+                    )
+                    .scalars()
+                    .all()
                 )
                 by_id = {str(m.id): m for m in mem_rows}
                 memories = [by_id[mid] for mid in picked_memory_ids if mid in by_id]
@@ -525,6 +544,7 @@ def retrieve_memory_context_pack(
                 db.execute(
                     select(StoryMemory)
                     .where(StoryMemory.project_id == project_id)
+                    .where(_story_memory_scope_clause(outline_id=outline_id))
                     .where(StoryMemory.is_foreshadow == 1)  # noqa: E712
                     .where(StoryMemory.foreshadow_resolved_at_chapter_id.is_(None))
                     .order_by(StoryMemory.story_timeline.desc(), StoryMemory.importance_score.desc(), StoryMemory.updated_at.desc())
@@ -698,7 +718,11 @@ def retrieve_memory_context_pack(
             vector_rag["query_text"] = vector_query_text
         elif vector_query_text:
             vector_rag = query_project(
-                project_id=project_id, query_text=vector_query_text, embedding=embedding_overrides, rerank=rerank_config
+                project_id=project_id,
+                query_text=vector_query_text,
+                embedding=embedding_overrides,
+                rerank=rerank_config,
+                story_memory_outline_id=outline_id,
             )
         else:
             vector_rag = vector_rag_status(project_id=project_id, embedding=embedding_overrides, rerank=rerank_config)

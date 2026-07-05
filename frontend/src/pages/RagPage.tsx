@@ -32,6 +32,7 @@ export function RagPage() {
 
   const [sources, setSources] = useState<VectorSource[]>(["worldbook", "outline", "chapter", "story_memory"]);
   const [queryText, setQueryText] = useState("");
+  const [storyMemoryOutlineId, setStoryMemoryOutlineId] = useState("");
 
   const [superSortMode, setSuperSortMode] = useState<"disabled" | "order" | "weights">("disabled");
   const [superSortOrderText, setSuperSortOrderText] = useState("worldbook,outline,chapter,story_memory");
@@ -461,6 +462,7 @@ export function RagPage() {
           query_text: queryText,
           sources: sortedSources,
           kb_ids: selectedKbIds,
+          story_memory_outline_id: storyMemoryOutlineId.trim() || null,
           rerank_hybrid_alpha: rerankHybridAlpha,
           ...(superSort ? { super_sort: superSort } : {}),
         }),
@@ -484,6 +486,7 @@ export function RagPage() {
   }, [
     projectId,
     queryText,
+    storyMemoryOutlineId,
     selectedKbIds,
     sortedSources,
     rerankHybridAlpha,
@@ -660,6 +663,8 @@ export function RagPage() {
         toggleSource={toggleSource}
         queryText={queryText}
         setQueryText={setQueryText}
+        storyMemoryOutlineId={storyMemoryOutlineId}
+        setStoryMemoryOutlineId={setStoryMemoryOutlineId}
         queryLoading={queryLoading}
         runQuery={runQuery}
         projectId={projectId}

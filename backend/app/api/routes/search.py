@@ -13,6 +13,8 @@ router = APIRouter()
 class SearchQueryRequest(BaseModel):
     q: str = Field(max_length=200)
     sources: list[str] = Field(default_factory=list, max_length=50)
+    story_memory_outline_id: str | None = Field(default=None, max_length=36)
+    story_memory_scope: str | None = Field(default=None, max_length=32)
     limit: int = Field(default=20, ge=1, le=200)
     offset: int = Field(default=0, ge=0, le=10000)
 
@@ -21,6 +23,14 @@ class SearchQueryRequest(BaseModel):
 def query_search(request: Request, db: DbDep, user_id: UserIdDep, project_id: str, body: SearchQueryRequest) -> dict:
     request_id = request.state.request_id
     require_project_viewer(db, project_id=project_id, user_id=user_id)
-    out = query_project_search(db=db, project_id=project_id, q=body.q, sources=body.sources, limit=body.limit, offset=body.offset)
+    out = query_project_search(
+        db=db,
+        project_id=project_id,
+        q=body.q,
+        sources=body.sources,
+        limit=body.limit,
+        offset=body.offset,
+        story_memory_outline_id=body.story_memory_outline_id,
+        story_memory_scope=body.story_memory_scope,
+    )
     return ok_payload(request_id=request_id, data=out)
-

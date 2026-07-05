@@ -28,6 +28,8 @@ export function RagQueryPanel(props: {
   toggleSource: (src: VectorSource) => void;
   queryText: string;
   setQueryText: (text: string) => void;
+  storyMemoryOutlineId: string;
+  setStoryMemoryOutlineId: (text: string) => void;
   queryLoading: boolean;
   runQuery: () => Promise<void>;
   projectId: string | undefined;
@@ -50,8 +52,10 @@ export function RagQueryPanel(props: {
     rawQueryText,
     runQuery,
     setQueryText,
+    setStoryMemoryOutlineId,
     sortedSources,
     sources,
+    storyMemoryOutlineId,
     toggleSource,
   } = props;
 
@@ -244,6 +248,16 @@ export function RagQueryPanel(props: {
               </div>
             ) : null}
           </div>
+          <label className="mt-3 grid gap-1 text-xs text-subtext">
+            StoryMemory 大纲 ID
+            <input
+              className="input"
+              value={storyMemoryOutlineId}
+              onChange={(e) => setStoryMemoryOutlineId(e.target.value)}
+              placeholder="按当前大纲过滤 story_memory vector chunk"
+              aria-label="rag_story_memory_outline_id"
+            />
+          </label>
         </div>
       </section>
 

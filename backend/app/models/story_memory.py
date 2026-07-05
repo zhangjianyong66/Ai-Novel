@@ -15,6 +15,8 @@ class StoryMemory(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     chapter_id: Mapped[str | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True)
+    outline_id: Mapped[str | None] = mapped_column(ForeignKey("outlines.id", ondelete="SET NULL"), nullable=True)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="unassigned")
 
     memory_type: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -41,6 +43,7 @@ class StoryMemory(Base):
 
 
 Index("ix_story_memories_project_id_chapter_id", StoryMemory.project_id, StoryMemory.chapter_id)
+Index("ix_story_memories_project_id_scope_outline_id", StoryMemory.project_id, StoryMemory.scope, StoryMemory.outline_id)
 Index("ix_story_memories_project_id_story_timeline", StoryMemory.project_id, StoryMemory.story_timeline)
 Index(
     "ix_story_memories_project_id_memory_type_importance",

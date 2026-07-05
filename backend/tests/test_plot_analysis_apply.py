@@ -26,10 +26,15 @@ class TestPlotAnalysisApply(unittest.TestCase):
             conn.exec_driver_sql("PRAGMA foreign_keys=ON;")
             conn.exec_driver_sql("CREATE TABLE users (id VARCHAR(64) PRIMARY KEY)")
             conn.exec_driver_sql("CREATE TABLE projects (id VARCHAR(36) PRIMARY KEY)")
-            conn.exec_driver_sql("CREATE TABLE chapters (id VARCHAR(36) PRIMARY KEY)")
+            conn.exec_driver_sql("CREATE TABLE outlines (id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36))")
+            conn.exec_driver_sql("CREATE TABLE chapters (id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36), outline_id VARCHAR(36))")
             conn.execute(text("INSERT INTO users (id) VALUES (:id)"), {"id": "local-user"})
             conn.execute(text("INSERT INTO projects (id) VALUES (:id)"), {"id": "project-1"})
-            conn.execute(text("INSERT INTO chapters (id) VALUES (:id)"), {"id": "chapter-1"})
+            conn.execute(text("INSERT INTO outlines (id, project_id) VALUES (:id, :project_id)"), {"id": "outline-1", "project_id": "project-1"})
+            conn.execute(
+                text("INSERT INTO chapters (id, project_id, outline_id) VALUES (:id, :project_id, :outline_id)"),
+                {"id": "chapter-1", "project_id": "project-1", "outline_id": "outline-1"},
+            )
 
         GenerationRun.__table__.create(engine)
         PlotAnalysis.__table__.create(engine)

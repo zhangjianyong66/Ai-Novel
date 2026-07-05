@@ -184,6 +184,34 @@ def _vector_candidate_chunk_key(candidate: dict[str, Any]) -> tuple[str, str, in
     return (str(meta.get("source") or ""), str(meta.get("source_id") or ""), chunk_index)
 
 
+def _story_memory_candidate_allowed(candidate: dict[str, Any], *, outline_id: str | None) -> bool:
+    meta = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
+    if str(meta.get("source") or "") != "story_memory":
+        return True
+    scope = str(meta.get("scope") or "").strip() or "unassigned"
+    if scope == "project":
+        return True
+    if scope == "outline":
+        oid = str(outline_id or "").strip()
+        return bool(oid) and str(meta.get("outline_id") or "").strip() == oid
+    return False
+
+
+def _filter_story_memory_candidates_by_scope(
+    candidates: list[dict[str, Any]],
+    *,
+    outline_id: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    kept: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for c in candidates:
+        if _story_memory_candidate_allowed(c, outline_id=outline_id):
+            kept.append(c)
+        else:
+            dropped.append({"id": c.get("id"), "reason": "story_memory_scope"})
+    return kept, dropped
+
+
 def _normalize_kb_priority_group(value: str | None) -> str:
     raw = str(value or "").strip().lower()
     return raw if raw in ("normal", "high") else "normal"
@@ -1307,6 +1335,8 @@ def build_project_chunks(*, db: Session, project_id: str, sources: list[VectorSo
                             "chunk_index": idx,
                             "memory_type": str(m.memory_type or "").strip(),
                             "chapter_id": str(m.chapter_id or "") or None,
+                            "outline_id": str(getattr(m, "outline_id", "") or "") or None,
+                            "scope": str(getattr(m, "scope", "") or "unassigned"),
                             "story_timeline": int(m.story_timeline or 0),
                             "is_foreshadow": bool(int(m.is_foreshadow or 0)),
                         },
@@ -1903,6 +1933,7 @@ def query_project(
     embedding: dict[str, str | None] | None = None,
     rerank: dict[str, Any] | None = None,
     super_sort: dict[str, Any] | None = None,
+    story_memory_outline_id: str | None = None,
     kb_weights: dict[str, float] | None = None,
     kb_orders: dict[str, int] | None = None,
     kb_priority_groups: dict[str, str] | None = None,
@@ -2062,6 +2093,10 @@ def query_project(
                 cc = dict(c)
                 cc.pop("_rrf_score", None)
                 candidates.append(cc)
+            candidates, scope_dropped = _filter_story_memory_candidates_by_scope(
+                candidates,
+                outline_id=story_memory_outline_id,
+            )
 
             trimmed_candidates = candidates[:top_k]
             if not rerank_enabled:
@@ -2112,7 +2147,7 @@ def query_project(
                     "timing_ms": 0,
                     "errors": [],
                 }
-            dropped: list[dict[str, Any]] = []
+            dropped: list[dict[str, Any]] = list(scope_dropped)
             final_chunks: list[dict[str, Any]] = []
             seen_chunk_keys: set[tuple[str, str, int]] = set()
             selected_by_source: dict[tuple[str, str], int] = {}
@@ -2326,6 +2361,10 @@ def query_project(
         priority_enabled=priority_enabled,
         rrf_k=rrf_k,
     )
+    candidates, scope_dropped = _filter_story_memory_candidates_by_scope(
+        candidates,
+        outline_id=story_memory_outline_id,
+    )
 
     trimmed_candidates = candidates[:top_k]
     if not rerank_enabled:
@@ -2377,7 +2416,7 @@ def query_project(
             "errors": [],
         }
 
-    dropped: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = list(scope_dropped)
     final_chunks: list[dict[str, Any]] = []
     seen_chunk_keys: set[tuple[str, str, int]] = set()
     selected_by_source: dict[tuple[str, str], int] = {}

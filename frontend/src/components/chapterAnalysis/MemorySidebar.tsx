@@ -1,9 +1,10 @@
 import clsx from "clsx";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { ApiError } from "../../services/apiClient";
 import type { StoryMemory } from "../../services/storyMemoryApi";
 import {
+  bulkSetStoryMemoryScope,
   createStoryMemory,
   deleteStoryMemory,
   markStoryMemoryDone,
@@ -35,6 +36,10 @@ type StoryMemoryForm = {
   text_length: number;
 };
 
+type DrawerMode = "view" | "create" | "edit" | "merge";
+type StoryMemoryScope = "outline" | "project" | "unassigned";
+type ScopeFilter = "all" | "injectable" | StoryMemoryScope;
+
 function parseTags(raw: string): string[] {
   const tokens = String(raw || "")
     .split(/[\n,，;；]/g)
@@ -63,6 +68,33 @@ function isDone(a: MemoryAnnotation): boolean {
   return Boolean(value);
 }
 
+function memoryScope(a: MemoryAnnotation | null): "outline" | "project" | "unassigned" {
+  const value = a?.metadata?.scope;
+  return value === "outline" || value === "project" || value === "unassigned" ? value : "unassigned";
+}
+
+function scopeLabel(scope: string): string {
+  switch (scope) {
+    case "outline":
+      return "大纲";
+    case "project":
+      return "项目全局";
+    case "unassigned":
+      return "未归属";
+    default:
+      return scope || "未归属";
+  }
+}
+
+function isInjectableForCurrentOutline(a: MemoryAnnotation | null, activeOutlineId?: string | null): boolean {
+  if (!a) return false;
+  const scope = memoryScope(a);
+  if (scope === "project") return true;
+  if (scope !== "outline") return false;
+  const oid = typeof a.metadata?.outline_id === "string" ? a.metadata.outline_id : null;
+  return Boolean(activeOutlineId && oid === activeOutlineId);
+}
+
 function toForm(a: MemoryAnnotation | null): StoryMemoryForm {
   return {
     memory_type: String(a?.type ?? "plot_point") || "plot_point",
@@ -87,9 +119,11 @@ const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
 export function MemorySidebar(props: {
   projectId?: string;
   chapterId?: string | null;
+  activeOutlineId?: string | null;
   annotations: MemoryAnnotation[];
   validIds: Set<string>;
   activeAnnotationId?: string | null;
+  variant?: "main" | "trace";
   onSelect: (annotation: MemoryAnnotation) => void;
   onRefresh?: () => Promise<void> | void;
   onSetActiveAnnotationId?: (id: string | null) => void;
@@ -109,34 +143,25 @@ export function MemorySidebar(props: {
       );
   }, [props.annotations]);
 
-  const [enabledTypes, setEnabledTypes] = useState<Set<string>>(() => new Set(allTypes.map((t) => t.type)));
-  const prevAllTypesRef = useRef<Set<string>>(new Set(allTypes.map((t) => t.type)));
-
-  useEffect(() => {
-    const prevTypes = prevAllTypesRef.current;
-    const nextTypes = new Set(allTypes.map((t) => t.type));
-    prevAllTypesRef.current = nextTypes;
-
-    const newlyAdded: string[] = [];
-    for (const t of nextTypes) {
-      if (!prevTypes.has(t)) newlyAdded.push(t);
-    }
-    if (!newlyAdded.length) return;
-
-    setEnabledTypes((prev) => {
-      const out = new Set(prev);
-      for (const t of newlyAdded) out.add(t);
-      return out;
-    });
-  }, [allTypes]);
+  const [selectedType, setSelectedType] = useState<string>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+  const effectiveSelectedType = useMemo(() => {
+    if (selectedType === "all") return "all";
+    return allTypes.some((t) => t.type === selectedType) ? selectedType : "all";
+  }, [allTypes, selectedType]);
 
   const filtered = useMemo(() => {
-    const out = props.annotations.filter((a) => enabledTypes.has(a.type));
+    const out = props.annotations.filter((a) => {
+      if (effectiveSelectedType !== "all" && a.type !== effectiveSelectedType) return false;
+      if (scopeFilter === "all") return true;
+      if (scopeFilter === "injectable") return isInjectableForCurrentOutline(a, props.activeOutlineId);
+      return memoryScope(a) === scopeFilter;
+    });
     out.sort(
       (a, b) => sortKeyForAnnotationType(a.type) - sortKeyForAnnotationType(b.type) || b.importance - a.importance,
     );
     return out;
-  }, [enabledTypes, props.annotations]);
+  }, [effectiveSelectedType, props.activeOutlineId, props.annotations, scopeFilter]);
 
   const groups = useMemo(() => {
     const map = new Map<string, MemoryAnnotation[]>();
@@ -158,13 +183,14 @@ export function MemorySidebar(props: {
     return props.annotations.find((a) => a.id === id) ?? null;
   }, [props.activeAnnotationId, props.annotations]);
 
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>("view");
   const [editing, setEditing] = useState<MemoryAnnotation | null>(null);
   const [form, setForm] = useState<StoryMemoryForm>(() => toForm(null));
+  const [scopeDraft, setScopeDraft] = useState<StoryMemoryScope>("unassigned");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
-  const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeSources, setMergeSources] = useState<Set<string>>(() => new Set());
   const [mergeSaving, setMergeSaving] = useState(false);
   const mergeSavingRef = useRef(false);
@@ -172,19 +198,33 @@ export function MemorySidebar(props: {
   const openCreate = useCallback(() => {
     setEditing(null);
     setForm(toForm(null));
-    setEditorOpen(true);
+    setDrawerMode("create");
+    setDrawerOpen(true);
   }, []);
+
+  const openDetail = useCallback(
+    (annotation: MemoryAnnotation) => {
+      props.onSelect(annotation);
+      setEditing(null);
+      setScopeDraft(memoryScope(annotation));
+      setDrawerMode("view");
+      setDrawerOpen(true);
+    },
+    [props],
+  );
 
   const openEdit = useCallback(() => {
     if (!active) return;
     setEditing(active);
     setForm(toForm(active));
-    setEditorOpen(true);
+    setDrawerMode("edit");
+    setDrawerOpen(true);
   }, [active]);
 
-  const closeEditor = useCallback(() => {
+  const closeDrawer = useCallback(() => {
     if (savingRef.current) return;
-    setEditorOpen(false);
+    if (mergeSavingRef.current) return;
+    setDrawerOpen(false);
   }, []);
 
   const saveStoryMemory = useCallback(async () => {
@@ -222,7 +262,14 @@ export function MemorySidebar(props: {
       toast.toastSuccess(editing ? "已保存剧情记忆" : "已新增剧情记忆");
       props.onSetActiveAnnotationId?.(saved.id);
       await props.onRefresh?.();
-      setEditorOpen(false);
+      setEditing(null);
+      setScopeDraft(
+        saved.scope === "outline" || saved.scope === "project" || saved.scope === "unassigned"
+          ? saved.scope
+          : "unassigned",
+      );
+      setDrawerMode("view");
+      setDrawerOpen(true);
     } catch (e) {
       const err = e as ApiError;
       toast.toastError(`保存失败：${err.message} (${err.code})`, err.requestId);
@@ -265,6 +312,7 @@ export function MemorySidebar(props: {
       toast.toastSuccess("已删除剧情记忆");
       props.onSetActiveAnnotationId?.(null);
       await props.onRefresh?.();
+      setDrawerOpen(false);
     } catch (e) {
       const err = e as ApiError;
       toast.toastError(`删除失败：${err.message} (${err.code})`, err.requestId);
@@ -298,12 +346,13 @@ export function MemorySidebar(props: {
   const openMerge = useCallback(() => {
     if (!active) return;
     setMergeSources(new Set());
-    setMergeOpen(true);
+    setDrawerMode("merge");
+    setDrawerOpen(true);
   }, [active]);
 
   const closeMerge = useCallback(() => {
     if (mergeSavingRef.current) return;
-    setMergeOpen(false);
+    setDrawerMode("view");
   }, []);
 
   const mergeCandidates = useMemo(() => {
@@ -341,10 +390,10 @@ export function MemorySidebar(props: {
     try {
       await mergeStoryMemories(projectId, { targetId: active.id, sourceIds });
       toast.toastSuccess("已合并剧情记忆");
-      setMergeOpen(false);
       setMergeSources(new Set());
       props.onSetActiveAnnotationId?.(active.id);
       await props.onRefresh?.();
+      setDrawerMode("view");
     } catch (e) {
       const err = e as ApiError;
       toast.toastError(`合并失败：${err.message} (${err.code})`, err.requestId);
@@ -354,26 +403,69 @@ export function MemorySidebar(props: {
     }
   }, [active, confirm, mergeSources, props, toast]);
 
+  const setSelectedScope = useCallback(
+    async (scope: StoryMemoryScope) => {
+      const projectId = props.projectId;
+      if (!projectId) {
+        toast.toastError("缺少 projectId：无法修改作用域");
+        return;
+      }
+      if (!active) return;
+      if (scope === "outline" && !props.activeOutlineId) {
+        toast.toastWarning("当前项目没有可用的 active outline，无法设为当前大纲");
+        return;
+      }
+      setSaving(true);
+      try {
+        await bulkSetStoryMemoryScope(
+          projectId,
+          [active.id],
+          scope,
+          scope === "outline" ? props.activeOutlineId : null,
+        );
+        toast.toastSuccess("已更新记忆作用域");
+        await props.onRefresh?.();
+        setScopeDraft(scope);
+      } catch (e) {
+        const err = e as ApiError;
+        toast.toastError(`修改作用域失败：${err.message} (${err.code})`, err.requestId);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [active, props, toast],
+  );
+
   const selectedInfo = useMemo(() => {
     if (!active) return null;
     const done = isDone(active);
     const valid = props.validIds.has(active.id);
-    return { done, valid };
-  }, [active, props.validIds]);
+    return {
+      done,
+      valid,
+      scope: memoryScope(active),
+      injectable: isInjectableForCurrentOutline(active, props.activeOutlineId),
+    };
+  }, [active, props.activeOutlineId, props.validIds]);
+
+  const isMainVariant = props.variant === "main";
+  const listGridClassName = isMainVariant ? "grid gap-3 xl:grid-cols-2" : "grid gap-2";
 
   return (
-    <aside className="min-w-0 grid gap-2" aria-label="story_memory_sidebar">
-      <div className="rounded-atelier border border-border bg-surface p-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm text-ink">{UI_COPY.chapterAnalysis.storyMemoryTitle}</div>
+    <aside className="min-w-0 grid gap-3" aria-label="story_memory_sidebar">
+      <div className="rounded-atelier border border-border bg-surface p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className={clsx("text-ink", isMainVariant ? "font-content text-xl" : "text-sm")}>
+              {UI_COPY.chapterAnalysis.storyMemoryTitle}
+            </div>
             <div className="mt-1 text-xs text-subtext">
               共 {props.annotations.length} 条{invalidCount > 0 ? `（${invalidCount} 条未定位）` : ""}
             </div>
-            <div className="mt-2 callout-info">{UI_COPY.chapterAnalysis.storyMemorySubtitle}</div>
+            <div className="mt-2 callout-info max-w-4xl">{UI_COPY.chapterAnalysis.storyMemorySubtitle}</div>
           </div>
           <button
-            className="btn btn-primary px-3 py-1 text-xs"
+            className="btn btn-primary shrink-0 px-3 py-1 text-xs"
             type="button"
             onClick={openCreate}
             disabled={saving}
@@ -384,30 +476,58 @@ export function MemorySidebar(props: {
         </div>
 
         <div className="mt-2 flex flex-wrap gap-2">
-          {allTypes.map((t) => {
-            const enabled = enabledTypes.has(t.type);
-            return (
-              <button
-                key={t.type}
-                className={clsx("btn btn-ghost px-2 py-1 text-xs", enabled ? "bg-canvas text-ink" : "text-subtext")}
-                type="button"
-                onClick={() => {
-                  setEnabledTypes((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(t.type)) next.delete(t.type);
-                    else next.add(t.type);
-                    if (next.size === 0) return new Set([t.type]);
-                    return next;
-                  });
-                }}
-                aria-pressed={enabled}
-                title={enabled ? "点击取消过滤" : "点击启用过滤"}
-              >
-                {labelForAnnotationType(t.type)}
-                <span className="ml-1 text-subtext">· {t.count}</span>
-              </button>
-            );
-          })}
+          <button
+            className={clsx(
+              "btn btn-ghost px-2 py-1 text-xs",
+              effectiveSelectedType === "all" ? "bg-canvas text-ink" : "text-subtext",
+            )}
+            type="button"
+            onClick={() => setSelectedType("all")}
+            aria-pressed={effectiveSelectedType === "all"}
+          >
+            全部类型
+            <span className="ml-1 text-subtext">· {props.annotations.length}</span>
+          </button>
+          {allTypes.map((t) => (
+            <button
+              key={t.type}
+              className={clsx(
+                "btn btn-ghost px-2 py-1 text-xs",
+                effectiveSelectedType === t.type ? "bg-canvas text-ink" : "text-subtext",
+              )}
+              type="button"
+              onClick={() => setSelectedType(t.type)}
+              aria-pressed={effectiveSelectedType === t.type}
+            >
+              {labelForAnnotationType(t.type)}
+              <span className="ml-1 text-subtext">· {t.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(
+            [
+              ["all", "全部"],
+              ["injectable", "会注入当前大纲"],
+              ["outline", "大纲"],
+              ["project", "项目全局"],
+              ["unassigned", "未归属"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              className={clsx(
+                "btn btn-ghost px-2 py-1 text-xs",
+                scopeFilter === value ? "bg-canvas text-ink" : "text-subtext",
+              )}
+              type="button"
+              onClick={() => setScopeFilter(value)}
+              aria-pressed={scopeFilter === value}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -421,11 +541,13 @@ export function MemorySidebar(props: {
                 <div className="px-1 text-xs text-subtext">
                   {labelForAnnotationType(type)} · {list.length}
                 </div>
-                <div className="grid gap-2">
+                <div className={listGridClassName}>
                   {list.map((a) => {
                     const selected = props.activeAnnotationId === a.id;
                     const valid = props.validIds.has(a.id);
                     const done = isDone(a);
+                    const scope = memoryScope(a);
+                    const injectable = isInjectableForCurrentOutline(a, props.activeOutlineId);
                     return (
                       <button
                         key={a.id}
@@ -435,9 +557,9 @@ export function MemorySidebar(props: {
                           !valid && "opacity-70",
                         )}
                         type="button"
-                        onClick={() => props.onSelect(a)}
+                        onClick={() => openDetail(a)}
                         aria-label={`story_memory_item:${normalizeTitle(a)}`}
-                        title={valid ? "点击定位到正文" : "未定位：无法在正文中高亮"}
+                        title={valid ? "点击查看详情并定位正文" : "点击查看详情；该条无法在正文中高亮"}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -446,6 +568,17 @@ export function MemorySidebar(props: {
                               {done ? (
                                 <span className="rounded bg-success/20 px-1.5 py-0.5 text-[11px] text-ink">已完成</span>
                               ) : null}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-subtext">
+                              <span className="rounded bg-surface px-1.5 py-0.5">{scopeLabel(scope)}</span>
+                              <span
+                                className={clsx(
+                                  "rounded px-1.5 py-0.5",
+                                  injectable ? "bg-success/20 text-ink" : "bg-warning/20 text-ink",
+                                )}
+                              >
+                                {injectable ? "会注入" : "不注入"}
+                              </span>
                             </div>
                             <div className="mt-1 line-clamp-2 break-words text-xs text-subtext">
                               {(a.content ?? "").trim().slice(0, 140)}
@@ -466,280 +599,340 @@ export function MemorySidebar(props: {
         )}
       </div>
 
-      <div className="rounded-atelier border border-border bg-surface p-2">
-        <div className="grid gap-2">
-          <div className="min-w-0">
-            <div className="text-xs text-subtext">{active ? "已选中" : "未选择"}</div>
-            <div className="mt-1 truncate text-sm text-ink">
-              {active ? normalizeTitle(active) : "请先在上方选择条目"}
-            </div>
-            {active ? (
-              <div className="mt-1 text-[11px] text-subtext">
-                类型：{labelForAnnotationType(active.type)} · 重要度：{(active.importance * 10).toFixed(1)} ·{" "}
-                {selectedInfo?.valid ? "可定位" : "未定位"}
-                {selectedInfo?.done ? " · 已完成" : ""}
-              </div>
-            ) : (
-              <div className="mt-1 text-[11px] text-subtext">
-                提示：点击上方条目可定位到正文，并在此处进行编辑/合并/完成标记/删除。
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="btn btn-secondary px-3 py-1 text-xs"
-              type="button"
-              onClick={openEdit}
-              disabled={!active || saving}
-              aria-label="story_memory_edit"
-            >
-              编辑
-            </button>
-            <button
-              className="btn btn-secondary px-3 py-1 text-xs"
-              type="button"
-              onClick={toggleDone}
-              disabled={!active || saving}
-              aria-label="story_memory_toggle_done"
-            >
-              {selectedInfo?.done ? "取消完成" : "标记完成"}
-            </button>
-            <button
-              className="btn btn-secondary px-3 py-1 text-xs"
-              type="button"
-              onClick={openMerge}
-              disabled={!active || saving || props.annotations.length < 2}
-              aria-label="story_memory_merge"
-            >
-              合并
-            </button>
-            <button
-              className="btn btn-danger px-3 py-1 text-xs"
-              type="button"
-              onClick={() => void deleteSelected()}
-              disabled={!active || saving}
-              aria-label="story_memory_delete"
-            >
-              删除
-            </button>
-          </div>
-        </div>
-      </div>
-
       <Drawer
-        open={editorOpen}
-        onClose={closeEditor}
+        open={drawerOpen}
+        onClose={closeDrawer}
         panelClassName="h-full w-full max-w-xl border-l border-border bg-canvas p-6 shadow-sm"
-        ariaLabel={editing ? "编辑剧情记忆" : "新增剧情记忆"}
+        ariaLabel="剧情记忆详情"
       >
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-content text-2xl text-ink">{editing ? "编辑剧情记忆" : "新增剧情记忆"}</div>
+          <div className="min-w-0">
+            <div className="font-content text-2xl text-ink">
+              {drawerMode === "create"
+                ? "新增剧情记忆"
+                : drawerMode === "edit"
+                  ? "编辑剧情记忆"
+                  : drawerMode === "merge"
+                    ? "合并剧情记忆"
+                    : "剧情记忆详情"}
+            </div>
             <div className="mt-1 text-xs text-subtext">
-              {saving ? "保存中..." : "可直接编辑后保存（失败不影响正文）"}
+              {drawerMode === "merge"
+                ? `合并到：${active ? normalizeTitle(active) : "（未选择）"} · 已选 ${mergeSources.size} 条`
+                : drawerMode === "view"
+                  ? "查看完整内容，并在这里完成条目级操作。"
+                  : saving
+                    ? "保存中..."
+                    : "可直接编辑后保存（失败不影响正文）"}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
+            {drawerMode === "edit" && active ? (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => setDrawerMode("view")}
+                disabled={saving}
+              >
+                取消
+              </button>
+            ) : drawerMode === "merge" ? (
+              <button className="btn btn-secondary" type="button" onClick={closeMerge} disabled={mergeSaving}>
+                取消
+              </button>
+            ) : null}
             <button
               className="btn btn-secondary"
               type="button"
-              onClick={closeEditor}
-              disabled={saving}
+              onClick={closeDrawer}
+              disabled={saving || mergeSaving}
               aria-label="story_memory_close"
             >
               关闭
             </button>
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => void saveStoryMemory()}
-              disabled={saving || !form.content.trim()}
-              aria-label="story_memory_save"
-            >
-              保存
-            </button>
+            {drawerMode === "create" || drawerMode === "edit" ? (
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => void saveStoryMemory()}
+                disabled={saving || !form.content.trim()}
+                aria-label="story_memory_save"
+              >
+                保存
+              </button>
+            ) : null}
+            {drawerMode === "merge" ? (
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => void applyMerge()}
+                disabled={mergeSaving || mergeSources.size === 0 || !active}
+                aria-label="story_memory_merge_apply"
+              >
+                确认合并
+              </button>
+            ) : null}
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4">
-          <label className="grid gap-1">
-            <span className="text-xs text-subtext">类型</span>
-            <select
-              className="select"
-              value={form.memory_type}
-              onChange={(e) => setForm((v) => ({ ...v, memory_type: e.target.value }))}
-              aria-label="story_memory_type"
-              disabled={saving}
-            >
-              {TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-subtext">标题（可选）</span>
-            <input
-              className="input"
-              value={form.title}
-              onChange={(e) => setForm((v) => ({ ...v, title: e.target.value }))}
-              placeholder="例如：主角发现异常线索"
-              disabled={saving}
-              aria-label="story_memory_title"
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-subtext">内容</span>
-            <textarea
-              className="textarea atelier-content"
-              rows={10}
-              value={form.content}
-              onChange={(e) => setForm((v) => ({ ...v, content: e.target.value }))}
-              placeholder="写下可复用、可检索的剧情记忆条目…"
-              disabled={saving}
-              aria-label="story_memory_content"
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-xs text-subtext">标签（可选，每行一个）</span>
-            <textarea
-              className="textarea"
-              rows={4}
-              value={form.tags_raw}
-              onChange={(e) => setForm((v) => ({ ...v, tags_raw: e.target.value }))}
-              placeholder="例如：伏笔\n人物状态\n时间线"
-              disabled={saving}
-              aria-label="story_memory_tags"
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-xs text-subtext">重要度（0~1，侧栏显示为 *10）</span>
-              <input
-                className="input"
-                type="number"
-                step="0.05"
-                min="0"
-                max="1"
-                value={Number.isFinite(form.importance_score) ? form.importance_score : 0}
-                onChange={(e) => setForm((v) => ({ ...v, importance_score: Number(e.target.value) }))}
-                disabled={saving}
-                aria-label="story_memory_importance"
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-xs text-subtext">定位 position</span>
-                <input
-                  className="input"
-                  type="number"
-                  value={Number.isFinite(form.text_position) ? form.text_position : -1}
-                  onChange={(e) => setForm((v) => ({ ...v, text_position: Number(e.target.value) }))}
-                  disabled={saving}
-                  aria-label="story_memory_position"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs text-subtext">定位 length</span>
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  value={Number.isFinite(form.text_length) ? form.text_length : 0}
-                  onChange={(e) => setForm((v) => ({ ...v, text_length: Number(e.target.value) }))}
-                  disabled={saving}
-                  aria-label="story_memory_length"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-subtext">
-            说明：position/length 用于“回溯定位”。若不确定可留空（-1/0），系统会尝试用内容片段做 fallback 定位。
-          </div>
-        </div>
-      </Drawer>
-
-      <Drawer
-        open={mergeOpen}
-        onClose={closeMerge}
-        panelClassName="h-full w-full max-w-xl border-l border-border bg-canvas p-6 shadow-sm"
-        ariaLabel="合并剧情记忆"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-content text-2xl text-ink">合并剧情记忆</div>
-            <div className="mt-1 text-xs text-subtext">
-              目标：{active ? normalizeTitle(active) : "（未选择）"} · 已选 {mergeSources.size} 条
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button className="btn btn-secondary" type="button" onClick={closeMerge} disabled={mergeSaving}>
-              关闭
-            </button>
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => void applyMerge()}
-              disabled={mergeSaving || mergeSources.size === 0 || !active}
-              aria-label="story_memory_merge_apply"
-            >
-              合并
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-2">
-          {mergeCandidates.length === 0 ? (
-            <div className="rounded-atelier border border-border bg-surface p-3 text-sm text-subtext">
-              当前章节没有可合并的其他条目。
-            </div>
-          ) : (
-            mergeCandidates.map((a) => {
-              const checked = mergeSources.has(a.id);
-              return (
-                <label
-                  key={a.id}
-                  className={clsx(
-                    "flex cursor-pointer items-start gap-3 rounded-atelier border bg-surface px-3 py-2",
-                    checked ? "border-accent" : "border-border",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => {
-                      setMergeSources((prev) => {
-                        const next = new Set(prev);
-                        if (e.target.checked) next.add(a.id);
-                        else next.delete(a.id);
-                        return next;
-                      });
-                    }}
-                    aria-label={`story_memory_merge_source:${normalizeTitle(a)}`}
-                    disabled={mergeSaving}
-                    className="checkbox mt-1"
-                  />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-sm text-ink">{normalizeTitle(a)}</div>
-                      <div className="text-xs text-subtext">{labelForAnnotationType(a.type)}</div>
-                    </div>
-                    <div className="mt-1 line-clamp-2 break-words text-xs text-subtext">
-                      {(a.content ?? "").trim().slice(0, 160)}
+        {drawerMode === "view" ? (
+          <div className="mt-5 grid gap-4">
+            {!active ? (
+              <div className="rounded-atelier border border-border bg-surface p-3 text-sm text-subtext">
+                请先选择一条剧情记忆。
+              </div>
+            ) : (
+              <>
+                <div className="rounded-atelier border border-border bg-surface p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="break-words text-lg text-ink">{normalizeTitle(active)}</div>
+                      <div className="mt-2 flex flex-wrap gap-1 text-xs text-subtext">
+                        <span className="rounded bg-canvas px-2 py-1">{labelForAnnotationType(active.type)}</span>
+                        <span className="rounded bg-canvas px-2 py-1">
+                          重要度 {(active.importance * 10).toFixed(1)}
+                        </span>
+                        <span className="rounded bg-canvas px-2 py-1">{selectedInfo?.valid ? "可定位" : "未定位"}</span>
+                        {selectedInfo?.done ? (
+                          <span className="rounded bg-success/20 px-2 py-1 text-ink">已完成</span>
+                        ) : null}
+                        {selectedInfo ? (
+                          <span className="rounded bg-canvas px-2 py-1">{scopeLabel(selectedInfo.scope)}</span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
+                  <div className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-ink">
+                    {(active.content ?? "").trim() || "（无内容）"}
+                  </div>
+                </div>
+
+                <div className="rounded-atelier border border-border bg-surface p-4">
+                  <div className="text-sm text-ink">归属范围</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <select
+                      className="select max-w-48"
+                      value={scopeDraft}
+                      onChange={(e) => setScopeDraft(e.target.value as StoryMemoryScope)}
+                      aria-label="story_memory_scope_select"
+                      disabled={saving}
+                    >
+                      <option value="outline" disabled={!props.activeOutlineId}>
+                        当前大纲
+                      </option>
+                      <option value="project">项目全局</option>
+                      <option value="unassigned">未归属</option>
+                    </select>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => void setSelectedScope(scopeDraft)}
+                      disabled={!active || saving || (scopeDraft === "outline" && !props.activeOutlineId)}
+                      aria-label="story_memory_apply_scope"
+                    >
+                      应用
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-subtext">
+                    {selectedInfo?.injectable ? "当前条目会注入当前大纲。" : "当前条目不会注入当前大纲。"}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={openEdit}
+                    disabled={saving}
+                    aria-label="story_memory_edit"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => void toggleDone()}
+                    disabled={saving}
+                    aria-label="story_memory_toggle_done"
+                  >
+                    {selectedInfo?.done ? "取消完成" : "标记完成"}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={openMerge}
+                    disabled={saving || props.annotations.length < 2}
+                    aria-label="story_memory_merge"
+                  >
+                    合并到此条
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    onClick={() => void deleteSelected()}
+                    disabled={saving}
+                    aria-label="story_memory_delete"
+                  >
+                    删除
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {drawerMode === "create" || drawerMode === "edit" ? (
+          <div className="mt-5 grid gap-4">
+            <label className="grid gap-1">
+              <span className="text-xs text-subtext">类型</span>
+              <select
+                className="select"
+                value={form.memory_type}
+                onChange={(e) => setForm((v) => ({ ...v, memory_type: e.target.value }))}
+                aria-label="story_memory_type"
+                disabled={saving}
+              >
+                {TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1">
+              <span className="text-xs text-subtext">标题（可选）</span>
+              <input
+                className="input"
+                value={form.title}
+                onChange={(e) => setForm((v) => ({ ...v, title: e.target.value }))}
+                placeholder="例如：主角发现异常线索"
+                disabled={saving}
+                aria-label="story_memory_title"
+              />
+            </label>
+
+            <label className="grid gap-1">
+              <span className="text-xs text-subtext">内容</span>
+              <textarea
+                className="textarea atelier-content"
+                rows={10}
+                value={form.content}
+                onChange={(e) => setForm((v) => ({ ...v, content: e.target.value }))}
+                placeholder="写下可复用、可检索的剧情记忆条目…"
+                disabled={saving}
+                aria-label="story_memory_content"
+              />
+            </label>
+
+            <label className="grid gap-1">
+              <span className="text-xs text-subtext">标签（可选，每行一个）</span>
+              <textarea
+                className="textarea"
+                rows={4}
+                value={form.tags_raw}
+                onChange={(e) => setForm((v) => ({ ...v, tags_raw: e.target.value }))}
+                placeholder="例如：伏笔\n人物状态\n时间线"
+                disabled={saving}
+                aria-label="story_memory_tags"
+              />
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1">
+                <span className="text-xs text-subtext">重要度（0~1，列表显示为 *10）</span>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={Number.isFinite(form.importance_score) ? form.importance_score : 0}
+                  onChange={(e) => setForm((v) => ({ ...v, importance_score: Number(e.target.value) }))}
+                  disabled={saving}
+                  aria-label="story_memory_importance"
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="text-xs text-subtext">定位 position</span>
+                  <input
+                    className="input"
+                    type="number"
+                    value={Number.isFinite(form.text_position) ? form.text_position : -1}
+                    onChange={(e) => setForm((v) => ({ ...v, text_position: Number(e.target.value) }))}
+                    disabled={saving}
+                    aria-label="story_memory_position"
+                  />
                 </label>
-              );
-            })
-          )}
-        </div>
+                <label className="grid gap-1">
+                  <span className="text-xs text-subtext">定位 length</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    value={Number.isFinite(form.text_length) ? form.text_length : 0}
+                    onChange={(e) => setForm((v) => ({ ...v, text_length: Number(e.target.value) }))}
+                    disabled={saving}
+                    aria-label="story_memory_length"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-subtext">
+              说明：position/length 用于“回溯定位”。若不确定可留空（-1/0），系统会尝试用内容片段做 fallback 定位。
+            </div>
+          </div>
+        ) : null}
+
+        {drawerMode === "merge" ? (
+          <div className="mt-5 grid gap-2">
+            {mergeCandidates.length === 0 ? (
+              <div className="rounded-atelier border border-border bg-surface p-3 text-sm text-subtext">
+                当前没有可合并的其他条目。
+              </div>
+            ) : (
+              mergeCandidates.map((a) => {
+                const checked = mergeSources.has(a.id);
+                return (
+                  <label
+                    key={a.id}
+                    className={clsx(
+                      "flex cursor-pointer items-start gap-3 rounded-atelier border bg-surface px-3 py-2",
+                      checked ? "border-accent" : "border-border",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setMergeSources((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(a.id);
+                          else next.delete(a.id);
+                          return next;
+                        });
+                      }}
+                      aria-label={`story_memory_merge_source:${normalizeTitle(a)}`}
+                      disabled={mergeSaving}
+                      className="checkbox mt-1"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm text-ink">{normalizeTitle(a)}</div>
+                        <div className="text-xs text-subtext">{labelForAnnotationType(a.type)}</div>
+                      </div>
+                      <div className="mt-1 line-clamp-2 break-words text-xs text-subtext">
+                        {(a.content ?? "").trim().slice(0, 160)}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        ) : null}
       </Drawer>
     </aside>
   );

@@ -1,22 +1,30 @@
 import { useId } from "react";
 import clsx from "clsx";
-import { Check, History, RotateCcw } from "lucide-react";
+import { Check, Diff, History, RotateCcw } from "lucide-react";
 
 import type { ChapterVersionDetail, ChapterVersionSummary } from "../../types";
 import { Drawer } from "../ui/Drawer";
+import { ChapterVersionDiffView } from "./ChapterVersionDiffView";
 
 type Props = {
   open: boolean;
   loading: boolean;
   detailLoading: boolean;
   activating: boolean;
+  compareMode: boolean;
+  compareLoading: boolean;
   versions: ChapterVersionSummary[];
   selectedVersion: ChapterVersionDetail | null;
+  compareBaseVersion: ChapterVersionDetail | null;
+  compareBaseVersionId: string;
   activeVersionId?: string | null;
   canActivate: boolean;
   blockReason?: string | null;
   onClose: () => void;
   onSelectVersion: (versionId: string) => void;
+  onComparePreviousVersion: () => void;
+  onCompareBaseVersionChange: (versionId: string) => void;
+  onCloseCompare: () => void;
   onActivateVersion: () => void;
 };
 
@@ -33,9 +41,19 @@ function formatDate(value: string): string {
   return date.toLocaleString();
 }
 
+function versionOptionLabel(version: ChapterVersionSummary): string {
+  return `${sourceLabel(version.source)} · ${formatDate(version.created_at)} · ${version.word_count} 字`;
+}
+
 export function ChapterVersionsDrawer(props: Props) {
   const titleId = useId();
   const selectedId = props.selectedVersion?.id ?? null;
+  const selectedIndex = selectedId ? props.versions.findIndex((version) => version.id === selectedId) : -1;
+  const previousVersion = selectedIndex >= 0 ? props.versions[selectedIndex + 1] : null;
+  const compareOptions = props.versions.filter((version) => version.id !== selectedId);
+  const compareDisabled = !props.selectedVersion || !previousVersion || props.loading || props.detailLoading;
+  const selectedLabel = props.selectedVersion ? versionOptionLabel(props.selectedVersion) : "目标版本";
+  const compareBaseLabel = props.compareBaseVersion ? versionOptionLabel(props.compareBaseVersion) : "基准版本";
 
   return (
     <Drawer
@@ -111,21 +129,72 @@ export function ChapterVersionsDrawer(props: Props) {
                   "选择一个版本查看预览"
                 )}
               </div>
-              <button
-                className="btn btn-primary min-h-9 px-3"
-                disabled={!props.selectedVersion || props.activating || !props.canActivate}
-                onClick={props.onActivateVersion}
-                type="button"
-              >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                设为当前版本
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {props.compareMode ? (
+                  <button className="btn btn-secondary min-h-9 px-3" onClick={props.onCloseCompare} type="button">
+                    返回预览
+                  </button>
+                ) : null}
+                <button
+                  className="btn btn-secondary min-h-9 px-3"
+                  disabled={compareDisabled}
+                  onClick={props.onComparePreviousVersion}
+                  title={!previousVersion ? "没有可对比的上一个版本" : "对比版本列表中的上一个更早版本"}
+                  type="button"
+                >
+                  <Diff className="h-4 w-4" aria-hidden="true" />
+                  对比上一个版本
+                </button>
+                <button
+                  className="btn btn-primary min-h-9 px-3"
+                  disabled={!props.selectedVersion || props.activating || !props.canActivate}
+                  onClick={props.onActivateVersion}
+                  type="button"
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  设为当前版本
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 overflow-y-auto p-5">
               {props.blockReason ? <div className="callout-warning mb-4 text-xs">{props.blockReason}</div> : null}
-              {props.detailLoading ? <div className="text-sm text-subtext">加载预览中...</div> : null}
-              {!props.detailLoading && props.selectedVersion ? (
+              {props.compareMode ? (
+                <div className="grid gap-4">
+                  <div className="grid gap-2 rounded-atelier border border-border bg-canvas/50 p-3">
+                    <label className="grid gap-1">
+                      <span className="text-xs text-subtext">基准版本</span>
+                      <select
+                        className="select"
+                        disabled={props.compareLoading || compareOptions.length === 0}
+                        onChange={(event) => props.onCompareBaseVersionChange(event.target.value)}
+                        value={props.compareBaseVersionId}
+                      >
+                        {compareOptions.map((version) => (
+                          <option key={version.id} value={version.id}>
+                            {versionOptionLabel(version)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {!props.compareBaseVersion && !props.compareLoading ? (
+                      <div className="text-xs text-subtext">没有可对比版本。</div>
+                    ) : null}
+                  </div>
+                  {props.compareLoading || props.detailLoading ? (
+                    <div className="text-sm text-subtext">加载对比中...</div>
+                  ) : props.selectedVersion && props.compareBaseVersion ? (
+                    <ChapterVersionDiffView
+                      baseContentMd={props.compareBaseVersion.content_md}
+                      targetContentMd={props.selectedVersion.content_md}
+                      baseLabel={compareBaseLabel}
+                      targetLabel={selectedLabel}
+                    />
+                  ) : null}
+                </div>
+              ) : props.detailLoading ? (
+                <div className="text-sm text-subtext">加载预览中...</div>
+              ) : props.selectedVersion ? (
                 <pre className="whitespace-pre-wrap break-words rounded-atelier border border-border bg-canvas/60 p-4 font-content text-sm leading-7 text-ink">
                   {props.selectedVersion.content_md}
                 </pre>

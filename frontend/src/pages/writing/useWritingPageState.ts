@@ -8,6 +8,7 @@ import { useToast } from "../../components/ui/toast";
 import { usePersistentOutletIsActive } from "../../hooks/usePersistentOutlet";
 import { useProjectData } from "../../hooks/useProjectData";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
+import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { chapterStore } from "../../services/chapterStore";
 import { activateChapterVersion, fetchChapterVersionDetail, fetchChapterVersions } from "../../services/chaptersApi";
@@ -105,6 +106,13 @@ export function useWritingPageState(): WritingPageState {
   const [versionActivating, setVersionActivating] = useState(false);
   const [chapterVersions, setChapterVersions] = useState<ChapterVersionSummary[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<ChapterVersionDetail | null>(null);
+  const [versionCompareMode, setVersionCompareMode] = useState(false);
+  const [versionCompareLoading, setVersionCompareLoading] = useState(false);
+  const [versionCompareBaseId, setVersionCompareBaseId] = useState("");
+  const [versionCompareBase, setVersionCompareBase] = useState<ChapterVersionDetail | null>(null);
+  const versionListGuardRef = useRef(createRequestSeqGuard());
+  const versionDetailGuardRef = useRef(createRequestSeqGuard());
+  const versionCompareGuardRef = useRef(createRequestSeqGuard());
   const [autoUpdatesTriggering, setAutoUpdatesTriggering] = useState(false);
   const [memoryUpdateFailedChapterId, setMemoryUpdateFailedChapterId] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -180,6 +188,7 @@ export function useWritingPageState(): WritingPageState {
 
   const isDoneReadonly = activeChapter?.status === "done";
   const memoryUpdateFailed = Boolean(activeChapter?.id && memoryUpdateFailedChapterId === activeChapter.id);
+  const activeVersionId = activeChapter?.active_version_id ?? activeChapter?.active_version?.id ?? null;
 
   useApplyGenerationRun({
     applyRunId,
@@ -266,22 +275,61 @@ export function useWritingPageState(): WritingPageState {
   });
   const history = useGenerationHistory({ projectId, toast });
 
+  const loadChapterVersionList = useCallback(
+    async (options?: { reportError?: boolean }): Promise<ChapterVersionSummary[]> => {
+      if (!activeChapter) return [];
+      const seq = versionListGuardRef.current.next();
+      const reportError = options?.reportError ?? true;
+      setVersionsLoading(true);
+      try {
+        const data = await fetchChapterVersions(activeChapter.id);
+        const versions = data.versions ?? [];
+        if (versionListGuardRef.current.isLatest(seq)) {
+          setChapterVersions(versions);
+        }
+        return versions;
+      } catch (error) {
+        if (reportError && versionListGuardRef.current.isLatest(seq)) {
+          const err =
+            error instanceof ApiError
+              ? error
+              : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+          toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        }
+        return [];
+      } finally {
+        if (versionListGuardRef.current.isLatest(seq)) {
+          setVersionsLoading(false);
+        }
+      }
+    },
+    [activeChapter, toast],
+  );
+
   const loadChapterVersions = useCallback(async () => {
     if (!activeChapter) return;
+    const versions = await loadChapterVersionList();
+    const first = versions[0] ?? null;
+    setVersionCompareMode(false);
+    setVersionCompareBaseId("");
+    setVersionCompareBase(null);
+    if (!first) {
+      setSelectedVersion(null);
+      return;
+    }
     setVersionsLoading(true);
     try {
-      const data = await fetchChapterVersions(activeChapter.id);
-      setChapterVersions(data.versions ?? []);
-      const first = (data.versions ?? [])[0] ?? null;
-      if (first) {
-        setVersionDetailLoading(true);
-        try {
-          setSelectedVersion(await fetchChapterVersionDetail(activeChapter.id, first.id));
-        } finally {
+      const seq = versionDetailGuardRef.current.next();
+      setVersionDetailLoading(true);
+      try {
+        const detail = await fetchChapterVersionDetail(activeChapter.id, first.id);
+        if (versionDetailGuardRef.current.isLatest(seq)) {
+          setSelectedVersion(detail);
+        }
+      } finally {
+        if (versionDetailGuardRef.current.isLatest(seq)) {
           setVersionDetailLoading(false);
         }
-      } else {
-        setSelectedVersion(null);
       }
     } catch (error) {
       const err =
@@ -292,7 +340,20 @@ export function useWritingPageState(): WritingPageState {
     } finally {
       setVersionsLoading(false);
     }
-  }, [activeChapter, toast]);
+  }, [activeChapter, loadChapterVersionList, toast]);
+
+  useEffect(() => {
+    versionListGuardRef.current.invalidate();
+    versionDetailGuardRef.current.invalidate();
+    versionCompareGuardRef.current.invalidate();
+    setChapterVersions([]);
+    setSelectedVersion(null);
+    setVersionCompareMode(false);
+    setVersionCompareBaseId("");
+    setVersionCompareBase(null);
+    if (!activeChapter) return;
+    void loadChapterVersionList({ reportError: false });
+  }, [activeChapter, loadChapterVersionList]);
 
   const openVersions = useCallback(() => {
     setVersionsOpen(true);
@@ -302,21 +363,122 @@ export function useWritingPageState(): WritingPageState {
   const selectVersion = useCallback(
     async (versionId: string) => {
       if (!activeChapter) return;
+      const seq = versionDetailGuardRef.current.next();
       setVersionDetailLoading(true);
       try {
-        setSelectedVersion(await fetchChapterVersionDetail(activeChapter.id, versionId));
+        const detail = await fetchChapterVersionDetail(activeChapter.id, versionId);
+        if (!versionDetailGuardRef.current.isLatest(seq)) return;
+        setSelectedVersion(detail);
+        setVersionCompareMode(false);
+        setVersionCompareBaseId("");
+        setVersionCompareBase(null);
       } catch (error) {
+        if (!versionDetailGuardRef.current.isLatest(seq)) return;
         const err =
           error instanceof ApiError
             ? error
             : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
         toast.toastError(`${err.message} (${err.code})`, err.requestId);
       } finally {
-        setVersionDetailLoading(false);
+        if (versionDetailGuardRef.current.isLatest(seq)) {
+          setVersionDetailLoading(false);
+        }
       }
     },
     [activeChapter, toast],
   );
+
+  const loadVersionCompareBase = useCallback(
+    async (versionId: string) => {
+      if (!activeChapter || !versionId) return;
+      const seq = versionCompareGuardRef.current.next();
+      setVersionCompareBaseId(versionId);
+      setVersionCompareLoading(true);
+      try {
+        const detail = await fetchChapterVersionDetail(activeChapter.id, versionId);
+        if (versionCompareGuardRef.current.isLatest(seq)) {
+          setVersionCompareBase(detail);
+          setVersionCompareMode(true);
+        }
+      } catch (error) {
+        if (!versionCompareGuardRef.current.isLatest(seq)) return;
+        const err =
+          error instanceof ApiError
+            ? error
+            : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      } finally {
+        if (versionCompareGuardRef.current.isLatest(seq)) {
+          setVersionCompareLoading(false);
+        }
+      }
+    },
+    [activeChapter, toast],
+  );
+
+  const compareSelectedWithPreviousVersion = useCallback(() => {
+    if (!selectedVersion) return;
+    const selectedIndex = chapterVersions.findIndex((version) => version.id === selectedVersion.id);
+    const previousVersion = selectedIndex >= 0 ? chapterVersions[selectedIndex + 1] : null;
+    if (!previousVersion) {
+      toast.toastWarning("没有可对比的上一个版本。");
+      return;
+    }
+    void loadVersionCompareBase(previousVersion.id);
+  }, [chapterVersions, loadVersionCompareBase, selectedVersion, toast]);
+
+  const compareActiveWithPreviousVersion = useCallback(async () => {
+    if (!activeChapter) return;
+    if (dirty) {
+      toast.toastWarning(WRITING_PAGE_COPY.versionCompareNeedsSaveFirst);
+      return;
+    }
+    if (!activeVersionId) {
+      toast.toastWarning(WRITING_PAGE_COPY.versionCompareUnavailable);
+      return;
+    }
+    const versions = chapterVersions.length > 0 ? chapterVersions : await loadChapterVersionList();
+    const activeIndex = versions.findIndex((version) => version.id === activeVersionId);
+    const previousVersion = activeIndex >= 0 ? versions[activeIndex + 1] : null;
+    const targetVersion = activeIndex >= 0 ? versions[activeIndex] : null;
+    if (!targetVersion || !previousVersion) {
+      toast.toastWarning(WRITING_PAGE_COPY.versionCompareUnavailable);
+      return;
+    }
+
+    setVersionsOpen(true);
+    setVersionCompareMode(true);
+    setVersionCompareBaseId(previousVersion.id);
+    setVersionDetailLoading(true);
+    setVersionCompareLoading(true);
+    const detailSeq = versionDetailGuardRef.current.next();
+    const compareSeq = versionCompareGuardRef.current.next();
+    try {
+      const [targetDetail, baseDetail] = await Promise.all([
+        fetchChapterVersionDetail(activeChapter.id, targetVersion.id),
+        fetchChapterVersionDetail(activeChapter.id, previousVersion.id),
+      ]);
+      if (versionDetailGuardRef.current.isLatest(detailSeq)) {
+        setSelectedVersion(targetDetail);
+      }
+      if (versionCompareGuardRef.current.isLatest(compareSeq)) {
+        setVersionCompareBase(baseDetail);
+      }
+    } catch (error) {
+      const err =
+        error instanceof ApiError
+          ? error
+          : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    } finally {
+      if (versionDetailGuardRef.current.isLatest(detailSeq)) {
+        setVersionDetailLoading(false);
+      }
+      if (versionCompareGuardRef.current.isLatest(compareSeq)) {
+        setVersionCompareLoading(false);
+      }
+    }
+  }, [activeChapter, activeVersionId, chapterVersions, dirty, loadChapterVersionList, toast]);
 
   const activateSelectedVersion = useCallback(async () => {
     if (!activeChapter || !selectedVersion || versionActivating) return;
@@ -601,6 +763,19 @@ export function useWritingPageState(): WritingPageState {
     void generate(pending.mode);
   }, [activeChapter, form, generate, generating]);
 
+  const activeVersionIndex = activeVersionId
+    ? chapterVersions.findIndex((version) => version.id === activeVersionId)
+    : -1;
+  const activePreviousVersion = activeVersionIndex >= 0 ? chapterVersions[activeVersionIndex + 1] : null;
+  const versionCompareDisabled = Boolean(
+    loadingChapter || generating || dirty || !activeVersionId || (chapterVersions.length > 0 && !activePreviousVersion),
+  );
+  const versionCompareDisabledReason = dirty
+    ? WRITING_PAGE_COPY.versionCompareNeedsSaveFirst
+    : !activeVersionId || (chapterVersions.length > 0 && !activePreviousVersion)
+      ? WRITING_PAGE_COPY.versionCompareUnavailable
+      : null;
+
   const workspaceProps: WritingWorkspaceProps = {
     toolbarProps: {
       outlines,
@@ -666,6 +841,9 @@ export function useWritingPageState(): WritingPageState {
       },
       onOpenAnalysis: analysis.openModal,
       onOpenVersions: openVersions,
+      onComparePreviousVersion: () => void compareActiveWithPreviousVersion(),
+      versionCompareDisabled,
+      versionCompareDisabledReason,
       onOpenChapterTrace: () => {
         if (!projectId || !activeChapter) return;
         navigate(getWritingAnalysisHref(projectId, activeChapter.id));
@@ -782,9 +960,13 @@ export function useWritingPageState(): WritingPageState {
       loading: versionsLoading,
       detailLoading: versionDetailLoading,
       activating: versionActivating,
+      compareMode: versionCompareMode,
+      compareLoading: versionCompareLoading,
       versions: chapterVersions,
       selectedVersion,
-      activeVersionId: activeChapter?.active_version_id ?? activeChapter?.active_version?.id ?? null,
+      compareBaseVersion: versionCompareBase,
+      compareBaseVersionId: versionCompareBaseId,
+      activeVersionId,
       canActivate: Boolean(activeChapter && !dirty && activeChapter.status !== "done"),
       blockReason: dirty
         ? WRITING_PAGE_COPY.versionActivateNeedsSaveFirst
@@ -793,6 +975,9 @@ export function useWritingPageState(): WritingPageState {
           : null,
       onClose: () => setVersionsOpen(false),
       onSelectVersion: (versionId) => void selectVersion(versionId),
+      onComparePreviousVersion: () => compareSelectedWithPreviousVersion(),
+      onCompareBaseVersionChange: (versionId) => void loadVersionCompareBase(versionId),
+      onCloseCompare: () => setVersionCompareMode(false),
       onActivateVersion: () => void activateSelectedVersion(),
     },
     promptInspectorDrawerProps: {

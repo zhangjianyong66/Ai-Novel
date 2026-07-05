@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import clsx from "clsx";
+import { Diff } from "lucide-react";
 
 import { GhostwriterIndicator } from "../../components/atelier/GhostwriterIndicator";
 import { MarkdownEditor } from "../../components/atelier/MarkdownEditor";
@@ -60,6 +61,9 @@ export type WritingEditorSectionProps = {
   onOpenAnalysis: () => void;
   onOpenChapterTrace: () => void;
   onOpenVersions: () => void;
+  onComparePreviousVersion: () => void;
+  versionCompareDisabled: boolean;
+  versionCompareDisabledReason?: string | null;
   generationIndicatorLabel?: string;
 };
 
@@ -182,6 +186,16 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 type="button"
               >
                 {WRITING_PAGE_COPY.versions}
+              </button>
+              <button
+                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                disabled={props.versionCompareDisabled}
+                onClick={props.onComparePreviousVersion}
+                title={props.versionCompareDisabledReason ?? "对比当前激活版本和上一个更早版本"}
+                type="button"
+              >
+                <Diff className="h-4 w-4" aria-hidden="true" />
+                {WRITING_PAGE_COPY.versionCompare}
               </button>
               <button
                 className="btn btn-secondary min-h-10 px-4 shadow-sm"

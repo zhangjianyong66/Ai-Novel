@@ -53,6 +53,7 @@
 
 - 大纲页单次 AI 生成成功后，后端生成接口应立即把最终可用结果保存为新大纲并切换为当前 active outline，避免只存在弹窗内存预览导致刷新或关闭后丢失。
 - 大纲自动另存由后端 `/api/projects/{project_id}/outline/generate` 和 `/api/projects/{project_id}/outline/generate-stream` 在最终结果可用后落库，并在响应中返回 `saved_outline`；前端看到 `saved_outline` 时只刷新大纲状态，不再二次调用 `POST /api/projects/{project_id}/outlines`，以避免重复创建。
+- 自动另存生成的用户可见标题（例如 `AI 大纲 yyyy-mm-dd HH:MM`）应按 `Asia/Shanghai` 展示时间格式化，不能直接截取 UTC ISO 字符串，否则会比北京时间慢 8 小时。
 - 自动保存只在最终结果存在至少 1 个有效章节且没有 `parse_error` 时发生；若仅有 `warnings` 仍保存，但前端应提示“已保存，但有生成警告”。
 - 自动保存失败或生成结果不可自动保存时，前端必须保留生成预览，并提供“重试保存为新大纲”和“复制结果”等恢复路径。
 - 流式生成过程中的部分章节预览只用于展示，不应中途落库；只有最终结果完整成功后保存一次。

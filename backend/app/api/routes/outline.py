@@ -8,6 +8,7 @@ import threading
 import time
 from dataclasses import dataclass
 from collections.abc import Callable
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, Request
 from sqlalchemy import select
@@ -75,6 +76,7 @@ OUTLINE_SEGMENT_INDEX_MAX_ITEMS = 140
 OUTLINE_SEGMENT_INDEX_MAX_CHARS = 6000
 OUTLINE_SEGMENT_RECENT_WINDOW_MAX_CHARS = 2800
 OUTLINE_STREAM_RAW_PREVIEW_MAX_CHARS = 1800
+OUTLINE_TITLE_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 OutlineFillProgressHook = Callable[[dict[str, object]], None]
 OutlineSegmentProgressHook = Callable[[dict[str, object]], None]
@@ -95,7 +97,7 @@ def _outline_out(row: Outline) -> dict[str, object]:
 
 
 def _build_generated_outline_title(existing_titles: list[str]) -> str:
-    base = f"AI 大纲 {utc_now().isoformat()[:16].replace('T', ' ')}"
+    base = f"AI 大纲 {utc_now().astimezone(OUTLINE_TITLE_TIMEZONE).strftime('%Y-%m-%d %H:%M')}"
     existing = {title.strip() for title in existing_titles if title and title.strip()}
     if base not in existing:
         return base

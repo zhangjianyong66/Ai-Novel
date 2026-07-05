@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.routes.outline import (
     OUTLINE_SEGMENT_INDEX_MAX_CHARS,
     _PreparedOutlineGeneration,
+    _build_generated_outline_title,
     _build_outline_missing_chapters_prompts,
     _build_outline_segment_chapter_index,
     _build_outline_segment_prompts,
@@ -67,6 +69,14 @@ class TestOutlineGenerationGuidance(unittest.TestCase):
             run_params_extra_json={},
             target_chapter_count=None,
         )
+
+    def test_generated_outline_title_uses_china_local_time(self) -> None:
+        fixed_utc = datetime(2026, 7, 5, 11, 53, tzinfo=timezone.utc)
+
+        with patch("app.api.routes.outline.utc_now", return_value=fixed_utc):
+            title = _build_generated_outline_title([])
+
+        self.assertEqual(title, "AI 大纲 2026-07-05 19:53")
 
     def test_outline_json_fix_keeps_configured_max_tokens(self) -> None:
         prepared = self._prepared_outline(max_tokens=12000)

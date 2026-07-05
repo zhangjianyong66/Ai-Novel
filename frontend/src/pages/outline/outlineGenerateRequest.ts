@@ -1,11 +1,11 @@
-import type { ApiRequestInit } from "../../services/apiClient";
 import { resolveLlmRequestTimeoutMs } from "../../lib/llmRequestTimeout";
+import type { ApiRequestInit } from "../../services/apiClient";
 
-export function resolveChapterGenerateRequestTimeoutMs(llmTimeoutSeconds: number | null | undefined): number {
+export function resolveOutlineGenerateRequestTimeoutMs(llmTimeoutSeconds: number | null | undefined): number {
   return resolveLlmRequestTimeoutMs(llmTimeoutSeconds);
 }
 
-export function buildChapterGenerateRequestInit(args: {
+export function buildOutlineGenerateRequestInit(args: {
   headers: Record<string, string>;
   payload: unknown;
   llmTimeoutSeconds: number | null | undefined;
@@ -14,6 +14,6 @@ export function buildChapterGenerateRequestInit(args: {
     method: "POST",
     headers: args.headers,
     body: JSON.stringify(args.payload),
-    timeoutMs: resolveChapterGenerateRequestTimeoutMs(args.llmTimeoutSeconds),
+    timeoutMs: resolveOutlineGenerateRequestTimeoutMs(args.llmTimeoutSeconds),
   };
 }

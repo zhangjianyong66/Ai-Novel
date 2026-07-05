@@ -7,6 +7,7 @@ import { SSEError, SSEPostClient } from "../../services/sseClient";
 import type { LLMPreset, Outline } from "../../types";
 import { normalizeOutlineGenResult, parseOutlineGenResultFromText, type OutlineGenResult } from "../outlineParsing";
 
+import { buildOutlineGenerateRequestInit } from "./outlineGenerateRequest";
 import { getOutlineStreamRetryMessage, OUTLINE_COPY } from "./outlineCopy";
 import {
   DEFAULT_OUTLINE_PACING_OPTIONS,
@@ -244,11 +245,10 @@ export function useOutlineGenerationState(args: {
       void saveGenerationPreferences();
 
       if (!streamEnabled) {
-        const response = await apiJson<OutlineGenResult>(`/api/projects/${projectId}/outline/generate`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-        });
+        const response = await apiJson<OutlineGenResult>(
+          `/api/projects/${projectId}/outline/generate`,
+          buildOutlineGenerateRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+        );
         const normalized = normalizeOutlineGenResult(response.data, "") ?? response.data;
         await persistGeneratedOutline(normalized);
         return;
@@ -342,11 +342,10 @@ export function useOutlineGenerationState(args: {
           if (!streamHasChunkRef.current) {
             setStreamProgress({ message: "流式失败，回退非流式...", progress: 0, status: "processing" });
             toast.toastError(OUTLINE_COPY.generateFallback);
-            const response = await apiJson<OutlineGenResult>(`/api/projects/${projectId}/outline/generate`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(payload),
-            });
+            const response = await apiJson<OutlineGenResult>(
+              `/api/projects/${projectId}/outline/generate`,
+              buildOutlineGenerateRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+            );
             const normalized = normalizeOutlineGenResult(response.data, "") ?? response.data;
             setStreamPreviewJson(toFinalPreviewJson(normalized));
             setStreamProgress(null);

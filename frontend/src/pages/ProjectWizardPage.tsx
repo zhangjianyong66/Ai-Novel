@@ -14,6 +14,7 @@ import { useChapterMetaList } from "../hooks/useChapterMetaList";
 import { useProjectData } from "../hooks/useProjectData";
 import { duration, transition } from "../lib/motion";
 import { UI_COPY } from "../lib/uiCopy";
+import { buildOutlineGenerateRequestInit } from "./outline/outlineGenerateRequest";
 import { ApiError, apiJson } from "../services/apiClient";
 import { chapterStore } from "../services/chapterStore";
 import { computeWizardProgress, setWizardStepSkipped, type WizardStep, type WizardStepKey } from "../services/wizard";
@@ -137,21 +138,25 @@ export function ProjectWizardPage() {
 
     setAutoRunning(true);
     try {
-      const outlineGen = await apiJson<OutlineGenResult>(`/api/projects/${projectId}/outline/generate`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          requirements: {
-            chapter_count: 12,
-            tone: "偏现实，克制但有爆点",
-            pacing: "前3章强钩子，中段升级，结尾反转",
-          },
-          context: {
-            include_world_setting: true,
-            include_characters: true,
-          },
+      const outlinePayload = {
+        requirements: {
+          chapter_count: 12,
+          tone: "偏现实，克制但有爆点",
+          pacing: "前3章强钩子，中段升级，结尾反转",
+        },
+        context: {
+          include_world_setting: true,
+          include_characters: true,
+        },
+      };
+      const outlineGen = await apiJson<OutlineGenResult>(
+        `/api/projects/${projectId}/outline/generate`,
+        buildOutlineGenerateRequestInit({
+          headers,
+          payload: outlinePayload,
+          llmTimeoutSeconds: llmPreset.timeout_seconds,
         }),
-      });
+      );
 
       const outlineMd = outlineGen.data.outline_md ?? "";
       const genChapters = outlineGen.data.chapters ?? [];

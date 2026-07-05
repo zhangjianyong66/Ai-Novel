@@ -432,3 +432,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 章节 AI 正文版本化
+
+**Date**: 2026-07-05
+**Task**: 章节 AI 正文版本化
+**Branch**: `main`
+
+### Summary
+
+为章节 AI 生成、流式生成和章节改写增加后端即时保存的正文版本；新增版本 API 和写作页历史版本预览/激活流程，避免网络不稳定导致 AI 结果丢失。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7a6afee` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

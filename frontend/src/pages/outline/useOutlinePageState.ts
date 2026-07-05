@@ -25,6 +25,7 @@ import type {
 } from "./OutlinePageSections";
 import { getOutlineCreateChaptersDescription, getOutlineCreatedChaptersText, OUTLINE_COPY } from "./outlineCopy";
 import { buildNextOutlineTitle } from "./outlineModels";
+import { buildSavedOutlineSyncState } from "./outlineSavedOutlineSync";
 import { useOutlineGenerationState } from "./useOutlineGenerationState";
 
 type OutlineLoaded = {
@@ -210,20 +211,55 @@ export function useOutlinePageState(): OutlinePageState {
   const activeOutlineId = activeOutline?.id ?? "";
   const existingOutlineTitles = useMemo(() => outlines.map((outline) => outline.title), [outlines]);
 
-  const refreshSavedOutline = useCallback(async () => {
-    if (!projectId) return false;
-    try {
-      markWizardProjectChanged(projectId);
-      bumpWizardLocal();
-      await refreshOutline();
-      await refreshWizard();
-      return true;
-    } catch (error) {
-      const err = error as ApiError;
-      toast.toastError(`${err.message} (${err.code})`, err.requestId);
-      return false;
-    }
-  }, [bumpWizardLocal, projectId, refreshOutline, refreshWizard, toast]);
+  const activateSavedOutline = useCallback(
+    async (savedOutline: Outline): Promise<"activated" | "canceled" | "failed"> => {
+      if (!projectId) return "failed";
+
+      if (dirty) {
+        const choice = await confirm.choose(OUTLINE_COPY.confirms.switchOutline);
+        if (choice === "cancel") return "canceled";
+        if (choice === "confirm") {
+          const ok = await save();
+          if (!ok) return "failed";
+        }
+      }
+
+      try {
+        const next = buildSavedOutlineSyncState({
+          outlines,
+          activeOutline,
+          content,
+          savedOutline,
+        });
+        setOutlines(next.outlines);
+        setActiveOutline(next.activeOutline);
+        setBaseline(next.baseline);
+        setContent(next.content);
+        markWizardProjectChanged(projectId);
+        bumpWizardLocal();
+        await refreshOutline();
+        await refreshWizard();
+        return "activated";
+      } catch (error) {
+        const err = error as ApiError;
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        return "failed";
+      }
+    },
+    [
+      activeOutline,
+      bumpWizardLocal,
+      confirm,
+      content,
+      dirty,
+      outlines,
+      projectId,
+      refreshOutline,
+      refreshWizard,
+      save,
+      toast,
+    ],
+  );
 
   const createOutline = useCallback(
     async (title: string, contentMd: string, structure: unknown, opts?: { silent?: boolean }) => {
@@ -330,7 +366,7 @@ export function useOutlinePageState(): OutlinePageState {
     existingOutlineTitles,
     save,
     createOutline,
-    refreshSavedOutline,
+    activateSavedOutline,
     confirm,
     toast,
   });

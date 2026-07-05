@@ -4,7 +4,7 @@ import type { ConfirmApi } from "../../components/ui/confirm";
 import type { ToastApi } from "../../components/ui/toast";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { SSEError, SSEPostClient } from "../../services/sseClient";
-import type { LLMPreset } from "../../types";
+import type { LLMPreset, Outline } from "../../types";
 import { normalizeOutlineGenResult, parseOutlineGenResultFromText, type OutlineGenResult } from "../outlineParsing";
 
 import { getOutlineStreamRetryMessage, OUTLINE_COPY } from "./outlineCopy";
@@ -39,7 +39,8 @@ type CreateOutline = (
   opts?: { silent?: boolean },
 ) => Promise<boolean>;
 
-type RefreshSavedOutline = () => Promise<boolean>;
+type ActivateSavedOutlineResult = "activated" | "canceled" | "failed";
+type ActivateSavedOutline = (savedOutline: Outline) => Promise<ActivateSavedOutlineResult>;
 
 export function useOutlineGenerationState(args: {
   projectId?: string;
@@ -48,11 +49,12 @@ export function useOutlineGenerationState(args: {
   existingOutlineTitles: string[];
   save: SaveOutline;
   createOutline: CreateOutline;
-  refreshSavedOutline: RefreshSavedOutline;
+  activateSavedOutline: ActivateSavedOutline;
   confirm: ConfirmApi;
   toast: ToastApi;
 }) {
-  const { projectId, preset, dirty, existingOutlineTitles, save, createOutline, refreshSavedOutline, confirm, toast } = args;
+  const { projectId, preset, dirty, existingOutlineTitles, save, createOutline, activateSavedOutline, confirm, toast } =
+    args;
   const [open, setOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<OutlineGenResult | null>(null);
@@ -140,10 +142,12 @@ export function useOutlineGenerationState(args: {
       }
 
       if (result.saved_outline) {
-        const refreshed = await refreshSavedOutline();
-        if (!refreshed) {
+        const activated = await activateSavedOutline(result.saved_outline);
+        if (activated !== "activated") {
           setAutoSaveFailed(true);
-          toast.toastError(OUTLINE_COPY.generateAutoSaveFailed);
+          if (activated === "failed") {
+            toast.toastError(OUTLINE_COPY.generateAutoSaveFailed);
+          }
           return false;
         }
         setGenPreview(null);
@@ -171,7 +175,7 @@ export function useOutlineGenerationState(args: {
       );
       return true;
     },
-    [createOutline, existingOutlineTitles, refreshSavedOutline, toast],
+    [activateSavedOutline, createOutline, existingOutlineTitles, toast],
   );
 
   const retrySaveGeneratedOutline = useCallback(async () => {

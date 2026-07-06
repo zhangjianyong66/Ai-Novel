@@ -27,6 +27,7 @@
 - 批量或分页查询要限制返回量；章节 meta 分页见 `backend/app/api/routes/chapters.py` 和测试 `backend/tests/test_chapters_meta_contract.py`。
 - SQLite 模式不能在 LLM 调用期间持有长事务；本地开发只允许 `--workers 1`。
 - SQLite 读回 `DateTime(timezone=True)` 时可能得到 offset-naive `datetime`；如果要和 `utc_now()` 这类 offset-aware 值比较，先在比较边界统一规范化（例如去掉 `tzinfo` 或统一转 UTC），否则快速写入/排序逻辑会在测试或本地环境触发 `TypeError`。
+- 服务函数如果在同一个写事务里需要判断表是否存在，不要用 `inspect(bind).has_table(...)`；SQLite 测试环境中 inspector 可能干扰当前连接上已 `flush()` 但未 `commit()` 的修改。优先用当前 `Session` 执行普通 SQL，例如 SQLite 查询 `sqlite_master`，Postgres 查询 `to_regclass(:name)`，确保表探测不破坏业务事务。
 
 ## 章节派生记忆生命周期
 

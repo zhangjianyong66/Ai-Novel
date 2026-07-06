@@ -76,16 +76,16 @@
 
 ## Acceptance Criteria
 
-- [ ] 数据库迁移后，`chapter_id=NULL` 的历史 `story_memories` 被标记为 `scope=unassigned`，默认不再参与章节生成注入。
-- [ ] 有章节来源的历史 `story_memories` 能通过章节回填 `outline_id`，并只在对应大纲下参与注入。
-- [ ] 对当前大纲生成章节时，其他大纲的 `story_memories` 不出现在 `prompt_system`、`memory_pack.story_memory.text_md`、`semantic_history.text_md` 或 `vector_rag.text_md` 中。
-- [ ] 删除单条 `story_memory` 后，对应 `search_documents` 和 `vector_chunks` 同步消失，且没有调度全量 `vector_rebuild`。
-- [ ] 派生索引删除失败时，`story_memory` 源记录仍保留并返回可追踪错误。
-- [ ] 剧情记忆管理页能筛选和显示 `scope`、`outline_id`、章节来源与“是否会注入当前大纲”。
-- [ ] 用户能把未归属记忆设为当前大纲、设为项目全局、移回未归属或删除。
-- [ ] 搜索/RAG 查询支持作用域过滤，默认不会让未归属或其他大纲记忆影响生成排障结论。
-- [ ] 后端记忆/RAG/搜索相关回归测试通过。
-- [ ] 前端相关类型、页面状态和 UI 检查通过。
+- [x] 数据库迁移后，`chapter_id=NULL` 的历史 `story_memories` 被标记为 `scope=unassigned`，默认不再参与章节生成注入。
+- [x] 有章节来源的历史 `story_memories` 能通过章节回填 `outline_id`，并只在对应大纲下参与注入。
+- [x] 对当前大纲生成章节时，其他大纲的 `story_memories` 不出现在 `prompt_system`、`memory_pack.story_memory.text_md`、`semantic_history.text_md` 或 `vector_rag.text_md` 中。
+- [x] 删除单条 `story_memory` 后，对应 `search_documents` 和 `vector_chunks` 同步消失，且没有调度全量 `vector_rebuild`。
+- [x] 派生索引删除失败时，`story_memory` 源记录仍保留并返回可追踪错误。
+- [x] 剧情记忆管理页能筛选和显示 `scope`、`outline_id`、章节来源与“是否会注入当前大纲”。
+- [x] 用户能把未归属记忆设为当前大纲、设为项目全局、移回未归属或删除。
+- [x] 搜索/RAG 查询支持作用域过滤，默认不会让未归属或其他大纲记忆影响生成排障结论。
+- [x] 后端记忆/RAG/搜索相关回归测试通过。
+- [x] 前端相关类型、页面状态和 UI 检查通过。
 
 ## Out Of Scope
 

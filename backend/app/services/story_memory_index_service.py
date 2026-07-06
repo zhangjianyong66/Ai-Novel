@@ -4,7 +4,7 @@ from collections.abc import Sequence
 import json
 from typing import Any
 
-from sqlalchemy import bindparam, inspect, select, text
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.orm import Session
 
 from app.models.search_index import SearchDocument
@@ -16,10 +16,20 @@ def _table_exists(db: Session, table_name: str) -> bool:
     bind = db.get_bind()
     if bind is None:
         return False
+    dialect = str(getattr(getattr(bind, "dialect", None), "name", "") or "")
     try:
-        return bool(inspect(bind).has_table(table_name))
+        if dialect == "sqlite":
+            row = db.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name LIMIT 1"),
+                {"name": table_name},
+            ).first()
+            return row is not None
+        if dialect == "postgresql":
+            row = db.execute(text("SELECT to_regclass(:name)"), {"name": table_name}).scalar_one_or_none()
+            return row is not None
     except Exception:
         return False
+    return False
 
 
 def delete_story_memory_derived_indexes(

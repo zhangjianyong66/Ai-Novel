@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from typing import Generator
 from unittest.mock import patch
@@ -290,6 +291,52 @@ class TestStoryMemoryIndexConsistency(unittest.TestCase):
                 )
             ).scalars().all()
             self.assertEqual(vector_rows, ["story_memory:other:0"])
+
+    def test_bulk_set_scope_syncs_search_and_vector_metadata(self) -> None:
+        client = TestClient(self.app)
+
+        resp = client.post(
+            "/api/projects/p1/story_memories/bulk",
+            headers={"X-Test-User": "u_owner"},
+            json={"action": "set_scope", "ids": ["sm2"], "scope": "project"},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["updated_ids"], ["sm2"])
+        self.assertEqual(resp.json()["data"]["index_updates"], {"search_documents": 1, "vector_chunks": 1})
+
+        with self.SessionLocal() as db:
+            memory = db.get(StoryMemory, "sm2")
+            self.assertIsNotNone(memory)
+            assert memory is not None
+            self.assertEqual(memory.scope, "project")
+            self.assertIsNone(memory.outline_id)
+
+            locator_json = db.execute(
+                text(
+                    """
+                    SELECT locator_json
+                    FROM search_documents
+                    WHERE project_id='p1' AND source_type='story_memory' AND source_id='sm2'
+                    """
+                )
+            ).scalar_one()
+            locator = json.loads(str(locator_json or "{}"))
+            self.assertEqual(locator["scope"], "project")
+            self.assertIsNone(locator["outline_id"])
+
+            metadata_json = db.execute(
+                text(
+                    """
+                    SELECT metadata_json
+                    FROM vector_chunks
+                    WHERE project_id='p1' AND source='story_memory' AND source_id='sm2'
+                    """
+                )
+            ).scalar_one()
+            metadata = json.loads(str(metadata_json or "{}"))
+            self.assertEqual(metadata["scope"], "project")
+            self.assertIsNone(metadata["outline_id"])
 
     def test_merge_story_memories_deletes_source_derived_indexes_before_source(self) -> None:
         client = TestClient(self.app)

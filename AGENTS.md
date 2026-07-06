@@ -110,6 +110,7 @@
 - 删除 StoryMemory 时先定点删除派生索引，再删除源记录：`search_documents(source_type='story_memory', source_id=id)` 与 `vector_chunks(source='story_memory', source_id=id)`；单条/批量删除不触发全量 `search_rebuild` 或 `vector_rebuild`。
 - 修改 StoryMemory 内容时不能保留旧向量 chunk；应删除该记忆旧 `vector_chunks` 并标记 vector dirty，搜索索引用单条 upsert 同步。
 - 修改 StoryMemory 作用域或大纲归属时，应同步 `search_documents.locator_json` 和 `vector_chunks.metadata_json` 中的 `scope/outline_id`，避免搜索/RAG 排障视图与生成注入规则不一致。
+- StoryMemory 派生索引同步服务在同一写事务内判断 `vector_chunks` 等表是否存在时，不要使用 SQLAlchemy `inspect(bind).has_table(...)`；SQLite 测试环境中它可能干扰已 flush 未 commit 的 StoryMemory 作用域更新。应使用当前 Session 执行普通 SQL 表探测。
 - 伏笔时间线页面使用 `GET /api/projects/{project_id}/story_memories/foreshadows/open_loops`，数据来源是 `story_memories` 表中 `is_foreshadow=1` 且未回收的记录，不是结构化记忆表 `foreshadows`。
 - `StoryMemory.chapter_id` 是章节派生记忆的来源字段；删除大纲、覆盖重建章节、删除单章时，应先删除命中这些 `chapter_id` 的 `StoryMemory`，避免旧章节伏笔变成无来源 open loop 继续展示。
 - 用户手动创建或历史遗留的 `chapter_id=NULL` StoryMemory 不应默认进入伏笔时间线；伏笔时间线只展示仍有关联章节来源的未回收伏笔。

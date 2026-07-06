@@ -597,3 +597,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 完成剧情记忆作用域治理
+
+**Date**: 2026-07-06
+**Task**: 完成剧情记忆作用域治理
+**Branch**: `main`
+
+### Summary
+
+补齐剧情记忆作用域治理验证，修复 StoryMemory 派生索引同步中表探测干扰事务的问题，新增迁移和 Vector RAG 作用域测试，并归档任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b588226` | (see git log) |
+| `0edcf15` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

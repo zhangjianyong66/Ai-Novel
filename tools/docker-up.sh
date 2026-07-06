@@ -12,10 +12,11 @@ ACTION="${1:-build-up}"
 usage() {
   cat <<'EOF'
 用法:
-  tools/docker-up.sh [build-up|build|up|down|ps|logs|configure-daemon-proxy]
+  tools/docker-up.sh [build-up|restart|build|up|down|ps|logs|configure-daemon-proxy]
 
 常用:
   tools/docker-up.sh
+  tools/docker-up.sh restart
   tools/docker-up.sh build
   tools/docker-up.sh up
   tools/docker-up.sh logs
@@ -211,6 +212,11 @@ main() {
     build-up)
       run_build "$compose"
       run_compose "$compose" up -d
+      run_compose "$compose" ps
+      ;;
+    restart)
+      run_build "$compose"
+      run_compose "$compose" up -d --force-recreate
       run_compose "$compose" ps
       ;;
     build)

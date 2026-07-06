@@ -11,6 +11,7 @@
 ## Docker 运行约定
 
 - 推荐使用 `./tools/docker-up.sh` 管理 Docker Compose 启动、构建、日志和停止。
+- `./tools/docker-up.sh restart` 会先构建镜像，再执行 `up -d --force-recreate` 强制重建并重启容器，最后显示服务状态；日常一键构建重启优先使用该命令，不需要先 `down`。
 - `tools/docker-up.sh` 优先使用 Docker Compose v2 插件命令 `docker compose`。
 - 如果本机没有 v2 插件但安装了独立命令 `docker-compose`，脚本会自动回退使用 `docker-compose`。
 - `.env.docker` 不存在时，脚本会从 `.env.docker.example` 自动复制一份。

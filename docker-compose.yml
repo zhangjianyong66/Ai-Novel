@@ -66,6 +66,14 @@ services:
       LINUXDO_OIDC_CLIENT_SECRET: ${LINUXDO_OIDC_CLIENT_SECRET:-}
       LINUXDO_OIDC_REDIRECT_URI: ${LINUXDO_OIDC_REDIRECT_URI:-}
       LINUXDO_OIDC_SCOPES: ${LINUXDO_OIDC_SCOPES:-openid profile email}
+
+      # Runtime outbound proxy (optional): used by OIDC discovery/token/userinfo and other httpx clients that trust env.
+      HTTP_PROXY: ${OUTBOUND_PROXY_URL:-}
+      HTTPS_PROXY: ${OUTBOUND_PROXY_URL:-}
+      http_proxy: ${OUTBOUND_PROXY_URL:-}
+      https_proxy: ${OUTBOUND_PROXY_URL:-}
+      NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,::1,backend,frontend,postgres,redis,rq_worker}
+      no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,::1,backend,frontend,postgres,redis,rq_worker}
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +89,8 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - app_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   rq_worker:
@@ -113,6 +123,13 @@ services:
       LINUXDO_OIDC_CLIENT_SECRET: ${LINUXDO_OIDC_CLIENT_SECRET:-}
       LINUXDO_OIDC_REDIRECT_URI: ${LINUXDO_OIDC_REDIRECT_URI:-}
       LINUXDO_OIDC_SCOPES: ${LINUXDO_OIDC_SCOPES:-openid profile email}
+
+      HTTP_PROXY: ${OUTBOUND_PROXY_URL:-}
+      HTTPS_PROXY: ${OUTBOUND_PROXY_URL:-}
+      http_proxy: ${OUTBOUND_PROXY_URL:-}
+      https_proxy: ${OUTBOUND_PROXY_URL:-}
+      NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,::1,backend,frontend,postgres,redis,rq_worker}
+      no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,::1,backend,frontend,postgres,redis,rq_worker}
     depends_on:
       backend:
         condition: service_healthy
@@ -122,6 +139,8 @@ services:
         condition: service_healthy
     volumes:
       - app_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:

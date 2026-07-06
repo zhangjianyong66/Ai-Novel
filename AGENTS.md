@@ -16,6 +16,7 @@
 - 如果本机没有 v2 插件但安装了独立命令 `docker-compose`，脚本会自动回退使用 `docker-compose`。
 - `.env.docker` 不存在时，脚本会从 `.env.docker.example` 自动复制一份。
 - 如果启动时报 `failed to bind host port 127.0.0.1:6379`，说明宿主机 Redis 端口已被占用；可在 `.env.docker` 中把 `REDIS_PORT` 改为未占用端口（例如 `6380`）。容器内后端和 worker 仍通过 `redis://redis:6379/0` 通信，不受宿主机映射端口影响。
+- Linux.do OIDC discovery/token/userinfo 等运行期后端出站请求需要走宿主机代理时，在 `.env.docker` 设置 `OUTBOUND_PROXY_URL=http://host.docker.internal:10808`；`docker-compose.yml` 已为 backend/rq_worker 配置 `host.docker.internal:host-gateway`，容器内不要使用 `127.0.0.1:10808` 访问宿主机代理。
 
 ## 公网访问与 frp 代理约定
 

@@ -9,6 +9,7 @@ import { MemoryUpdateDrawer } from "../components/writing/MemoryUpdateDrawer";
 import { useProjectData } from "../hooks/useProjectData";
 import { UI_COPY } from "../lib/uiCopy";
 import { ApiError, apiJson } from "../services/apiClient";
+import type { LLMPreset } from "../types";
 import { CharacterRelationsView } from "./structuredMemory/CharacterRelationsView";
 
 type TableName = "entities" | "relations" | "events" | "foreshadows" | "evidence";
@@ -201,6 +202,11 @@ export function StructuredMemoryPage() {
 
   const pageQuery = useProjectData(projectId, loader);
   const refresh = pageQuery.refresh;
+  const llmPresetQuery = useProjectData(projectId, async (id) => {
+    const res = await apiJson<{ llm_preset: LLMPreset }>(`/api/projects/${id}/llm_preset`);
+    return res.data.llm_preset;
+  });
+  const llmTimeoutSeconds = llmPresetQuery.data?.timeout_seconds ?? null;
 
   useEffect(() => {
     if (!projectId) return;
@@ -700,6 +706,7 @@ export function StructuredMemoryPage() {
           focusRelationId={focusRelationId}
           includeDeleted={includeDeleted}
           onRequestId={setRequestId}
+          llmTimeoutSeconds={llmTimeoutSeconds}
         />
       )}
 
@@ -708,6 +715,7 @@ export function StructuredMemoryPage() {
         onClose={() => setMemoryUpdateOpen(false)}
         projectId={projectId}
         chapterId={chapterId}
+        llmTimeoutSeconds={llmTimeoutSeconds}
       />
     </DebugPageShell>
   );

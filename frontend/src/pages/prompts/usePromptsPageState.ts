@@ -11,6 +11,7 @@ import { useAutoSave } from "../../hooks/useAutoSave";
 import { usePersistentOutletIsActive } from "../../hooks/usePersistentOutlet";
 import { useSaveHotkey } from "../../hooks/useSaveHotkey";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
+import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { markWizardLlmTestOk } from "../../services/wizard";
@@ -1431,29 +1432,34 @@ export function usePromptsPageState(): PromptsPageState {
       const model = payload.payload.model.trim();
       const baseUrl = payload.payload.base_url;
       const taskLabel = taskCatalogByKey.get(taskKey)?.label ?? taskKey;
+      const timeoutSeconds = parseTimeoutSecondsForTest(draft.form.timeout_seconds);
 
       setTaskTesting((prev) => ({ ...prev, [taskKey]: true }));
       try {
-        const res = await apiJson<{ latency_ms: number; text?: string }>("/api/llm/test", {
-          method: "POST",
-          headers: {
-            "X-LLM-Provider": payload.payload.provider,
+        const requestPayload = {
+          project_id: projectId,
+          profile_id: boundProfileId,
+          provider: payload.payload.provider,
+          base_url: baseUrl,
+          model,
+          timeout_seconds: timeoutSeconds,
+          extra: payload.payload.extra,
+          params: {
+            temperature: payload.payload.temperature ?? 0,
+            // Some models may emit "thinking" blocks before final text; keep this > tiny to ensure we get a text preview.
+            max_tokens: 64,
           },
-          body: JSON.stringify({
-            project_id: projectId,
-            profile_id: boundProfileId,
-            provider: payload.payload.provider,
-            base_url: baseUrl,
-            model,
-            timeout_seconds: parseTimeoutSecondsForTest(draft.form.timeout_seconds),
-            extra: payload.payload.extra,
-            params: {
-              temperature: payload.payload.temperature ?? 0,
-              // Some models may emit "thinking" blocks before final text; keep this > tiny to ensure we get a text preview.
-              max_tokens: 64,
+        };
+        const res = await apiJson<{ latency_ms: number; text?: string }>(
+          "/api/llm/test",
+          buildLlmJsonRequestInit({
+            headers: {
+              "X-LLM-Provider": payload.payload.provider,
             },
+            payload: requestPayload,
+            llmTimeoutSeconds: timeoutSeconds,
           }),
-        });
+        );
         const preview = (res.data.text ?? "").trim();
         toast.toastSuccess(
           `模块「${taskLabel}」连接成功（延迟 ${res.data.latency_ms}ms${preview ? `，输出：${preview}` : ""}）`,
@@ -1491,28 +1497,33 @@ export function usePromptsPageState(): PromptsPageState {
 
     const model = payload.payload.model.trim();
     const baseUrl = payload.payload.base_url;
+    const timeoutSeconds = parseTimeoutSecondsForTest(llmForm.timeout_seconds);
 
     setTesting(true);
     try {
-      const res = await apiJson<{ latency_ms: number; text?: string }>("/api/llm/test", {
-        method: "POST",
-        headers: {
-          "X-LLM-Provider": payload.payload.provider,
+      const requestPayload = {
+        project_id: projectId,
+        provider: payload.payload.provider,
+        base_url: baseUrl,
+        model,
+        timeout_seconds: timeoutSeconds,
+        extra: payload.payload.extra,
+        params: {
+          temperature: payload.payload.temperature ?? 0,
+          // Some models may emit "thinking" blocks before final text; keep this > tiny to ensure we get a text preview.
+          max_tokens: 64,
         },
-        body: JSON.stringify({
-          project_id: projectId,
-          provider: payload.payload.provider,
-          base_url: baseUrl,
-          model,
-          timeout_seconds: parseTimeoutSecondsForTest(llmForm.timeout_seconds),
-          extra: payload.payload.extra,
-          params: {
-            temperature: payload.payload.temperature ?? 0,
-            // Some models may emit "thinking" blocks before final text; keep this > tiny to ensure we get a text preview.
-            max_tokens: 64,
+      };
+      const res = await apiJson<{ latency_ms: number; text?: string }>(
+        "/api/llm/test",
+        buildLlmJsonRequestInit({
+          headers: {
+            "X-LLM-Provider": payload.payload.provider,
           },
+          payload: requestPayload,
+          llmTimeoutSeconds: timeoutSeconds,
         }),
-      });
+      );
       const preview = (res.data.text ?? "").trim();
       toast.toastSuccess(
         `连接成功（延迟 ${res.data.latency_ms}ms${preview ? `，输出：${preview}` : ""}）`,

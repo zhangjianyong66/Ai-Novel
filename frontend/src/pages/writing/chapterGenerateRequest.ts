@@ -1,5 +1,5 @@
 import type { ApiRequestInit } from "../../services/apiClient";
-import { resolveLlmRequestTimeoutMs } from "../../lib/llmRequestTimeout";
+import { buildLlmJsonRequestInit, resolveLlmRequestTimeoutMs } from "../../lib/llmRequestTimeout";
 
 export function resolveChapterGenerateRequestTimeoutMs(llmTimeoutSeconds: number | null | undefined): number {
   return resolveLlmRequestTimeoutMs(llmTimeoutSeconds);
@@ -10,10 +10,5 @@ export function buildChapterGenerateRequestInit(args: {
   payload: unknown;
   llmTimeoutSeconds: number | null | undefined;
 }): ApiRequestInit {
-  return {
-    method: "POST",
-    headers: args.headers,
-    body: JSON.stringify(args.payload),
-    timeoutMs: resolveChapterGenerateRequestTimeoutMs(args.llmTimeoutSeconds),
-  };
+  return buildLlmJsonRequestInit(args);
 }

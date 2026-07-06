@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
@@ -11,6 +12,7 @@ type Props = {
   onClose: () => void;
   projectId?: string;
   chapterId?: string;
+  llmTimeoutSeconds?: number | null;
 };
 
 type MemoryChangeSet = {
@@ -205,10 +207,10 @@ export function MemoryUpdateDrawer(props: Props) {
         ops,
       };
 
-      const res = await apiJson<ProposeResult>(`/api/chapters/${chapterId}/memory/propose`, {
-        method: "POST",
-        body: JSON.stringify(req),
-      });
+      const res = await apiJson<ProposeResult>(
+        `/api/chapters/${chapterId}/memory/propose`,
+        buildLlmJsonRequestInit({ payload: req, llmTimeoutSeconds: props.llmTimeoutSeconds }),
+      );
       setProposeResult(res.data);
       toast.toastSuccess("已生成提议");
     } catch (e) {
@@ -220,7 +222,7 @@ export function MemoryUpdateDrawer(props: Props) {
     } finally {
       setProposeLoading(false);
     }
-  }, [chapterId, inputJson, toast]);
+  }, [chapterId, inputJson, props.llmTimeoutSeconds, toast]);
 
   const runAutoPropose = useCallback(async () => {
     if (!chapterId) {
@@ -233,10 +235,13 @@ export function MemoryUpdateDrawer(props: Props) {
     setApplyError(null);
     try {
       const idempotencyKey = `memupd-auto-${crypto.randomUUID().slice(0, 12)}`;
-      const res = await apiJson<ProposeResult>(`/api/chapters/${chapterId}/memory/propose/auto`, {
-        method: "POST",
-        body: JSON.stringify({ idempotency_key: idempotencyKey, focus: autoFocus.trim() || null }),
-      });
+      const res = await apiJson<ProposeResult>(
+        `/api/chapters/${chapterId}/memory/propose/auto`,
+        buildLlmJsonRequestInit({
+          payload: { idempotency_key: idempotencyKey, focus: autoFocus.trim() || null },
+          llmTimeoutSeconds: props.llmTimeoutSeconds,
+        }),
+      );
       setProposeResult(res.data);
       toast.toastSuccess("已生成提议（自动）");
     } catch (e) {
@@ -248,7 +253,7 @@ export function MemoryUpdateDrawer(props: Props) {
     } finally {
       setProposeLoading(false);
     }
-  }, [autoFocus, chapterId, toast]);
+  }, [autoFocus, chapterId, props.llmTimeoutSeconds, toast]);
 
   const runApplyAccepted = useCallback(async () => {
     if (!chapterId) {
@@ -298,10 +303,10 @@ export function MemoryUpdateDrawer(props: Props) {
         title: "Memory Update (applied)",
         ops,
       };
-      const proposed = await apiJson<ProposeResult>(`/api/chapters/${chapterId}/memory/propose`, {
-        method: "POST",
-        body: JSON.stringify(proposeReq),
-      });
+      const proposed = await apiJson<ProposeResult>(
+        `/api/chapters/${chapterId}/memory/propose`,
+        buildLlmJsonRequestInit({ payload: proposeReq, llmTimeoutSeconds: props.llmTimeoutSeconds }),
+      );
       const changeSetId = proposed.data?.change_set?.id;
       if (!changeSetId) {
         throw new ApiError({
@@ -325,7 +330,7 @@ export function MemoryUpdateDrawer(props: Props) {
     } finally {
       setApplyLoading(false);
     }
-  }, [accepted, chapterId, proposeResult, toast]);
+  }, [accepted, chapterId, props.llmTimeoutSeconds, proposeResult, toast]);
 
   const retryApply = useCallback(async () => {
     if (!lastApplyChangeSetId) {

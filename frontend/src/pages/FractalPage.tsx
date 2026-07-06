@@ -6,7 +6,10 @@ import { RequestIdBadge } from "../components/ui/RequestIdBadge";
 import { ApiError, apiJson } from "../services/apiClient";
 import { useToast } from "../components/ui/toast";
 import { copyText } from "../lib/copyText";
+import { buildLlmJsonRequestInit } from "../lib/llmRequestTimeout";
 import { UI_COPY } from "../lib/uiCopy";
+import { useProjectData } from "../hooks/useProjectData";
+import type { LLMPreset } from "../types";
 
 type PromptBlock = {
   identifier: string;
@@ -49,6 +52,10 @@ export function FractalPage() {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<FractalContext | null>(null);
+  const llmPresetQuery = useProjectData(projectId, async (id) => {
+    const res = await apiJson<{ llm_preset: LLMPreset }>(`/api/projects/${id}/llm_preset`);
+    return res.data.llm_preset;
+  });
 
   const copyPreviewBlock = useCallback(
     async (text: string, opts: { emptyMessage: string; successMessage: string; dialogTitle: string }) => {
@@ -91,10 +98,18 @@ export function FractalPage() {
       setError(null);
       try {
         const reason = mode === "llm_v2" ? "manual_rebuild_v2" : "manual_rebuild";
-        const res = await apiJson<{ result: FractalContext }>(`/api/projects/${projectId}/fractal/rebuild`, {
-          method: "POST",
-          body: JSON.stringify({ reason, mode }),
-        });
+        const payload = { reason, mode };
+        const init =
+          mode === "llm_v2"
+            ? buildLlmJsonRequestInit({
+                payload,
+                llmTimeoutSeconds: llmPresetQuery.data?.timeout_seconds ?? null,
+              })
+            : {
+                method: "POST",
+                body: JSON.stringify(payload),
+              };
+        const res = await apiJson<{ result: FractalContext }>(`/api/projects/${projectId}/fractal/rebuild`, init);
         setResult(res.data?.result ?? null);
         setRequestId(res.request_id ?? null);
       } catch (e) {
@@ -109,7 +124,7 @@ export function FractalPage() {
         setLoading(false);
       }
     },
-    [projectId, toast],
+    [llmPresetQuery.data?.timeout_seconds, projectId, toast],
   );
 
   useEffect(() => {

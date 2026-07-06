@@ -14,6 +14,35 @@
 - 可空后端字段用 `?: T | null` 与现有类型保持一致。
 - 后端 snake_case 字段在前端类型中通常保持 snake_case，以匹配 API 契约；只有 Auth 用户这类 UI 模型映射为 camelCase。
 
+## LLM 同步请求超时
+
+- 前端同步等待 LLM 完整结果的 JSON POST 必须使用 `src/lib/llmRequestTimeout.ts` 的 `buildLlmJsonRequestInit`，或继续通过已有的 `buildOutlineGenerateRequestInit` / `buildChapterGenerateRequestInit` 间接使用它。
+- 请求超时契约为 `resolveLlmRequestTimeoutMs(timeout_seconds)`，即 `timeout_seconds * 1000 + 60_000`；`timeout_seconds` 缺失时回退 180 秒，浏览器请求超时为 240 秒。
+- 适用入口包括非流式大纲/章节生成、章节分析、章节改写、记忆提议、Fractal v2 同步重建、LLM 连接测试等会等待 LLM 返回完整结果的请求。
+- 不适用入口包括 SSE 流式生成、只创建后台任务的接口、`prompt_preview` / `generate-precheck` / `graph/query` 等不调用 LLM 的请求，以及 vector embedding/rerank dry-run 这类使用向量专用配置的请求。
+
+正确：
+
+```typescript
+await apiJson<Result>(
+  `/api/chapters/${chapterId}/rewrite`,
+  buildLlmJsonRequestInit({
+    headers: { "X-LLM-Provider": preset.provider },
+    payload,
+    llmTimeoutSeconds: preset.timeout_seconds,
+  }),
+);
+```
+
+错误：
+
+```typescript
+await apiJson<Result>(`/api/chapters/${chapterId}/rewrite`, {
+  method: "POST",
+  body: JSON.stringify(payload),
+});
+```
+
 ## 运行时收窄
 
 后端响应并没有前端 runtime schema 库，当前项目依赖轻量类型守卫和字段检查：

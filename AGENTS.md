@@ -17,6 +17,18 @@
 - `.env.docker` 不存在时，脚本会从 `.env.docker.example` 自动复制一份。
 - 如果启动时报 `failed to bind host port 127.0.0.1:6379`，说明宿主机 Redis 端口已被占用；可在 `.env.docker` 中把 `REDIS_PORT` 改为未占用端口（例如 `6380`）。容器内后端和 worker 仍通过 `redis://redis:6379/0` 通信，不受宿主机映射端口影响。
 
+## 公网访问与 frp 代理约定
+
+- 本地 Docker 前端容器监听宿主机 `5173`，前端容器内 nginx 已将 `/api/` 代理到 Compose 服务名 `backend:8000`；公网暴露时优先只穿透 `5173` 一个端口，不单独穿透后端 `8000`。
+- `frontend/nginx.conf` 的 `client_max_body_size` 应不低于项目包导入默认上限 50MB；当前设置为 `60m`，避免公网单入口代理时大于 32MB 的项目包在前端 nginx 层被拒绝。
+- 公网链路在 ecs2 nginx 终止 HTTPS 后通过 frp 以 HTTP 回到本地，前端容器 nginx 转发 `/api/` 时必须保留上游 `X-Forwarded-Proto`，避免后端把公网 HTTPS 请求误判为 HTTP。
+- 本机复用用户级 `frpc.service`（`~/.config/systemd/user/frpc.service`，配置 `~/.frpc/frpc.ini`）连接 ecs2 的 frps；Ai-Novel 公网隧道使用 `type = http`、`local_ip = 127.0.0.1`、`local_port = 5173`、`custom_domains = ainovel.zhangjianyong.top`。
+- ecs2 上 `ainovel.zhangjianyong.top` 由 `/usr/local/nginx/conf/conf.d/ainovel.zhangjianyong.top.conf` 提供 HTTPS 入口，反代到本机 frps HTTP vhost `http://127.0.0.1:8080`，再由 frp 转发回本地 `5173`。
+- ecs2 的 nginx 是 `/usr/local/nginx/sbin/nginx` 自管进程，不是 `nginx.service`；修改配置后使用 `/usr/local/nginx/sbin/nginx -t` 检查，并用 `/usr/local/nginx/sbin/nginx -s reload` 重载。
+- 公网链路当前两层 nginx 代理读写超时均为 `3600s`：ecs2 站点配置和 `frontend/nginx.conf` 的 `/api/` 都设置了 `proxy_read_timeout 3600s`、`proxy_send_timeout 3600s`；frps/frpc 当前未额外配置应用层请求超时。
+- 大模型实际调用上限主要由 LLM preset / task preset 的 `timeout_seconds` 决定，后端 httpx read timeout 使用该值；前端非流式大纲/章节生成会使用 `timeout_seconds * 1000 + 60000` 作为浏览器请求超时，普通 API 默认仍是 120 秒。
+- ecs2 证书续签接入现有 `/root/ssl_auto_renew/ssl_auto_renew.sh` 和 `/root/ssl_auto_renew/domains.conf`；新增域名需在 `domains.conf` 中登记域名到 nginx 配置文件的映射。
+
 ## Docker 数据存储约定
 
 - Docker Compose 默认把 PostgreSQL 数据库持久化到命名卷 `postgres_data`，容器内路径为 `/var/lib/postgresql/data`；项目、章节、大纲、角色、世界书、术语、知识库元数据、任务记录、用户、LLM 配置等业务表都在该数据库中。
@@ -82,6 +94,7 @@
 - 前端写作页状态修改必须使用状态徽标和合法动作按钮，不能使用状态下拉框或把 `status` 放入保存 payload；有未保存内容修改时应先保存，`done -> drafting` 必须二次确认。
 - 任务中心展示 `ProjectTask.kind` 时应显示中文任务类型并保留原码值，例如“世界书自动更新（worldbook_auto_update）”，未知 kind 原样显示码值。
 - 前端章节非流式生成 `POST /api/chapters/{chapter_id}/generate` 不应使用通用 `apiClient` 120 秒默认超时；应读取当前 LLM preset 的 `timeout_seconds` 并增加响应处理余量。否则请求可能在后端 LLM 调用成功前被浏览器中止，nginx 记录为 499，编辑器也不会收到生成内容。
+- 前端所有同步等待 LLM 完整结果的 JSON POST（例如章节分析/改写、记忆提议、Fractal v2 重建、LLM 连接测试）都应使用 `frontend/src/lib/llmRequestTimeout.ts` 的 `buildLlmJsonRequestInit` 或同等 helper，把浏览器请求超时设为 `timeout_seconds * 1000 + 60000`；只创建后台任务的接口和 SSE 流式接口不套用该固定超时。
 
 ## StoryMemory 与伏笔生命周期约定
 

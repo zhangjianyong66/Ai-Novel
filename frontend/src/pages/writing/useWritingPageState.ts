@@ -1014,6 +1014,7 @@ export function useWritingPageState(): WritingPageState {
       onClose: () => setMemoryUpdateOpen(false),
       projectId,
       chapterId: activeId ?? undefined,
+      llmTimeoutSeconds: preset?.timeout_seconds ?? null,
     },
     foreshadowDrawerProps: {
       open: foreshadowOpen,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useToast } from "../../components/ui/toast";
+import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { ApiError, apiJson } from "../../services/apiClient";
 
 type EntityRow = {
@@ -83,8 +84,9 @@ export function CharacterRelationsView(props: {
   focusRelationId?: string | null;
   includeDeleted: boolean;
   onRequestId: (value: string | null) => void;
+  llmTimeoutSeconds?: number | null;
 }) {
-  const { projectId, chapterId, focusRelationId, includeDeleted, onRequestId } = props;
+  const { projectId, chapterId, focusRelationId, includeDeleted, onRequestId, llmTimeoutSeconds } = props;
   const toast = useToast();
 
   const [loading, setLoading] = useState(false);
@@ -183,15 +185,18 @@ export function CharacterRelationsView(props: {
       }
       setSaving(true);
       try {
-        const proposeRes = await apiJson<MemoryUpdateProposeResponse>(`/api/chapters/${chapterId}/memory/propose`, {
-          method: "POST",
-          body: JSON.stringify({
-            schema_version: "memory_update_v1",
-            idempotency_key: `ui-graph-${safeRandomUUID().slice(0, 12)}`,
-            title: opts.title,
-            ops: opts.ops,
+        const proposeRes = await apiJson<MemoryUpdateProposeResponse>(
+          `/api/chapters/${chapterId}/memory/propose`,
+          buildLlmJsonRequestInit({
+            payload: {
+              schema_version: "memory_update_v1",
+              idempotency_key: `ui-graph-${safeRandomUUID().slice(0, 12)}`,
+              title: opts.title,
+              ops: opts.ops,
+            },
+            llmTimeoutSeconds,
           }),
-        });
+        );
         onRequestId(proposeRes.request_id ?? null);
         const changeSetId = proposeRes.data?.change_set?.id;
         if (!changeSetId) throw new Error("change_set_id missing");
@@ -220,7 +225,7 @@ export function CharacterRelationsView(props: {
         setSaving(false);
       }
     },
-    [chapterId, onRequestId, refresh, toast],
+    [chapterId, llmTimeoutSeconds, onRequestId, refresh, toast],
   );
 
   const rollbackLastChangeSet = useCallback(async () => {

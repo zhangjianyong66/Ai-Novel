@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 
 import type { ChapterAnalyzeResult, ChapterRewriteResult, GenerateForm } from "../../components/writing/types";
 import type { ToastApi } from "../../components/ui/toast";
-import { UI_COPY } from "../../lib/uiCopy";
+import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
+import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { chapterStore } from "../../services/chapterStore";
 import type { Chapter, LLMPreset } from "../../types";
@@ -99,11 +100,10 @@ export function useChapterAnalysis(args: {
         draft_content_md: form.content_md,
       };
 
-      const res = await apiJson<ChapterAnalyzeResult>(`/api/chapters/${activeChapter.id}/analyze`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
+      const res = await apiJson<ChapterAnalyzeResult>(
+        `/api/chapters/${activeChapter.id}/analyze`,
+        buildLlmJsonRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+      );
       if (!analyzeGuardRef.current.isLatest(seq)) return;
       setAnalysisResult(res.data);
       if (res.data.parse_error?.message) {
@@ -164,11 +164,10 @@ export function useChapterAnalysis(args: {
         },
       };
 
-      const res = await apiJson<ChapterRewriteResult>(`/api/chapters/${activeChapter.id}/rewrite`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
+      const res = await apiJson<ChapterRewriteResult>(
+        `/api/chapters/${activeChapter.id}/rewrite`,
+        buildLlmJsonRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+      );
       if (!rewriteGuardRef.current.isLatest(seq)) return;
 
       const nextContent = (res.data.content_md ?? "").trim();

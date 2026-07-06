@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-07-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~566 | Active |
+| `journal-1.md` | ~599 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-07-06 | 登录用户修改密码 | `8af1777` | `main` |
 | 17 | 2026-07-06 | 前端 LLM 请求超时统一修复 | `e0a1301` | `main` |
 | 16 | 2026-07-05 | 修复大纲生成后切换 | `b6f50e6` | `main` |
 | 15 | 2026-07-05 | 章节版本差异对比 | `580ba4f` | `main` |

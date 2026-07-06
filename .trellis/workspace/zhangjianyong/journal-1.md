@@ -564,3 +564,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 登录用户修改密码
+
+**Date**: 2026-07-06
+**Task**: 登录用户修改密码
+**Branch**: `main`
+
+### Summary
+
+新增账户安全页和当前登录用户自助修改密码流程，补充前端服务、校验、路由和项目规范记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8af1777` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

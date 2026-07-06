@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.db.utils import new_id
 from app.models.character import Character
 from app.models.chapter import Chapter
+from app.models.chapter_version import ChapterVersion
 from app.models.glossary_term import GlossaryTerm
 from app.models.knowledge_base import KnowledgeBase
 from app.models.llm_preset import LLMPreset
@@ -37,11 +38,27 @@ from app.services.vector_rag_service import VectorChunk, ingest_chunks, purge_pr
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9\u4e00-\u9fff]{2,}")
 _WORLD_BOOK_PRIORITIES = {"drop_first", "optional", "important", "must"}
+_STORY_MEMORY_SCOPES = {"project", "outline", "unassigned"}
 
 
 def _normalize_worldbook_priority(value: object) -> str:
     priority = str(value or "").strip().lower()
     return priority if priority in _WORLD_BOOK_PRIORITIES else "important"
+
+
+def _normalize_story_memory_scope(value: object) -> str:
+    scope = str(value or "").strip().lower()
+    return scope if scope in _STORY_MEMORY_SCOPES else "unassigned"
+
+
+def _parse_dt(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
@@ -326,6 +343,15 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
 
     outlines = db.execute(select(Outline).where(Outline.project_id == project_id_norm).order_by(Outline.updated_at.desc())).scalars().all()
     chapters = db.execute(select(Chapter).where(Chapter.project_id == project_id_norm).order_by(Chapter.updated_at.desc())).scalars().all()
+    chapter_versions = (
+        db.execute(
+            select(ChapterVersion)
+            .where(ChapterVersion.project_id == project_id_norm)
+            .order_by(ChapterVersion.chapter_id.asc(), ChapterVersion.created_at.asc(), ChapterVersion.id.asc())
+        )
+        .scalars()
+        .all()
+    )
     characters = (
         db.execute(select(Character).where(Character.project_id == project_id_norm).order_by(Character.updated_at.desc()))
         .scalars()
@@ -546,10 +572,29 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
                 "content_md": ch.content_md,
                 "summary": ch.summary,
                 "status": ch.status,
+                "active_version_id": ch.active_version_id,
                 "updated_at": _dt_iso(getattr(ch, "updated_at", None)),
             }
             for ch in chapters
         ],
+        "chapter_versions": {
+            "schema_version": "chapter_versions_export_v1",
+            "versions": [
+                {
+                    "id": v.id,
+                    "chapter_id": v.chapter_id,
+                    "source": v.source,
+                    "content_md": v.content_md,
+                    "word_count": int(v.word_count),
+                    "generation_run_id": v.generation_run_id,
+                    "provider": v.provider,
+                    "model": v.model,
+                    "meta_json": v.meta_json,
+                    "created_at": _dt_iso(getattr(v, "created_at", None)),
+                }
+                for v in chapter_versions
+            ],
+        },
         "characters": [{"id": c.id, "name": c.name, "role": c.role, "profile": c.profile, "notes": c.notes} for c in characters],
         "worldbook": {
             "schema_version": "worldbook_export_all_v1",
@@ -665,6 +710,8 @@ def export_project_bundle(db: Session, *, project_id: str) -> dict[str, Any]:
                 {
                     "id": m.id,
                     "chapter_id": m.chapter_id,
+                    "outline_id": m.outline_id,
+                    "scope": _normalize_story_memory_scope(m.scope),
                     "memory_type": m.memory_type,
                     "title": m.title,
                     "content": m.content,
@@ -944,6 +991,58 @@ def import_project_bundle(
     if chapter_id_map:
         db.flush()
 
+    chapter_version_id_map: dict[str, str] = {}
+    chapter_versions_in = bundle.get("chapter_versions")
+    chapter_versions_obj = chapter_versions_in if isinstance(chapter_versions_in, dict) else {}
+    versions_in = chapter_versions_obj.get("versions")
+    versions_list = versions_in if isinstance(versions_in, list) else []
+    for version in versions_list:
+        if not isinstance(version, dict):
+            continue
+        old_id = str(version.get("id") or "").strip()
+        old_chapter_id = str(version.get("chapter_id") or "").strip()
+        new_chapter_id = chapter_id_map.get(old_chapter_id)
+        if not old_id or not new_chapter_id:
+            continue
+        new_version_id = new_id()
+        chapter_version_id_map[old_id] = new_version_id
+        try:
+            word_count = int(version.get("word_count") or 0)
+        except Exception:
+            word_count = 0
+        created_at = _parse_dt(version.get("created_at"))
+        row = ChapterVersion(
+            id=new_version_id,
+            project_id=new_project_id,
+            chapter_id=new_chapter_id,
+            source=str(version.get("source") or "manual_snapshot")[:32] or "manual_snapshot",
+            content_md=str(version.get("content_md") or ""),
+            word_count=max(0, int(word_count)),
+            generation_run_id=str(version.get("generation_run_id") or "") or None,
+            provider=str(version.get("provider") or "") or None,
+            model=str(version.get("model") or "") or None,
+            meta_json=str(version.get("meta_json") or "") or None,
+        )
+        if created_at is not None:
+            row.created_at = created_at
+        db.add(row)
+    report["created"]["chapter_versions"] = len(chapter_version_id_map)
+    if chapter_version_id_map:
+        db.flush()
+
+    for ch in chapters_list:
+        if not isinstance(ch, dict):
+            continue
+        old_chapter_id = str(ch.get("id") or "").strip()
+        old_active_version_id = str(ch.get("active_version_id") or "").strip()
+        new_chapter_id = chapter_id_map.get(old_chapter_id)
+        new_active_version_id = chapter_version_id_map.get(old_active_version_id)
+        if not new_chapter_id or not new_active_version_id:
+            continue
+        chapter_row = db.get(Chapter, new_chapter_id)
+        if chapter_row is not None:
+            chapter_row.active_version_id = new_active_version_id
+
     if active_outline_id:
         mapped = outline_id_map.get(active_outline_id)
         if mapped:
@@ -1174,12 +1273,25 @@ def import_project_bundle(
             continue
         ch_old = str(m.get("chapter_id") or "").strip() or None
         resolved_old = str(m.get("foreshadow_resolved_at_chapter_id") or "").strip() or None
+        scope = _normalize_story_memory_scope(m.get("scope"))
+        outline_old = str(m.get("outline_id") or "").strip() or None
+        outline_new = outline_id_map.get(outline_old) if outline_old else None
+        if scope == "project":
+            outline_new = None
+        elif scope == "outline":
+            if not outline_new:
+                scope = "unassigned"
+        else:
+            scope = "unassigned"
+            outline_new = None
         created_story_memories += 1
         db.add(
             StoryMemory(
                 id=new_id(),
                 project_id=new_project_id,
                 chapter_id=chapter_id_map.get(ch_old) if ch_old else None,
+                outline_id=outline_new,
+                scope=scope,
                 memory_type=str(m.get("memory_type") or "note")[:64] or "note",
                 title=str(m.get("title") or "")[:255] or None,
                 content=str(m.get("content") or ""),

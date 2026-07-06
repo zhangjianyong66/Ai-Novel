@@ -25,6 +25,8 @@
 - `schema_version` 当前严格为 `project_bundle_v1`。
 - `PROJECT_BUNDLE_IMPORT_MAX_BYTES` 控制导入大小上限；未配置或非正数默认 `52428800`，异常大值钳制到 500MB。
 - 项目包包含“可继续写作”的作品数据：项目基础信息、设置、LLM preset/task presets、大纲、章节、角色、世界书、PromptPresets、结构化记忆、StoryMemory、KB 配置、导入资料原文、数值表格、术语、项目默认写作风格副本。
+- 章节迁移必须包含 `chapter_versions` 历史和 `chapters.active_version_id`；导入时先创建章节，再创建版本，最后把旧激活版本 ID 映射到新版本 ID 后回填章节，避免外键指向旧项目或未创建版本。
+- StoryMemory 迁移必须包含并映射 `scope` / `outline_id`；`scope=outline` 只能指向导入后同项目的新大纲 ID，无法映射时降级为 `unassigned` 且清空 `outline_id`。
 - 项目包不包含运行历史、任务历史、搜索索引、向量索引、FractalMemory、PlotAnalysis、协作成员、用户偏好历史和任何 API Key 密文。
 
 ### 4. Validation & Error Matrix
@@ -43,6 +45,7 @@
 ### 6. Tests Required
 
 - Roundtrip 测试：新增实体导出后导入为新项目，ID 引用被重映射。
+- Roundtrip 测试必须覆盖章节版本历史、章节激活版本、StoryMemory 作用域和所属大纲映射。
 - 安全测试：bundle 字符串中不包含 API Key 密文字段。
 - 路由测试：配置接口返回限制；超限导入返回 `project_bundle_too_large`。
 - 前端测试：项目包本地 schema guard、摘要统计、API Key warning、大小格式化。

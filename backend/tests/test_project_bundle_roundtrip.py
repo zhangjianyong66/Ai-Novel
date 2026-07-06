@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import unittest
 
+from datetime import datetime, timezone
+
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.models.chapter import Chapter
+from app.models.chapter_version import ChapterVersion
 from app.models.character import Character
 from app.models.fractal_memory import FractalMemory
 from app.models.glossary_term import GlossaryTerm
@@ -56,6 +59,7 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
                 LLMPreset.__table__,
                 LLMTaskPreset.__table__,
                 Outline.__table__,
+                ChapterVersion.__table__,
                 Chapter.__table__,
                 Character.__table__,
                 WorldBookEntry.__table__,
@@ -97,6 +101,10 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
             self.assertNotIn("vector_rerank_api_key_ciphertext", str(bundle))
             self.assertNotIn("fractal_memory", bundle)
             self.assertNotIn("plot_analysis", bundle)
+            self.assertEqual(len((bundle.get("chapter_versions") or {}).get("versions") or []), 2)
+            self.assertEqual((bundle.get("chapters") or [{}])[0].get("active_version_id"), "cv2")
+            exported_story_memories = (bundle.get("story_memory") or {}).get("memories") or []
+            self.assertTrue(any(m.get("scope") == "outline" and m.get("outline_id") == "o1" for m in exported_story_memories))
 
             imported = import_project_bundle(db, owner_user_id="u1", bundle=bundle, rebuild_vectors=False)
             self.assertTrue(imported.get("ok"))
@@ -119,7 +127,8 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
             self.assertEqual(_count(db, select(MemoryEvent).where(MemoryEvent.project_id == new_project_id)), 1)
             self.assertEqual(_count(db, select(MemoryForeshadow).where(MemoryForeshadow.project_id == new_project_id)), 1)
             self.assertEqual(_count(db, select(MemoryEvidence).where(MemoryEvidence.project_id == new_project_id)), 1)
-            self.assertEqual(_count(db, select(StoryMemory).where(StoryMemory.project_id == new_project_id)), 1)
+            self.assertEqual(_count(db, select(StoryMemory).where(StoryMemory.project_id == new_project_id)), 2)
+            self.assertEqual(_count(db, select(ChapterVersion).where(ChapterVersion.project_id == new_project_id)), 2)
             self.assertGreaterEqual(_count(db, select(KnowledgeBase).where(KnowledgeBase.project_id == new_project_id)), 1)
             self.assertEqual(_count(db, select(LLMTaskPreset).where(LLMTaskPreset.project_id == new_project_id)), 1)
             self.assertEqual(_count(db, select(ProjectTable).where(ProjectTable.project_id == new_project_id)), 1)
@@ -151,6 +160,61 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
             self.assertEqual(imported_style.owner_user_id, "u1")
             self.assertFalse(imported_style.is_preset)
             self.assertEqual(imported_style.name, "Style 1")
+
+            imported_chapter = db.execute(select(Chapter).where(Chapter.project_id == new_project_id)).scalar_one()
+            imported_versions = (
+                db.execute(select(ChapterVersion).where(ChapterVersion.project_id == new_project_id).order_by(ChapterVersion.created_at.asc()))
+                .scalars()
+                .all()
+            )
+            self.assertEqual([v.content_md for v in imported_versions], ["draft v1", "draft v2"])
+            self.assertEqual([v.source for v in imported_versions], ["manual_snapshot", "ai_generate"])
+            self.assertEqual(imported_versions[1].provider, "openai")
+            self.assertEqual(imported_versions[1].model, "gpt-4o-mini")
+            self.assertEqual(imported_versions[1].meta_json, '{"run":"meta"}')
+            self.assertEqual(imported_chapter.active_version_id, imported_versions[1].id)
+
+            imported_outline_id = imported_chapter.outline_id
+            imported_memories = (
+                db.execute(select(StoryMemory).where(StoryMemory.project_id == new_project_id).order_by(StoryMemory.title.asc()))
+                .scalars()
+                .all()
+            )
+            memories_by_title = {m.title: m for m in imported_memories}
+            outline_memory = memories_by_title["outline memory"]
+            self.assertEqual(outline_memory.scope, "outline")
+            self.assertEqual(outline_memory.outline_id, imported_outline_id)
+            self.assertEqual(outline_memory.chapter_id, imported_chapter.id)
+            project_memory = memories_by_title["project memory"]
+            self.assertEqual(project_memory.scope, "project")
+            self.assertIsNone(project_memory.outline_id)
+            self.assertIsNone(project_memory.chapter_id)
+
+    def test_import_legacy_bundle_without_versions_or_story_memory_scope(self) -> None:
+        with self.SessionLocal() as db:
+            _seed_project(db)
+
+            bundle = export_project_bundle(db, project_id="p1")
+            bundle.pop("chapter_versions", None)
+            for chapter in bundle.get("chapters") or []:
+                chapter.pop("active_version_id", None)
+            for memory in (bundle.get("story_memory") or {}).get("memories") or []:
+                memory.pop("scope", None)
+                memory.pop("outline_id", None)
+
+            imported = import_project_bundle(db, owner_user_id="u1", bundle=bundle, rebuild_vectors=False)
+            self.assertTrue(imported.get("ok"))
+            new_project_id = imported.get("project_id")
+            self.assertTrue(isinstance(new_project_id, str))
+
+            imported_chapter = db.execute(select(Chapter).where(Chapter.project_id == new_project_id)).scalar_one()
+            self.assertIsNone(imported_chapter.active_version_id)
+            self.assertEqual(_count(db, select(ChapterVersion).where(ChapterVersion.project_id == new_project_id)), 0)
+
+            imported_memories = db.execute(select(StoryMemory).where(StoryMemory.project_id == new_project_id)).scalars().all()
+            self.assertEqual(len(imported_memories), 2)
+            self.assertTrue(all(m.scope == "unassigned" for m in imported_memories))
+            self.assertTrue(all(m.outline_id is None for m in imported_memories))
 
 
 def _count(db: Session, stmt) -> int:  # type: ignore[no-untyped-def]
@@ -222,7 +286,37 @@ def _seed_project(db: Session) -> None:
     outline = Outline(id="o1", project_id="p1", title="Outline 1", content_md="outline", structure_json=None)
     db.add(outline)
     db.flush()
-    db.add(Chapter(id="c1", project_id="p1", outline_id="o1", number=1, title="Chapter 1", plan="p", content_md="c", summary="s", status="done"))
+    chapter = Chapter(id="c1", project_id="p1", outline_id="o1", number=1, title="Chapter 1", plan="p", content_md="c", summary="s", status="done")
+    db.add(chapter)
+    db.flush()
+    db.add_all(
+        [
+            ChapterVersion(
+                id="cv1",
+                project_id="p1",
+                chapter_id="c1",
+                source="manual_snapshot",
+                content_md="draft v1",
+                word_count=2,
+                created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+            ChapterVersion(
+                id="cv2",
+                project_id="p1",
+                chapter_id="c1",
+                source="ai_generate",
+                content_md="draft v2",
+                word_count=2,
+                generation_run_id="run-old",
+                provider="openai",
+                model="gpt-4o-mini",
+                meta_json='{"run":"meta"}',
+                created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            ),
+        ]
+    )
+    db.flush()
+    chapter.active_version_id = "cv2"
     project.active_outline_id = "o1"
 
     db.add(Character(id="char1", project_id="p1", name="Alice", role="hero", profile="p", notes=None))
@@ -263,11 +357,34 @@ def _seed_project(db: Session) -> None:
             id="sm1",
             project_id="p1",
             chapter_id="c1",
+            outline_id="o1",
+            scope="outline",
             memory_type="note",
-            title="t",
+            title="outline memory",
             content="c",
             full_context_md=None,
             importance_score=0.5,
+            tags_json=None,
+            story_timeline=0,
+            text_position=-1,
+            text_length=0,
+            is_foreshadow=0,
+            foreshadow_resolved_at_chapter_id=None,
+            metadata_json=None,
+        )
+    )
+    db.add(
+        StoryMemory(
+            id="sm2",
+            project_id="p1",
+            chapter_id=None,
+            outline_id=None,
+            scope="project",
+            memory_type="note",
+            title="project memory",
+            content="project scope",
+            full_context_md=None,
+            importance_score=0.4,
             tags_json=None,
             story_timeline=0,
             text_position=-1,

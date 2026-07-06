@@ -664,3 +664,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 修复项目包核心状态迁移
+
+**Date**: 2026-07-06
+**Task**: 修复项目包核心状态迁移
+**Branch**: `main`
+
+### Summary
+
+补全项目包导入导出的章节版本历史、激活版本映射和 StoryMemory 作用域/大纲归属；增加 roundtrip 与旧包兼容测试，并同步项目包规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a1f9777` | (see git log) |
+| `49002ac` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

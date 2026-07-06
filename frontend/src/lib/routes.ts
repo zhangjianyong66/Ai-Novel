@@ -11,6 +11,7 @@ type RouteMeta = {
 const ROUTE_META: RouteMeta[] = [
   { suffix: "/admin/users", title: UI_COPY.nav.adminUsers, layout: "tool" },
   { suffix: "/settings", title: UI_COPY.nav.projectSettings, layout: "paper" },
+  { suffix: "/account/security", title: UI_COPY.nav.accountSecurity, layout: "paper" },
   { suffix: "/account/notification-settings", title: UI_COPY.nav.notificationSettings, layout: "paper" },
   { suffix: "/characters", title: UI_COPY.nav.characters, layout: "paper" },
   { suffix: "/outline", title: UI_COPY.nav.outline, layout: "paper" },

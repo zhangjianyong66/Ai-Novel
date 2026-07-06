@@ -43,7 +43,14 @@
 - 后端测试优先在 `backend/` 目录使用 `python -m pytest ...` 运行；当前环境直接执行 `pytest ...` 可能无法解析 `app` 包并报 `ModuleNotFoundError: No module named 'app'`。
 - 当前本地环境没有全局 `python` 命令，使用 `python3` 或 `backend/.venv/bin/python`；当前 `backend/.venv` 未安装 `pytest`，`unittest` 风格单测可用 `cd backend && .venv/bin/python -m unittest tests.<module>` 验证。
 - 当前全量 `cd backend && python -m pytest tests` 可能先被既有测试环境问题阻塞：`tests/test_gate_runner.py`、`tests/test_prompt_preset_integrity.py`、`tests/test_security_guard_runner.py` 依赖仓库中不存在的 `scripts.run_gate` / `scripts.guards`；忽略这 3 个文件后，当前还可见既有失败 `test_auth_session.py::TestAuthEndpoints::test_register_rejects_reserved_admin_user_id` 和 `test_prompt_task_reachability_registry.py::TestPromptTaskReachabilityRegistry::test_ui_copy_and_e2e_registry_registered`。
-- 当前全量 `cd frontend && npm run lint` 可能被既有格式问题阻塞：`src/pages/outline/useOutlineGenerationState.ts` 未通过 Prettier；验证前端改动时可先对本次触碰文件运行 `npx eslint ...`、`npx prettier --check ...` 和 `node scripts/check-ui-classes.mjs`。
+- 当前全量 `cd frontend && npm run lint` 已可通过；验证前端改动时优先运行全量 lint，必要时可先对本次触碰文件运行 `npx eslint ...`、`npx prettier --check ...` 和 `node scripts/check-ui-classes.mjs` 定位问题。
+
+## 认证与账户安全约定
+
+- 普通登录用户修改自己的本地密码使用后端接口 `POST /api/auth/password/change`，请求体为 `old_password` 和 `new_password`；接口校验旧密码，成功后更新密码哈希和更新时间，不强制当前会话退出。
+- 前端自助修改密码入口为 `/account/security`，侧栏显示“账户安全”；表单包含“当前密码 / 新密码 / 确认新密码”，前端先校验新密码至少 8 位且两次输入一致。
+- 管理员修改自己的密码也应使用同一个自助入口；管理员用户管理页的 `POST /api/auth/admin/users/{target_user_id}/password/reset` 语义是管理员重置密码，不是普通用户自助改密。
+- 第三方登录且没有本地密码的账号当前不支持在账户安全页设置本地密码；如需支持，应单独设计绑定密码和身份确认流程。
 
 ## 项目包导入导出约定
 

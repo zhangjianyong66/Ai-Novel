@@ -36,6 +36,11 @@ const NotificationSettingsPage = lazy(async () => {
   return { default: mod.NotificationSettingsPage };
 });
 
+const AccountSecurityPage = lazy(async () => {
+  const mod = await importWithChunkRetry(() => import("./pages/AccountSecurityPage"));
+  return { default: mod.AccountSecurityPage };
+});
+
 const ProjectWizardPage = lazy(async () => {
   const mod = await importWithChunkRetry(() => import("./pages/ProjectWizardPage"));
   return { default: mod.ProjectWizardPage };
@@ -191,6 +196,10 @@ const router = createBrowserRouter([
           {
             path: "account/notification-settings",
             element: <NotificationSettingsPage />,
+          },
+          {
+            path: "account/security",
+            element: <AccountSecurityPage />,
           },
           {
             path: "projects/:projectId",

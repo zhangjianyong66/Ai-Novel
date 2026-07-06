@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
-import { Bell, CircleHelp, LayoutDashboard, PanelLeftClose, PanelLeftOpen, UserCog } from "lucide-react";
+import { Bell, CircleHelp, KeyRound, LayoutDashboard, PanelLeftClose, PanelLeftOpen, UserCog } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate, useOutlet, useParams } from "react-router-dom";
 
@@ -359,6 +359,14 @@ export function AppShell() {
                     />
                     <SidebarLink
                       collapsed={false}
+                      icon={<KeyRound size={18} />}
+                      label={UI_COPY.nav.accountSecurity}
+                      ariaLabel="账户安全 (nav_account_security)"
+                      to="/account/security"
+                      onClick={closeMobileNav}
+                    />
+                    <SidebarLink
+                      collapsed={false}
                       icon={<Bell size={18} />}
                       label={UI_COPY.nav.notificationSettings}
                       ariaLabel="通知设置 (nav_notification_settings)"
@@ -484,6 +492,13 @@ export function AppShell() {
                 label={UI_COPY.nav.help}
                 ariaLabel="术语/帮助 (nav_help)"
                 onClick={openHelp}
+              />
+              <SidebarLink
+                collapsed={collapsed}
+                icon={<KeyRound size={18} />}
+                label={UI_COPY.nav.accountSecurity}
+                ariaLabel="账户安全 (nav_account_security)"
+                to="/account/security"
               />
               <SidebarLink
                 collapsed={collapsed}

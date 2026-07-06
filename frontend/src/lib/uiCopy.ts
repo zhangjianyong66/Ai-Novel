@@ -41,6 +41,7 @@ export const UI_COPY = {
     foreshadows: "伏笔",
     dataImport: "导入",
     adminUsers: "用户管理",
+    accountSecurity: "账户安全",
     notificationSettings: "通知设置",
     help: "术语/帮助",
 

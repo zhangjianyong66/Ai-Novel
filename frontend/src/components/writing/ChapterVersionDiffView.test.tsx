@@ -2,6 +2,29 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ChapterVersionDiffView } from "./ChapterVersionDiffView";
+import { findCurrentDiffOrdinalByViewport } from "./chapterVersionDiffNavigation";
+
+describe("findCurrentDiffOrdinalByViewport", () => {
+  it("selects the diff block intersecting the line below sticky navigation", () => {
+    expect(
+      findCurrentDiffOrdinalByViewport(120, [
+        { ordinal: 0, top: 20, bottom: 90 },
+        { ordinal: 1, top: 100, bottom: 180 },
+        { ordinal: 2, top: 220, bottom: 300 },
+      ]),
+    ).toBe(1);
+  });
+
+  it("keeps the nearest edge diff when scrolled before the first or after the last diff", () => {
+    const rects = [
+      { ordinal: 0, top: 160, bottom: 220 },
+      { ordinal: 1, top: 300, bottom: 360 },
+    ];
+
+    expect(findCurrentDiffOrdinalByViewport(100, rects)).toBe(0);
+    expect(findCurrentDiffOrdinalByViewport(420, rects)).toBe(1);
+  });
+});
 
 describe("ChapterVersionDiffView", () => {
   it("renders changed paragraphs with quiet rails instead of full-block color wash", () => {
@@ -49,6 +72,8 @@ describe("ChapterVersionDiffView", () => {
     expect(html).toContain("第 1 / 共 2 处");
     expect(html).toContain('aria-current="location"');
     expect(html).toContain("chapter_version_diff_navigation");
+    expect(html).toContain("sticky");
+    expect(html).toContain("-top-5");
   });
 
   it("does not render diff navigation when contents match", () => {

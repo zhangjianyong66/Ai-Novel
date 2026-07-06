@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
 import {
@@ -7,6 +7,7 @@ import {
   type ChapterVersionDiffBlock,
   type ChapterVersionDiffToken,
 } from "../../lib/chapterVersionDiff";
+import { findCurrentDiffOrdinalByViewport, type DiffViewportRect } from "./chapterVersionDiffNavigation";
 
 type Props = {
   baseContentMd: string;
@@ -14,6 +15,16 @@ type Props = {
   baseLabel: string;
   targetLabel: string;
 };
+
+function getScrollParent(element: HTMLElement | null): HTMLElement | Window {
+  let current = element?.parentElement ?? null;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (/(auto|scroll|overlay)/.test(`${style.overflowY} ${style.overflow}`)) return current;
+    current = current.parentElement;
+  }
+  return window;
+}
 
 function tokenClassName(token: ChapterVersionDiffToken): string {
   if (token.kind === "added") return "rounded-sm bg-success/10 px-0.5 text-success";
@@ -74,6 +85,7 @@ function prefersReducedMotion(): boolean {
 
 export function ChapterVersionDiffView(props: Props) {
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const navigationRef = useRef<HTMLDivElement | null>(null);
   const diffIdentity = `${props.baseContentMd}\u0000${props.targetContentMd}`;
   const [navigationState, setNavigationState] = useState({ diffIdentity: "", ordinal: 0 });
   const diff = useMemo(
@@ -94,6 +106,50 @@ export function ChapterVersionDiffView(props: Props) {
   const diffCount = diffBlockIndexes.length;
   const currentDiffOrdinal =
     navigationState.diffIdentity === diffIdentity ? Math.min(navigationState.ordinal, Math.max(diffCount - 1, 0)) : 0;
+
+  useEffect(() => {
+    const navigationElement = navigationRef.current;
+    if (!navigationElement || diffCount <= 0) return undefined;
+
+    const navigation = navigationElement;
+    const scrollParent = getScrollParent(navigation);
+    let frameId: number | null = null;
+
+    function syncCurrentDiffFromScroll() {
+      frameId = null;
+      const anchorY = navigation.getBoundingClientRect().bottom + 1;
+      const rects = diffBlockIndexes
+        .map((blockIndex, ordinal) => {
+          const element = blockRefs.current.get(blockIndex);
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return { ordinal, top: rect.top, bottom: rect.bottom };
+        })
+        .filter((rect): rect is DiffViewportRect => rect !== null);
+      const nextOrdinal = findCurrentDiffOrdinalByViewport(anchorY, rects);
+      if (nextOrdinal === null) return;
+
+      setNavigationState((previous) => {
+        if (previous.diffIdentity === diffIdentity && previous.ordinal === nextOrdinal) return previous;
+        return { diffIdentity, ordinal: nextOrdinal };
+      });
+    }
+
+    function scheduleSync() {
+      if (frameId !== null) return;
+      frameId = window.requestAnimationFrame(syncCurrentDiffFromScroll);
+    }
+
+    scheduleSync();
+    scrollParent.addEventListener("scroll", scheduleSync, { passive: true });
+    window.addEventListener("resize", scheduleSync);
+
+    return () => {
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      scrollParent.removeEventListener("scroll", scheduleSync);
+      window.removeEventListener("resize", scheduleSync);
+    };
+  }, [diffBlockIndexes, diffCount, diffIdentity]);
 
   function jumpToDiff(direction: "previous" | "next") {
     if (diffCount <= 0) return;
@@ -132,7 +188,8 @@ export function ChapterVersionDiffView(props: Props) {
       </div>
 
       <div
-        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-canvas/60 px-3 py-2"
+        className="sticky -top-5 z-10 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface/95 px-3 py-2 shadow-sm"
+        ref={navigationRef}
         aria-label="chapter_version_diff_navigation"
       >
         <div

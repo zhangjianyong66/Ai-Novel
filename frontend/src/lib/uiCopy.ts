@@ -169,7 +169,7 @@ export const UI_COPY = {
     devFallbackRiskHint: "重要：仅用于本地开发/演示。部署到公网时务必关闭 dev_fallback，以免绕过登录。",
     devFallbackNextStepHint: "如需权限/协作/多用户，请在下方使用账号登录。",
     continueInDevFallback: "继续进入应用",
-    userIdLabel: "用户名",
+    userIdLabel: "登录用户名",
     userIdPlaceholder: "例如：admin",
     passwordLabel: "密码",
     passwordPlaceholder: "请输入密码",

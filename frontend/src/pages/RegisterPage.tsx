@@ -33,21 +33,21 @@ export function RegisterPage() {
   }, [oidcError, oidcRequestId, searchParams, setSearchParams, toast]);
 
   const [form, setForm] = useState(() => ({
-    userId: "",
+    loginName: "",
     password: "",
     confirmPassword: "",
   }));
   const [busy, setBusy] = useState(false);
 
   const passwordMismatch = Boolean(form.password && form.confirmPassword && form.password !== form.confirmPassword);
-  const submitDisabled = busy || !form.userId.trim() || !form.password || passwordMismatch;
+  const submitDisabled = busy || !form.loginName.trim() || !form.password || passwordMismatch;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitDisabled) return;
     setBusy(true);
     try {
-      await auth.register({ userId: form.userId.trim(), password: form.password });
+      await auth.register({ loginName: form.loginName.trim(), password: form.password });
       toast.toastSuccess(UI_COPY.auth.registerSuccess);
       navigate(nextPath, { replace: true });
     } catch (e) {
@@ -87,9 +87,9 @@ export function RegisterPage() {
                   <span className="text-xs text-subtext">{UI_COPY.auth.userIdLabel}</span>
                   <input
                     className="input"
-                    name="user_id"
-                    value={form.userId}
-                    onChange={(e) => setForm((v) => ({ ...v, userId: e.target.value }))}
+                    name="login_name"
+                    value={form.loginName}
+                    onChange={(e) => setForm((v) => ({ ...v, loginName: e.target.value }))}
                     autoComplete="username"
                     autoCapitalize="off"
                     spellCheck={false}
@@ -131,7 +131,7 @@ export function RegisterPage() {
                 <button
                   className="btn btn-secondary"
                   onClick={() => {
-                    setForm({ userId: "", password: "", confirmPassword: "" });
+                    setForm({ loginName: "", password: "", confirmPassword: "" });
                   }}
                   type="button"
                 >

@@ -47,6 +47,12 @@
 
 ## 认证与账户安全约定
 
+- `users.id` 是稳定内部用户 ID 和外键目标，不再作为可修改登录用户名；本地登录用户名使用 `users.login_name`，API 响应同时返回稳定 `id` 和 `login_name`。
+- 本地登录、本地注册、管理员创建用户等面向登录用户名的请求字段使用 `login_name`；旧 `user_id` 登录名入参不做兼容映射，应被请求模型拒绝。
+- 新建本地用户时内部 `users.id` 由系统生成，`login_name` 单独保存；历史用户通过迁移回填 `login_name = 原 users.id`，不修改历史内部 ID。
+- 登录用户名只允许小写字母、数字、下划线和短横线，长度 1 到 64；后端统一 trim 并转小写，中文展示名使用 `display_name`。
+- Linux.do OIDC 账号通过 `auth_external_accounts.user_id` 绑定稳定内部 `users.id`；管理员修改 `login_name` 不应影响后续 Linux.do 登录，也不应创建重复用户。
+- `admin` 超级管理员禁止禁用、禁止修改登录用户名、禁止撤销管理员权限；普通管理员也不能撤销自己的管理员权限。`admin` 仍允许修改显示名、邮箱和密码。
 - 普通登录用户修改自己的本地密码使用后端接口 `POST /api/auth/password/change`，请求体为 `old_password` 和 `new_password`；接口校验旧密码，成功后更新密码哈希和更新时间，不强制当前会话退出。
 - 前端自助修改密码入口为 `/account/security`，侧栏显示“账户安全”；表单包含“当前密码 / 新密码 / 确认新密码”，前端先校验新密码至少 8 位且两次输入一致。
 - 管理员修改自己的密码也应使用同一个自助入口；管理员用户管理页的 `POST /api/auth/admin/users/{target_user_id}/password/reset` 语义是管理员重置密码，不是普通用户自助改密。

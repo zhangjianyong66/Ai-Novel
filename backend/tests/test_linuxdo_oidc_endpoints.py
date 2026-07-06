@@ -143,10 +143,54 @@ class TestLinuxDoOidcEndpoints(unittest.TestCase):
             user = db.get(User, "linuxdo_alice")
             self.assertIsNotNone(user)
             assert user is not None
+            self.assertEqual(user.login_name, "linuxdo_alice")
             ext = db.get(AuthExternalAccount, ("linuxdo", "sub-123"))
             self.assertIsNotNone(ext)
             assert ext is not None
             self.assertEqual(ext.user_id, user.id)
+
+    def test_oidc_callback_keeps_external_binding_after_login_name_changes(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(User(id="linuxdo_alice", login_name="custom_alice", email=None, display_name="Alice", is_admin=False))
+            db.flush()
+            db.add(AuthExternalAccount(provider="linuxdo", subject="sub-123", user_id="linuxdo_alice", username="alice", email=None, avatar_url=None))
+            db.commit()
+
+        client = TestClient(self.app)
+        client.cookies.set(_LINUXDO_OIDC_STATE_COOKIE, "state1")
+        client.cookies.set(_LINUXDO_OIDC_VERIFIER_COOKIE, "verifier1")
+        client.cookies.set(_LINUXDO_OIDC_NEXT_COOKIE, "/")
+
+        with patch.object(settings, "linuxdo_oidc_client_id", "cid"), patch.object(settings, "linuxdo_oidc_client_secret", "sec"), patch(
+            "app.api.routes.auth._linuxdo_discovery",
+            return_value={
+                "authorization_endpoint": "https://connect.linux.do/oauth2/authorize",
+                "token_endpoint": "https://connect.linux.do/oauth2/token",
+                "userinfo_endpoint": "https://connect.linux.do/api/user",
+                "issuer": "https://connect.linux.do/",
+            },
+        ), patch(
+            "app.api.routes.auth._linuxdo_exchange_code_for_token",
+            return_value={"access_token": "at-123"},
+        ), patch(
+            "app.api.routes.auth._linuxdo_fetch_userinfo",
+            return_value={
+                "sub": "sub-123",
+                "login": "alice",
+                "username": "alice",
+                "name": "Alice",
+                "email": "alice@example.com",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+        ):
+            resp = client.get("/api/auth/oidc/linuxdo/callback?code=code123&state=state1", follow_redirects=False)
+
+        self.assertEqual(resp.status_code, 302)
+        with self.SessionLocal() as db:
+            users = db.query(User).all()
+            self.assertEqual(len(users), 1)
+            self.assertEqual(users[0].id, "linuxdo_alice")
+            self.assertEqual(users[0].login_name, "custom_alice")
 
     def test_oidc_callback_is_idempotent_when_commit_hits_integrity_error(self) -> None:
         with self.SessionLocal() as db:

@@ -27,7 +27,7 @@ from app.models.user_activity_stat import UserActivityStat
 from app.models.user_password import UserPassword
 from app.models.user_usage_stat import UserUsageStat
 from app.schemas.base import RequestModel
-from app.services.auth_service import hash_password, verify_password
+from app.services.auth_service import get_user_by_login_name, hash_password, new_user_id, normalize_login_name, validate_login_name, verify_password
 
 router = APIRouter()
 logger = logging.getLogger("ainovel")
@@ -204,7 +204,7 @@ def _linuxdo_suggest_user_id(db: DbDep, *, login: str) -> str:
 
 
 def _user_public(user: User) -> dict:
-    return {"id": user.id, "display_name": user.display_name, "is_admin": bool(user.is_admin)}
+    return {"id": user.id, "login_name": user.login_name, "display_name": user.display_name, "is_admin": bool(user.is_admin)}
 
 
 def _require_admin(db: DbDep, *, user_id: str) -> User:
@@ -230,6 +230,7 @@ def _user_admin_public(
         online = bool(last_seen_epoch is not None and cutoff_epoch is not None and last_seen_epoch >= cutoff_epoch)
     return {
         "id": user.id,
+        "login_name": user.login_name,
         "email": user.email,
         "display_name": user.display_name,
         "is_admin": bool(user.is_admin),
@@ -254,12 +255,12 @@ def _user_admin_public(
     }
 
 class LocalLoginRequest(RequestModel):
-    user_id: str = Field(min_length=1, max_length=64)
+    login_name: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
 
 
 class LocalRegisterRequest(RequestModel):
-    user_id: str = Field(min_length=1, max_length=64)
+    login_name: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
     display_name: str | None = Field(default=None, max_length=255)
     email: str | None = Field(default=None, max_length=255)
@@ -274,8 +275,18 @@ class DisableUserRequest(RequestModel):
     disabled: bool = True
 
 
+class AdminUpdateUserRequest(RequestModel):
+    login_name: str | None = Field(default=None, min_length=1, max_length=64)
+    display_name: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class AdminSetUserAdminRequest(RequestModel):
+    is_admin: bool
+
+
 class AdminCreateUserRequest(RequestModel):
-    user_id: str = Field(min_length=1, max_length=64)
+    login_name: str = Field(min_length=1, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
     email: str | None = Field(default=None, max_length=255)
     is_admin: bool = False
@@ -284,6 +295,13 @@ class AdminCreateUserRequest(RequestModel):
 
 class AdminResetPasswordRequest(RequestModel):
     new_password: str | None = Field(default=None, max_length=256)
+
+
+def _is_super_admin_user(user: User | None) -> bool:
+    if user is None:
+        return False
+    super_admin_id = (settings.auth_admin_user_id or "admin").strip() or "admin"
+    return str(user.id) == super_admin_id
 
 
 @router.get("/auth/user")
@@ -316,8 +334,9 @@ def list_auth_providers(request: Request) -> dict:
 @router.post("/auth/local/login")
 def local_login(request: Request, db: DbDep, body: LocalLoginRequest) -> JSONResponse:
     request_id = request.state.request_id
-    user = db.get(User, body.user_id)
-    pwd = db.get(UserPassword, body.user_id)
+    login_name = validate_login_name(body.login_name)
+    user = get_user_by_login_name(db, login_name)
+    pwd = db.get(UserPassword, user.id) if user is not None else None
     if user is None or pwd is None:
         raise AppError.unauthorized("用户名或密码错误")
     if pwd.disabled_at is not None:
@@ -343,24 +362,22 @@ def local_login(request: Request, db: DbDep, body: LocalLoginRequest) -> JSONRes
 def local_register(request: Request, db: DbDep, body: LocalRegisterRequest) -> JSONResponse:
     request_id = request.state.request_id
 
-    target_user_id = body.user_id.strip()
-    if not target_user_id:
-        raise AppError.validation("user_id 不能为空")
+    login_name = validate_login_name(body.login_name)
 
-    admin_user_id = (settings.auth_admin_user_id or "").strip()
-    if admin_user_id and target_user_id == admin_user_id:
+    admin_user_id = (settings.auth_admin_user_id or "admin").strip()
+    if admin_user_id and login_name == normalize_login_name(admin_user_id):
         raise AppError.forbidden("该用户名已被系统保留，请联系管理员分配/重置")
 
-    if db.get(User, target_user_id) is not None:
+    if get_user_by_login_name(db, login_name) is not None:
         raise AppError.conflict("用户已存在")
 
     email = (body.email or "").strip() or None
-    display_name = (body.display_name or "").strip() or target_user_id
-    user = User(id=target_user_id, email=email, display_name=display_name, is_admin=False)
+    display_name = (body.display_name or "").strip() or login_name
+    user = User(id=new_user_id(db), login_name=login_name, email=email, display_name=display_name, is_admin=False)
     db.add(user)
 
     pwd = UserPassword(
-        user_id=target_user_id,
+        user_id=user.id,
         password_hash=hash_password(body.password),
         password_updated_at=utc_now(),
         disabled_at=None,
@@ -513,7 +530,10 @@ def linuxdo_oidc_callback(request: Request, db: DbDep, code: str | None = None, 
                 user_id = str(ext.user_id)
             else:
                 user_id = _linuxdo_suggest_user_id(db, login=login or display_name) if attempt == 0 else f"linuxdo_{new_id().split('-', 1)[0]}"
-            user = User(id=user_id, email=email, display_name=display_name, is_admin=False)
+            login_name = validate_login_name(user_id)
+            if get_user_by_login_name(db, login_name) is not None:
+                login_name = validate_login_name(f"linuxdo_{new_id().split('-', 1)[0]}")
+            user = User(id=user_id, login_name=login_name, email=email, display_name=display_name, is_admin=False)
             db.add(user)
             user_created = True
         else:
@@ -615,6 +635,12 @@ def set_user_disabled(
     request_id = request.state.request_id
     _require_admin(db, user_id=user_id)
 
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise AppError.not_found()
+    if body.disabled and _is_super_admin_user(target):
+        raise AppError.forbidden("超级管理员不能被禁用")
+
     pwd = db.get(UserPassword, target_user_id)
     if pwd is None:
         raise AppError.not_found()
@@ -623,6 +649,68 @@ def set_user_disabled(
     db.commit()
 
     return ok_payload(request_id=request_id, data={})
+
+
+@router.patch("/auth/admin/users/{target_user_id}")
+def update_user_profile(
+    request: Request,
+    db: DbDep,
+    user_id: AuthenticatedUserIdDep,
+    target_user_id: str,
+    body: AdminUpdateUserRequest,
+) -> dict:
+    request_id = request.state.request_id
+    _require_admin(db, user_id=user_id)
+
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise AppError.not_found()
+
+    if body.login_name is not None:
+        if _is_super_admin_user(target):
+            raise AppError.forbidden("超级管理员不能修改登录用户名")
+        login_name = validate_login_name(body.login_name)
+        existing = get_user_by_login_name(db, login_name)
+        if existing is not None and str(existing.id) != str(target.id):
+            raise AppError.conflict("用户已存在")
+        target.login_name = login_name
+
+    if body.display_name is not None:
+        target.display_name = body.display_name.strip() or None
+    if body.email is not None:
+        target.email = body.email.strip() or None
+
+    db.commit()
+    db.refresh(target)
+    pwd = db.get(UserPassword, target.id)
+    return ok_payload(request_id=request_id, data={"user": _user_admin_public(user=target, pwd=pwd)})
+
+
+@router.post("/auth/admin/users/{target_user_id}/admin")
+def set_user_admin(
+    request: Request,
+    db: DbDep,
+    user_id: AuthenticatedUserIdDep,
+    target_user_id: str,
+    body: AdminSetUserAdminRequest,
+) -> dict:
+    request_id = request.state.request_id
+    _require_admin(db, user_id=user_id)
+
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise AppError.not_found()
+    if not body.is_admin:
+        if str(target.id) == str(user_id):
+            raise AppError.forbidden("不能撤销自己的管理员权限")
+        if _is_super_admin_user(target):
+            raise AppError.forbidden("超级管理员不能被撤销管理员权限")
+
+    target.is_admin = bool(body.is_admin)
+    db.commit()
+    db.refresh(target)
+    pwd = db.get(UserPassword, target.id)
+    return ok_payload(request_id=request_id, data={"user": _user_admin_public(user=target, pwd=pwd)})
 
 
 @router.get("/auth/admin/users")
@@ -649,6 +737,7 @@ def list_users(
         filters.append(
             or_(
                 func.lower(User.id).like(search_pattern),
+                func.lower(User.login_name).like(search_pattern),
                 func.lower(func.coalesce(User.display_name, "")).like(search_pattern),
                 func.lower(func.coalesce(User.email, "")).like(search_pattern),
             )
@@ -743,14 +832,13 @@ def create_user(request: Request, db: DbDep, user_id: AuthenticatedUserIdDep, bo
     request_id = request.state.request_id
     _require_admin(db, user_id=user_id)
 
-    target_user_id = body.user_id.strip()
-    if not target_user_id:
-        raise AppError.validation("user_id 不能为空")
-    if db.get(User, target_user_id) is not None:
+    login_name = validate_login_name(body.login_name)
+    if get_user_by_login_name(db, login_name) is not None:
         raise AppError.conflict("用户已存在")
 
     user = User(
-        id=target_user_id,
+        id=new_user_id(db),
+        login_name=login_name,
         email=(body.email or "").strip() or None,
         display_name=(body.display_name or "").strip() or None,
         is_admin=bool(body.is_admin),
@@ -764,7 +852,7 @@ def create_user(request: Request, db: DbDep, user_id: AuthenticatedUserIdDep, bo
         raw_password = generated_password
 
     pwd = UserPassword(
-        user_id=target_user_id,
+        user_id=user.id,
         password_hash=hash_password(raw_password),
         password_updated_at=utc_now(),
         disabled_at=None,

@@ -22,7 +22,7 @@ from app.db.migrations import ensure_db_schema
 from app.db.session import SessionLocal
 from app.llm.http_client import close_llm_http_client
 from app.models.user import User
-from app.services.auth_service import ensure_admin_user
+from app.services.auth_service import ensure_admin_user, validate_login_name
 from app.services.project_task_runtime_service import start_project_task_watchdog, stop_project_task_watchdog
 from app.services.user_activity_service import touch_user_activity
 
@@ -93,7 +93,7 @@ def _ensure_local_user() -> None:
     try:
         user = db.get(User, fallback_user_id)
         if user is None:
-            db.add(User(id=fallback_user_id, display_name="本地用户"))
+            db.add(User(id=fallback_user_id, login_name=validate_login_name(fallback_user_id), display_name="本地用户"))
             db.commit()
     finally:
         db.close()

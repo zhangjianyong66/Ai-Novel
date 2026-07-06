@@ -6,7 +6,6 @@ import { UI_COPY } from "../lib/uiCopy";
 import { DebugDetails } from "../components/atelier/DebugPageShell";
 import { ApiError } from "../services/apiClient";
 import { fetchAuthProviders } from "../services/authProviders";
-import { DEFAULT_USER_ID, getCurrentUserId } from "../services/currentUser";
 import { useToast } from "../components/ui/toast";
 
 function safeNextPath(value: string | null): string {
@@ -35,18 +34,18 @@ export function LoginPage() {
   }, [oidcError, oidcRequestId, searchParams, setSearchParams, toast]);
 
   const [form, setForm] = useState(() => ({
-    userId: getCurrentUserId() === DEFAULT_USER_ID ? "" : getCurrentUserId(),
+    loginName: "",
     password: "",
   }));
   const [busy, setBusy] = useState(false);
-  const submitDisabled = busy || !form.userId.trim() || !form.password;
+  const submitDisabled = busy || !form.loginName.trim() || !form.password;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitDisabled) return;
     setBusy(true);
     try {
-      await auth.login({ userId: form.userId.trim(), password: form.password });
+      await auth.login({ loginName: form.loginName.trim(), password: form.password });
       toast.toastSuccess(UI_COPY.auth.loginSuccess);
       navigate(nextPath, { replace: true });
     } catch (e) {
@@ -116,9 +115,9 @@ export function LoginPage() {
                   <span className="text-xs text-subtext">{UI_COPY.auth.userIdLabel}</span>
                   <input
                     className="input"
-                    name="user_id"
-                    value={form.userId}
-                    onChange={(e) => setForm((v) => ({ ...v, userId: e.target.value }))}
+                    name="login_name"
+                    value={form.loginName}
+                    onChange={(e) => setForm((v) => ({ ...v, loginName: e.target.value }))}
                     autoComplete="username"
                     autoCapitalize="off"
                     spellCheck={false}
@@ -145,7 +144,7 @@ export function LoginPage() {
                 <button
                   className="btn btn-secondary"
                   onClick={() => {
-                    setForm({ userId: "", password: "" });
+                    setForm({ loginName: "", password: "" });
                   }}
                   type="button"
                 >

@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 
 export type AuthUser = {
   id: string;
+  loginName: string;
   displayName: string;
   isAdmin: boolean;
 };
@@ -52,8 +53,8 @@ export function computeNextAuthRefreshDelayMs({
 
 export type AuthApi = AuthState & {
   refresh: (opts?: { silent?: boolean }) => Promise<void>;
-  login: (args: { userId: string; password: string }) => Promise<void>;
-  register: (args: { userId: string; password: string; displayName?: string; email?: string }) => Promise<void>;
+  login: (args: { loginName: string; password: string }) => Promise<void>;
+  register: (args: { loginName: string; password: string; displayName?: string; email?: string }) => Promise<void>;
   logout: () => Promise<void>;
 };
 

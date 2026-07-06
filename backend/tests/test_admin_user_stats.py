@@ -127,7 +127,7 @@ class TestAdminUserStats(unittest.TestCase):
             db.commit()
 
     def _login_as_admin(self, client: TestClient) -> None:
-        resp = client.post("/api/auth/local/login", json={"user_id": "admin", "password": "admin-password-123"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "admin", "password": "admin-password-123"})
         self.assertEqual(resp.status_code, 200)
 
     def test_admin_users_endpoint_returns_summary_and_stats(self) -> None:
@@ -152,6 +152,7 @@ class TestAdminUserStats(unittest.TestCase):
         users = data["users"]
         self.assertGreaterEqual(len(users), 1)
         first = users[0]
+        self.assertIn("login_name", first)
         self.assertIn("activity", first)
         self.assertIn("usage", first)
         self.assertIn("online", first["activity"])

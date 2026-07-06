@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { useConfirm } from "../components/ui/confirm";
 import { useToast } from "../components/ui/toast";
@@ -27,6 +27,7 @@ type AdminUserUsage = {
 
 type AdminUser = {
   id: string;
+  login_name: string;
   email: string | null;
   display_name: string | null;
   is_admin: boolean;
@@ -65,11 +66,17 @@ type AdminUsersResponse = {
 };
 
 type CreateUserForm = {
-  user_id: string;
+  login_name: string;
   display_name: string;
   email: string;
   is_admin: boolean;
   password: string;
+};
+
+type EditUserForm = {
+  login_name: string;
+  display_name: string;
+  email: string;
 };
 
 function fmtDateTime(value: string | null | undefined): string {
@@ -97,8 +104,10 @@ export function AdminUsersPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
 
-  type RowBusy = { resetPassword?: number; toggleDisabled?: number };
+  type RowBusy = { resetPassword?: number; toggleDisabled?: number; updateProfile?: number; toggleAdmin?: number };
   const [rowBusy, setRowBusy] = useState<Record<string, RowBusy>>({});
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditUserForm>({ login_name: "", display_name: "", email: "" });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [summary, setSummary] = useState<AdminUsersSummary>({
     generated_at: null,
@@ -120,7 +129,7 @@ export function AdminUsersPage() {
   });
   const [tempPasswords, setTempPasswords] = useState<Record<string, string>>({});
   const [form, setForm] = useState<CreateUserForm>({
-    user_id: "",
+    login_name: "",
     display_name: "",
     email: "",
     is_admin: false,
@@ -128,6 +137,7 @@ export function AdminUsersPage() {
   });
 
   const canManage = auth.status === "authenticated" && Boolean(auth.user?.isAdmin);
+  const currentUserId = auth.status === "authenticated" ? auth.user?.id : null;
 
   const bumpRowBusy = useCallback((userId: string, action: keyof RowBusy, delta: number) => {
     setRowBusy((prev) => {
@@ -199,9 +209,9 @@ export function AdminUsersPage() {
 
   const createUser = useCallback(async () => {
     if (!canManage) return;
-    const userId = form.user_id.trim();
-    if (!userId) {
-      toast.toastError("用户 ID 不能为空");
+    const loginName = form.login_name.trim();
+    if (!loginName) {
+      toast.toastError("登录用户名不能为空");
       return;
     }
     setCreatingUser(true);
@@ -209,7 +219,7 @@ export function AdminUsersPage() {
       const res = await apiJson<{ user: AdminUser; temp_password: string | null }>("/api/auth/admin/users", {
         method: "POST",
         body: JSON.stringify({
-          user_id: userId,
+          login_name: loginName,
           display_name: form.display_name.trim() || null,
           email: form.email.trim() || null,
           is_admin: Boolean(form.is_admin),
@@ -221,9 +231,9 @@ export function AdminUsersPage() {
         setTempPasswords((v) => ({ ...v, [user.id]: res.data.temp_password ?? "" }));
       }
       toast.toastSuccess("用户已创建", res.request_id);
-      setForm((v) => ({ ...v, user_id: "", password: "" }));
-      setSearchInput(userId);
-      setSearchQuery(userId);
+      setForm((v) => ({ ...v, login_name: "", password: "" }));
+      setSearchInput(loginName);
+      setSearchQuery(loginName);
       setOnlineOnly(false);
       setCursor(null);
       setCursorHistory([]);
@@ -236,7 +246,94 @@ export function AdminUsersPage() {
     } finally {
       setCreatingUser(false);
     }
-  }, [canManage, form.display_name, form.email, form.is_admin, form.password, form.user_id, toast]);
+  }, [canManage, form.display_name, form.email, form.is_admin, form.login_name, form.password, toast]);
+
+  const beginEdit = useCallback((user: AdminUser) => {
+    setEditingUserId(user.id);
+    setEditForm({
+      login_name: user.login_name || user.id,
+      display_name: user.display_name ?? "",
+      email: user.email ?? "",
+    });
+  }, []);
+
+  const saveProfile = useCallback(
+    async (targetUserId: string) => {
+      if (!canManage) return;
+      const loginName = editForm.login_name.trim();
+      if (!loginName) {
+        toast.toastError("登录用户名不能为空");
+        return;
+      }
+      bumpRowBusy(targetUserId, "updateProfile", 1);
+      try {
+        await apiJson<{ user: AdminUser }>(`/api/auth/admin/users/${targetUserId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            login_name: loginName,
+            display_name: editForm.display_name.trim() || null,
+            email: editForm.email.trim() || null,
+          }),
+        });
+        toast.toastSuccess("用户资料已更新");
+        setEditingUserId(null);
+        await load();
+        if (targetUserId === currentUserId) void auth.refresh({ silent: true });
+      } catch (e) {
+        const err =
+          e instanceof ApiError
+            ? e
+            : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      } finally {
+        bumpRowBusy(targetUserId, "updateProfile", -1);
+      }
+    },
+    [
+      auth,
+      bumpRowBusy,
+      canManage,
+      currentUserId,
+      editForm.display_name,
+      editForm.email,
+      editForm.login_name,
+      load,
+      toast,
+    ],
+  );
+
+  const setAdmin = useCallback(
+    async (targetUserId: string, isAdmin: boolean) => {
+      if (!canManage) return;
+      const ok = await confirm.confirm({
+        title: isAdmin ? "设为管理员？" : "撤销管理员？",
+        description: isAdmin ? "该用户将获得用户管理等管理员权限。" : "该用户将失去管理员权限。",
+        confirmText: isAdmin ? "设为管理员" : "撤销管理员",
+        cancelText: "取消",
+        danger: !isAdmin,
+      });
+      if (!ok) return;
+      bumpRowBusy(targetUserId, "toggleAdmin", 1);
+      try {
+        await apiJson<{ user: AdminUser }>(`/api/auth/admin/users/${targetUserId}/admin`, {
+          method: "POST",
+          body: JSON.stringify({ is_admin: isAdmin }),
+        });
+        toast.toastSuccess(isAdmin ? "已设为管理员" : "已撤销管理员");
+        await load();
+        if (targetUserId === currentUserId) void auth.refresh({ silent: true });
+      } catch (e) {
+        const err =
+          e instanceof ApiError
+            ? e
+            : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      } finally {
+        bumpRowBusy(targetUserId, "toggleAdmin", -1);
+      }
+    },
+    [auth, bumpRowBusy, canManage, confirm, currentUserId, load, toast],
+  );
 
   const resetPassword = useCallback(
     async (targetUserId: string) => {
@@ -494,12 +591,12 @@ export function AdminUsersPage() {
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <label className="text-sm text-ink">
-            <div className="text-xs text-subtext">用户 ID（user_id）</div>
+            <div className="text-xs text-subtext">登录用户名（login_name）</div>
             <input
-              id="admin_users_user_id"
+              id="admin_users_login_name"
               className="input mt-1"
-              value={form.user_id}
-              onChange={(e) => setForm((v) => ({ ...v, user_id: e.target.value }))}
+              value={form.login_name}
+              onChange={(e) => setForm((v) => ({ ...v, login_name: e.target.value }))}
               placeholder="例如：admin2"
             />
           </label>
@@ -576,7 +673,8 @@ export function AdminUsersPage() {
                     {u.activity?.online ? "在线" : "离线"}
                   </span>
                 </div>
-                <div className="mt-1 break-all font-mono text-xs text-subtext">{u.id}</div>
+                <div className="mt-1 break-all font-mono text-xs text-ink">{u.login_name}</div>
+                <div className="mt-1 break-all font-mono text-[11px] text-subtext">ID: {u.id}</div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-subtext">
                   <span>管理员：{humanizeYesNo(u.is_admin)}</span>
                   <span>已禁用：{humanizeYesNo(u.disabled)}</span>
@@ -587,6 +685,17 @@ export function AdminUsersPage() {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
+                <button className="btn btn-secondary btn-sm" onClick={() => beginEdit(u)} type="button">
+                  编辑资料
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={Boolean(rowBusy[u.id]?.toggleAdmin)}
+                  onClick={() => void setAdmin(u.id, !u.is_admin)}
+                  type="button"
+                >
+                  {u.is_admin ? "撤销管理员" : "设为管理员"}
+                </button>
                 {tempPasswords[u.id] ? (
                   <button
                     className="btn btn-secondary btn-sm"
@@ -615,6 +724,42 @@ export function AdminUsersPage() {
                   {u.disabled ? "启用" : "禁用"}
                 </button>
               </div>
+              {editingUserId === u.id ? (
+                <div className="mt-3 grid gap-2 rounded-atelier border border-border bg-surface p-3">
+                  <input
+                    className="input"
+                    disabled={u.id === "admin"}
+                    value={editForm.login_name}
+                    onChange={(e) => setEditForm((v) => ({ ...v, login_name: e.target.value }))}
+                    placeholder="登录用户名"
+                  />
+                  <input
+                    className="input"
+                    value={editForm.display_name}
+                    onChange={(e) => setEditForm((v) => ({ ...v, display_name: e.target.value }))}
+                    placeholder="显示名"
+                  />
+                  <input
+                    className="input"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm((v) => ({ ...v, email: e.target.value }))}
+                    placeholder="邮箱"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingUserId(null)} type="button">
+                      取消
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={Boolean(rowBusy[u.id]?.updateProfile)}
+                      onClick={() => void saveProfile(u.id)}
+                      type="button"
+                    >
+                      保存
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
           {visibleUsers.length === 0 ? <div className="p-2 text-xs text-subtext">暂无数据</div> : null}
@@ -625,7 +770,10 @@ export function AdminUsersPage() {
             <thead className="text-xs text-subtext">
               <tr>
                 <th className="py-2 pr-3" scope="col">
-                  用户 ID
+                  登录用户名
+                </th>
+                <th className="py-2 pr-3" scope="col">
+                  内部 ID
                 </th>
                 <th className="py-2 pr-3" scope="col">
                   显示名
@@ -658,65 +806,123 @@ export function AdminUsersPage() {
             </thead>
             <tbody>
               {visibleUsers.map((u) => (
-                <tr key={u.id} className="border-t border-border">
-                  <td className="py-2 pr-3 break-all font-mono text-xs">{u.id}</td>
-                  <td className="py-2 pr-3">{u.display_name ?? "-"}</td>
-                  <td className="py-2 pr-3">{humanizeYesNo(u.is_admin)}</td>
-                  <td className="py-2 pr-3">{humanizeYesNo(u.disabled)}</td>
-                  <td className="py-2 pr-3">
-                    <span
-                      className={
-                        u.activity?.online
-                          ? "rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700"
-                          : "rounded-full bg-slate-500/15 px-2 py-0.5 text-xs text-subtext"
-                      }
-                    >
-                      {u.activity?.online ? "在线" : "离线"}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-xs text-subtext">{fmtDateTime(u.activity?.last_seen_at)}</td>
-                  <td className="py-2 pr-3">{fmtCount(u.usage?.total_generation_calls ?? 0)}</td>
-                  <td className="py-2 pr-3">{fmtCount(u.usage?.total_generated_chars ?? 0)}</td>
-                  <td className="py-2 pr-3">
-                    {tempPasswords[u.id] ? (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        disabled={Boolean(rowBusy[u.id]?.resetPassword)}
-                        onClick={() => void copyTempPassword(u.id)}
-                        type="button"
+                <Fragment key={u.id}>
+                  <tr className="border-t border-border">
+                    <td className="py-2 pr-3 break-all font-mono text-xs text-ink">{u.login_name}</td>
+                    <td className="py-2 pr-3 break-all font-mono text-[11px] text-subtext">{u.id}</td>
+                    <td className="py-2 pr-3">{u.display_name ?? "-"}</td>
+                    <td className="py-2 pr-3">{humanizeYesNo(u.is_admin)}</td>
+                    <td className="py-2 pr-3">{humanizeYesNo(u.disabled)}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={
+                          u.activity?.online
+                            ? "rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700"
+                            : "rounded-full bg-slate-500/15 px-2 py-0.5 text-xs text-subtext"
+                        }
                       >
-                        复制并隐藏
-                      </button>
-                    ) : (
-                      <span className="text-subtext">-</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        disabled={Boolean(rowBusy[u.id]?.resetPassword)}
-                        onClick={() => void resetPassword(u.id)}
-                        type="button"
-                        title="将生成一次性密码（仅显示在本页，建议立即复制）。"
-                      >
-                        重置密码
-                      </button>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        disabled={Boolean(rowBusy[u.id]?.toggleDisabled)}
-                        onClick={() => void setDisabled(u.id, !u.disabled)}
-                        type="button"
-                      >
-                        {u.disabled ? "启用" : "禁用"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                        {u.activity?.online ? "在线" : "离线"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-xs text-subtext">{fmtDateTime(u.activity?.last_seen_at)}</td>
+                    <td className="py-2 pr-3">{fmtCount(u.usage?.total_generation_calls ?? 0)}</td>
+                    <td className="py-2 pr-3">{fmtCount(u.usage?.total_generated_chars ?? 0)}</td>
+                    <td className="py-2 pr-3">
+                      {tempPasswords[u.id] ? (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={Boolean(rowBusy[u.id]?.resetPassword)}
+                          onClick={() => void copyTempPassword(u.id)}
+                          type="button"
+                        >
+                          复制并隐藏
+                        </button>
+                      ) : (
+                        <span className="text-subtext">-</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn btn-secondary btn-sm" onClick={() => beginEdit(u)} type="button">
+                          编辑资料
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={Boolean(rowBusy[u.id]?.toggleAdmin)}
+                          onClick={() => void setAdmin(u.id, !u.is_admin)}
+                          type="button"
+                        >
+                          {u.is_admin ? "撤销管理员" : "设为管理员"}
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={Boolean(rowBusy[u.id]?.resetPassword)}
+                          onClick={() => void resetPassword(u.id)}
+                          type="button"
+                          title="将生成一次性密码（仅显示在本页，建议立即复制）。"
+                        >
+                          重置密码
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={Boolean(rowBusy[u.id]?.toggleDisabled)}
+                          onClick={() => void setDisabled(u.id, !u.disabled)}
+                          type="button"
+                        >
+                          {u.disabled ? "启用" : "禁用"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {editingUserId === u.id ? (
+                    <tr className="border-t border-border bg-canvas">
+                      <td className="py-3 pr-3" colSpan={11}>
+                        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto]">
+                          <input
+                            className="input"
+                            disabled={u.id === "admin"}
+                            value={editForm.login_name}
+                            onChange={(e) => setEditForm((v) => ({ ...v, login_name: e.target.value }))}
+                            placeholder="登录用户名"
+                          />
+                          <input
+                            className="input"
+                            value={editForm.display_name}
+                            onChange={(e) => setEditForm((v) => ({ ...v, display_name: e.target.value }))}
+                            placeholder="显示名"
+                          />
+                          <input
+                            className="input"
+                            value={editForm.email}
+                            onChange={(e) => setEditForm((v) => ({ ...v, email: e.target.value }))}
+                            placeholder="邮箱"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setEditingUserId(null)}
+                              type="button"
+                            >
+                              取消
+                            </button>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              disabled={Boolean(rowBusy[u.id]?.updateProfile)}
+                              onClick={() => void saveProfile(u.id)}
+                              type="button"
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
               {visibleUsers.length === 0 ? (
                 <tr>
-                  <td className="py-3 text-xs text-subtext" colSpan={10}>
+                  <td className="py-3 text-xs text-subtext" colSpan={11}>
                     暂无数据
                   </td>
                 </tr>

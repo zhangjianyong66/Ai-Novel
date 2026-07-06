@@ -86,12 +86,16 @@ class TestRequestSchemaFailClosedPhase1(unittest.TestCase):
     def test_auth_login_rejects_unknown_field(self) -> None:
         client = TestClient(self.app)
 
-        ok = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        ok = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(ok.status_code, 200)
 
-        bad = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123", "extra": "x"})
+        bad = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123", "extra": "x"})
         self.assertEqual(bad.status_code, 400)
         self.assertEqual(bad.json()["error"]["code"], "VALIDATION_ERROR")
+
+        legacy = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        self.assertEqual(legacy.status_code, 400)
+        self.assertEqual(legacy.json()["error"]["code"], "VALIDATION_ERROR")
 
     def test_projects_update_rejects_unknown_field(self) -> None:
         client = TestClient(self.app)

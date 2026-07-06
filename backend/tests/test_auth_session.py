@@ -17,7 +17,8 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.db.utils import utc_now
-from app.main import app_error_handler, auth_session_middleware
+from app.main import app_error_handler, auth_session_middleware, validation_error_handler
+from fastapi.exceptions import RequestValidationError
 from app.models.user import User
 from app.models.user_password import UserPassword
 from app.services.auth_service import hash_password
@@ -33,6 +34,7 @@ def _make_test_app(SessionLocal: sessionmaker) -> FastAPI:
 
     app.middleware("http")(auth_session_middleware)
     app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(auth_router, prefix="/api")
 
     def _override_get_db() -> Generator[Session, None, None]:
@@ -84,9 +86,17 @@ class TestAuthEndpoints(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
         self.app = _make_test_app(self.SessionLocal)
 
-    def _seed_user(self, *, user_id: str, password: str, is_admin: bool = False, disabled: bool = False) -> None:
+    def _seed_user(
+        self,
+        *,
+        user_id: str,
+        password: str,
+        is_admin: bool = False,
+        disabled: bool = False,
+        login_name: str | None = None,
+    ) -> None:
         with self.SessionLocal() as db:
-            user = User(id=user_id, display_name=user_id, is_admin=is_admin)
+            user = User(id=user_id, login_name=login_name or user_id, display_name=user_id, is_admin=is_admin)
             db.add(user)
             db.add(
                 UserPassword(
@@ -104,9 +114,9 @@ class TestAuthEndpoints(unittest.TestCase):
         self.assertEqual(resp.json()["error"]["code"], "UNAUTHORIZED")
 
     def test_login_then_auth_user(self) -> None:
-        self._seed_user(user_id="u1", password="password123")
+        self._seed_user(user_id="stable-u1", login_name="u1", password="password123")
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp.status_code, 200)
         self.assertIsNotNone(client.cookies.get(settings.auth_cookie_user_id_name))
         self.assertIsNotNone(client.cookies.get(settings.auth_cookie_expire_at_name))
@@ -114,13 +124,21 @@ class TestAuthEndpoints(unittest.TestCase):
         resp2 = client.get("/api/auth/user")
         self.assertEqual(resp2.status_code, 200)
         data = resp2.json()["data"]
-        self.assertEqual(data["user"]["id"], "u1")
+        self.assertEqual(data["user"]["id"], "stable-u1")
+        self.assertEqual(data["user"]["login_name"], "u1")
         self.assertIn("session", data)
+
+    def test_login_rejects_legacy_user_id_payload(self) -> None:
+        self._seed_user(user_id="stable-u1", login_name="u1", password="password123")
+        client = TestClient(self.app)
+        resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["error"]["code"], "VALIDATION_ERROR")
 
     def test_login_rejects_wrong_password_without_hash_leak(self) -> None:
         self._seed_user(user_id="u1", password="password123")
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "wrong-password"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "wrong-password"})
         self.assertEqual(resp.status_code, 401)
         body = resp.json()
         self.assertEqual(body["error"]["code"], "UNAUTHORIZED")
@@ -130,12 +148,12 @@ class TestAuthEndpoints(unittest.TestCase):
     def test_disabled_user_cannot_login(self) -> None:
         self._seed_user(user_id="u1", password="password123", disabled=True)
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp.status_code, 401)
 
     def test_register_then_auth_user(self) -> None:
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/register", json={"user_id": "u2", "password": "password123"})
+        resp = client.post("/api/auth/local/register", json={"login_name": "u2", "password": "password123"})
         self.assertEqual(resp.status_code, 200)
         self.assertIsNotNone(client.cookies.get(settings.auth_cookie_user_id_name))
         self.assertIsNotNone(client.cookies.get(settings.auth_cookie_expire_at_name))
@@ -143,32 +161,39 @@ class TestAuthEndpoints(unittest.TestCase):
         resp2 = client.get("/api/auth/user")
         self.assertEqual(resp2.status_code, 200)
         data = resp2.json()["data"]
-        self.assertEqual(data["user"]["id"], "u2")
+        self.assertNotEqual(data["user"]["id"], "u2")
+        self.assertEqual(data["user"]["login_name"], "u2")
 
     def test_register_rejects_existing_user(self) -> None:
         self._seed_user(user_id="u1", password="password123")
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/register", json={"user_id": "u1", "password": "password123"})
+        resp = client.post("/api/auth/local/register", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp.status_code, 409)
         self.assertEqual(resp.json()["error"]["code"], "CONFLICT")
+
+    def test_register_rejects_legacy_user_id_payload(self) -> None:
+        client = TestClient(self.app)
+        resp = client.post("/api/auth/local/register", json={"user_id": "u2", "password": "password123"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["error"]["code"], "VALIDATION_ERROR")
 
     def test_register_rejects_reserved_admin_user_id(self) -> None:
         admin_id = str(settings.auth_admin_user_id or "admin").strip() or "admin"
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/register", json={"user_id": admin_id, "password": "password123"})
+        resp = client.post("/api/auth/local/register", json={"login_name": admin_id, "password": "password123"})
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "FORBIDDEN")
 
     def test_register_rejects_short_password(self) -> None:
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/register", json={"user_id": "u2", "password": "short"})
+        resp = client.post("/api/auth/local/register", json={"login_name": "u2", "password": "short"})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.json()["error"]["code"], "VALIDATION_ERROR")
 
     def test_change_password(self) -> None:
         self._seed_user(user_id="u1", password="password123")
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp.status_code, 200)
 
         resp2 = client.post(
@@ -178,9 +203,9 @@ class TestAuthEndpoints(unittest.TestCase):
         self.assertEqual(resp2.status_code, 200)
 
         client.post("/api/auth/logout")
-        resp_old = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        resp_old = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp_old.status_code, 401)
-        resp_new = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "new-password-123"})
+        resp_new = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "new-password-123"})
         self.assertEqual(resp_new.status_code, 200)
 
     def test_admin_can_disable_user(self) -> None:
@@ -188,15 +213,64 @@ class TestAuthEndpoints(unittest.TestCase):
         self._seed_user(user_id="u1", password="password123")
 
         client = TestClient(self.app)
-        resp = client.post("/api/auth/local/login", json={"user_id": "admin", "password": "admin-password-123"})
+        resp = client.post("/api/auth/local/login", json={"login_name": "admin", "password": "admin-password-123"})
         self.assertEqual(resp.status_code, 200)
 
         resp2 = client.post("/api/auth/admin/users/u1/disable", json={"disabled": True})
         self.assertEqual(resp2.status_code, 200)
 
         client.post("/api/auth/logout")
-        resp3 = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+        resp3 = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
         self.assertEqual(resp3.status_code, 401)
+
+    def test_admin_can_update_user_profile_login_name_and_admin_flag(self) -> None:
+        self._seed_user(user_id="admin", password="admin-password-123", is_admin=True)
+        self._seed_user(user_id="stable-u1", login_name="u1", password="password123")
+
+        client = TestClient(self.app)
+        resp = client.post("/api/auth/local/login", json={"login_name": "admin", "password": "admin-password-123"})
+        self.assertEqual(resp.status_code, 200)
+
+        update_resp = client.patch(
+            "/api/auth/admin/users/stable-u1",
+            json={"login_name": "renamed_u1", "display_name": "新显示名", "email": "renamed@example.com"},
+        )
+        self.assertEqual(update_resp.status_code, 200)
+        user = update_resp.json()["data"]["user"]
+        self.assertEqual(user["id"], "stable-u1")
+        self.assertEqual(user["login_name"], "renamed_u1")
+        self.assertEqual(user["display_name"], "新显示名")
+        self.assertEqual(user["email"], "renamed@example.com")
+
+        client.post("/api/auth/logout")
+        old_login = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
+        self.assertEqual(old_login.status_code, 401)
+        new_login = client.post("/api/auth/local/login", json={"login_name": "renamed_u1", "password": "password123"})
+        self.assertEqual(new_login.status_code, 200)
+
+        client.post("/api/auth/logout")
+        admin_login = client.post("/api/auth/local/login", json={"login_name": "admin", "password": "admin-password-123"})
+        self.assertEqual(admin_login.status_code, 200)
+        admin_resp = client.post("/api/auth/admin/users/stable-u1/admin", json={"is_admin": True})
+        self.assertEqual(admin_resp.status_code, 200)
+        self.assertTrue(admin_resp.json()["data"]["user"]["is_admin"])
+
+    def test_admin_protection_rejects_self_revoke_and_super_admin_mutation(self) -> None:
+        self._seed_user(user_id="admin", password="admin-password-123", is_admin=True)
+        self._seed_user(user_id="u1", password="password123")
+
+        client = TestClient(self.app)
+        resp = client.post("/api/auth/local/login", json={"login_name": "admin", "password": "admin-password-123"})
+        self.assertEqual(resp.status_code, 200)
+
+        self_revoke = client.post("/api/auth/admin/users/admin/admin", json={"is_admin": False})
+        self.assertEqual(self_revoke.status_code, 403)
+
+        rename_admin = client.patch("/api/auth/admin/users/admin", json={"login_name": "root"})
+        self.assertEqual(rename_admin.status_code, 403)
+
+        disable_admin = client.post("/api/auth/admin/users/admin/disable", json={"disabled": True})
+        self.assertEqual(disable_admin.status_code, 403)
 
     def test_refresh_extends_when_near_expiry(self) -> None:
         client = TestClient(self.app)
@@ -216,7 +290,7 @@ class TestAuthEndpoints(unittest.TestCase):
         client = TestClient(self.app)
 
         with patch.object(settings, "app_env", "prod"), patch.object(settings, "auth_cookie_samesite", "strict"):
-            resp = client.post("/api/auth/local/login", json={"user_id": "u1", "password": "password123"})
+            resp = client.post("/api/auth/local/login", json={"login_name": "u1", "password": "password123"})
 
         self.assertEqual(resp.status_code, 200)
         cookie_headers = resp.headers.get_list("set-cookie")

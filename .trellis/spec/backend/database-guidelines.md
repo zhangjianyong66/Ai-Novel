@@ -53,3 +53,66 @@
 - 不要在服务函数里隐式吞掉数据库异常；让 `SQLAlchemyError` 进入全局处理器或转换为明确 `AppError`。
 - 不要在生产环境依赖 SQLite 多 worker。
 - 不要把 API Key 明文、密钥材料或大体积生成内容写入迁移脚本日志。
+
+## Scenario: 登录用户名与稳定用户 ID 分离
+
+### 1. Scope / Trigger
+
+- Trigger: 认证、用户管理、Linux.do OIDC 或用户表迁移相关改动。
+- 目标：`users.id` 是稳定内部用户 ID 和外键目标；本地可登录、可修改的用户名存储在 `users.login_name`。
+
+### 2. Signatures
+
+- DB: `users.id: String(64) primary key`，`users.login_name: String(64) unique not null`。
+- API: `POST /api/auth/local/login` 请求 `{ login_name, password }`。
+- API: `POST /api/auth/local/register` 请求 `{ login_name, password, display_name?, email? }`。
+- API: `POST /api/auth/admin/users` 请求 `{ login_name, display_name?, email?, is_admin?, password? }`。
+- API: 用户响应对象必须同时返回稳定 `id` 和 `login_name`。
+
+### 3. Contracts
+
+- `login_name` 由后端统一 `trim + lower` 归一化。
+- `login_name` 只允许 `a-z`、`0-9`、`_`、`-`，长度 1 到 64。
+- 新建本地用户时 `users.id` 由系统生成，不能直接等于或依赖 `login_name`。
+- 历史用户迁移只回填 `login_name`，不得修改历史 `users.id`。
+- Linux.do OIDC 通过 `auth_external_accounts.user_id -> users.id` 绑定稳定账号；修改 `login_name` 不应影响外部账号登录。
+
+### 4. Validation & Error Matrix
+
+- 缺少 `login_name` 或提交旧 `user_id` 登录名字段 -> `VALIDATION_ERROR`。
+- `login_name` 为空、超长或包含非法字符 -> `VALIDATION_ERROR`。
+- 归一化后的 `login_name` 已存在 -> `CONFLICT`。
+- 普通注册使用超级管理员登录名（默认 `admin`） -> `FORBIDDEN`。
+- 禁用、改登录名或撤销超级管理员管理员权限 -> `FORBIDDEN`。
+- 管理员撤销自己的管理员权限 -> `FORBIDDEN`。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 用户管理页修改 `login_name` 后，旧登录名不能再登录，新登录名可以登录，`users.id` 不变。
+- Base: 现有用户迁移后仍能用原用户名登录，因为 `login_name` 初始回填为历史 `users.id` 的规范化值。
+- Bad: 直接修改 `users.id` 来实现改用户名，会破坏外键、会话和 Linux.do 外部账号绑定。
+
+### 6. Tests Required
+
+- 认证测试断言 `login_name` 登录/注册成功，旧 `user_id` 登录名入参被拒绝。
+- 管理员测试断言可修改 `login_name/display_name/email`，旧登录名失效，新登录名生效。
+- 管理员权限测试断言不能撤销自己，不能禁用/改名/降权超级管理员。
+- OIDC 测试断言修改 `login_name` 后再次 Linux.do 登录仍进入同一 `users.id`，不创建重复用户。
+- 迁移测试断言历史用户回填 `login_name`、唯一索引存在、冲突历史 ID 有确定性兜底。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+user = db.get(User, body.user_id)
+session = build_session(user_id=user.id)
+```
+
+#### Correct
+
+```python
+login_name = validate_login_name(body.login_name)
+user = get_user_by_login_name(db, login_name)
+session = build_session(user_id=user.id)
+```

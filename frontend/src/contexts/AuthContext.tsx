@@ -4,14 +4,14 @@ import { ApiError, apiJson } from "../services/apiClient";
 import { DEFAULT_USER_ID, clearCurrentUserId, setCurrentUserId } from "../services/currentUser";
 import { AuthContext, computeNextAuthRefreshDelayMs, type AuthSession, type AuthState, type AuthUser } from "./auth";
 
-type AuthUserApi = { id: string; display_name: string; is_admin: boolean };
+type AuthUserApi = { id: string; login_name: string; display_name: string; is_admin: boolean };
 
 function mapUser(user: AuthUserApi): AuthUser {
-  return { id: user.id, displayName: user.display_name, isAdmin: Boolean(user.is_admin) };
+  return { id: user.id, loginName: user.login_name, displayName: user.display_name, isAdmin: Boolean(user.is_admin) };
 }
 
 function fallbackUser(): AuthUser {
-  return { id: DEFAULT_USER_ID, displayName: "本地用户", isAdmin: false };
+  return { id: DEFAULT_USER_ID, loginName: DEFAULT_USER_ID, displayName: "本地用户", isAdmin: false };
 }
 
 function devFallbackEnabled(): boolean {
@@ -85,10 +85,10 @@ export function AuthProvider(props: { children: React.ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async ({ userId, password }: { userId: string; password: string }) => {
+  const login = useCallback(async ({ loginName, password }: { loginName: string; password: string }) => {
     const res = await apiJson<{ user: AuthUserApi; session: { expire_at: number } | null }>("/api/auth/local/login", {
       method: "POST",
-      body: JSON.stringify({ user_id: userId.trim(), password }),
+      body: JSON.stringify({ login_name: loginName.trim(), password }),
     });
     const user = mapUser(res.data.user);
     setCurrentUserId(user.id);
@@ -97,12 +97,12 @@ export function AuthProvider(props: { children: React.ReactNode }) {
 
   const register = useCallback(
     async ({
-      userId,
+      loginName,
       password,
       displayName,
       email,
     }: {
-      userId: string;
+      loginName: string;
       password: string;
       displayName?: string;
       email?: string;
@@ -112,7 +112,7 @@ export function AuthProvider(props: { children: React.ReactNode }) {
         {
           method: "POST",
           body: JSON.stringify({
-            user_id: userId.trim(),
+            login_name: loginName.trim(),
             password,
             display_name: displayName,
             email,

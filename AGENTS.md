@@ -63,6 +63,8 @@
 - 项目包导入上传大小上限由 `PROJECT_BUNDLE_IMPORT_MAX_BYTES` 配置，未配置或配置为非正数时默认 `52428800` 字节（50MB），后端会把过大的异常配置钳制到 500MB。
 - 前端通过 `GET /api/projects/import_bundle/config` 获取项目包导入限制和支持的 `schema_version`，本地预检失败时使用 50MB 兜底。
 - 项目包导入服务使用裸外键 ID 批量创建多张表时，不能依赖 SQLAlchemy 自动推断父子表 flush 顺序；PostgreSQL 会严格检查外键。新增导入实体时，父表应先 `db.flush()` 后再创建依赖子表，并在 roundtrip 测试里启用 SQLite `PRAGMA foreign_keys=ON` 覆盖该类问题。
+- 项目包属于“可继续写作”迁移协议，导出导入章节时必须保留 `chapter_versions` 历史和 `chapters.active_version_id` 映射；导入时先创建章节，再创建版本，最后回填激活版本，避免外键指向旧项目或未创建版本。
+- 项目包导出导入 `StoryMemory` 时必须保留并映射 `scope` 和 `outline_id`；`scope=outline` 应映射到新项目对应大纲，无法映射时降级为 `unassigned` 且清空 `outline_id`，`project`/`unassigned` 不应携带大纲 ID。
 - 世界书 `priority` 的当前合法值是 `drop_first`、`optional`、`important`、`must`；历史数据或旧项目包可能含有 `normal`，API 输出、预览和项目包导入导出边界应兼容并规范化为 `important`，避免 Pydantic 响应模型报 `INTERNAL_ERROR`。
 
 ## Vector RAG 约定

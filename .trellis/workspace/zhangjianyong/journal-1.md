@@ -631,3 +631,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 用户管理登录名与管理员权限
+
+**Date**: 2026-07-06
+**Task**: 用户管理登录名与管理员权限
+**Branch**: `main`
+
+### Summary
+
+新增稳定内部用户 ID 与可修改 login_name 分离模型，更新本地登录/注册/管理员用户管理接口和前端页面，补充迁移、OIDC 绑定、管理员保护与请求 schema 测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ff4a2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

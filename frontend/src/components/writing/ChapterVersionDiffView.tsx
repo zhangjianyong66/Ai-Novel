@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
 import {
@@ -15,8 +16,8 @@ type Props = {
 };
 
 function tokenClassName(token: ChapterVersionDiffToken): string {
-  if (token.kind === "added") return "rounded bg-success/15 text-success";
-  if (token.kind === "removed") return "rounded bg-danger/15 text-danger line-through decoration-danger/70";
+  if (token.kind === "added") return "rounded-sm bg-success/10 px-0.5 text-success";
+  if (token.kind === "removed") return "rounded-sm bg-danger/10 px-0.5 text-danger line-through decoration-danger/60";
   return "";
 }
 
@@ -31,29 +32,50 @@ function renderTokens(tokens: ChapterVersionDiffToken[] | undefined, fallback: s
 
 function panelTone(block: ChapterVersionDiffBlock, side: "base" | "target"): string {
   if (block.type === "equal") return "border-border bg-canvas/50";
-  if (block.type === "removed" && side === "base") return "border-danger/30 bg-danger/5";
-  if (block.type === "added" && side === "target") return "border-success/30 bg-success/5";
+  if (block.type === "removed" && side === "base") return "border-danger/30 border-l-danger/70 ring-danger/20";
+  if (block.type === "added" && side === "target") return "border-success/30 border-l-success/70 ring-success/20";
   if (block.type === "changed")
-    return side === "base" ? "border-danger/25 bg-danger/5" : "border-success/25 bg-success/5";
-  return "border-border bg-canvas/30 opacity-60";
+    return side === "base"
+      ? "border-danger/25 border-l-danger/70 ring-danger/20"
+      : "border-success/25 border-l-success/70 ring-success/20";
+  return "border-border bg-canvas/40 text-subtext";
+}
+
+function emptySideLabel(block: ChapterVersionDiffBlock, side: "base" | "target"): string | null {
+  if (block.type === "added" && side === "base") return "此侧无对应段落";
+  if (block.type === "removed" && side === "target") return "此侧无对应段落";
+  return null;
 }
 
 function renderBlockSide(block: ChapterVersionDiffBlock, side: "base" | "target") {
   const text = side === "base" ? block.baseText : block.targetText;
   const tokens = side === "base" ? block.baseTokens : block.targetTokens;
+  const emptyLabel = emptySideLabel(block, side);
   return (
     <div
       className={clsx(
-        "min-h-12 whitespace-pre-wrap break-words rounded-md border p-3 font-content text-sm leading-7 text-ink",
+        "min-h-12 whitespace-pre-wrap break-words rounded-md border border-l-4 bg-canvas/50 p-3 font-content text-sm leading-7 text-ink ring-1 ring-inset",
         panelTone(block, side),
+        emptyLabel && "flex items-center font-sans text-xs leading-5 text-subtext",
       )}
     >
-      {renderTokens(tokens, text)}
+      {emptyLabel ?? renderTokens(tokens, text)}
     </div>
   );
 }
 
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 export function ChapterVersionDiffView(props: Props) {
+  const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const diffIdentity = `${props.baseContentMd}\u0000${props.targetContentMd}`;
+  const [navigationState, setNavigationState] = useState({ diffIdentity: "", ordinal: 0 });
   const diff = useMemo(
     () =>
       buildChapterVersionDiff({
@@ -62,6 +84,33 @@ export function ChapterVersionDiffView(props: Props) {
       }),
     [props.baseContentMd, props.targetContentMd],
   );
+  const diffBlockIndexes = useMemo(
+    () =>
+      diff.blocks
+        .map((block, index) => (block.type === "equal" ? null : index))
+        .filter((index): index is number => index !== null),
+    [diff.blocks],
+  );
+  const diffCount = diffBlockIndexes.length;
+  const currentDiffOrdinal =
+    navigationState.diffIdentity === diffIdentity ? Math.min(navigationState.ordinal, Math.max(diffCount - 1, 0)) : 0;
+
+  function jumpToDiff(direction: "previous" | "next") {
+    if (diffCount <= 0) return;
+
+    setNavigationState(() => {
+      const current = currentDiffOrdinal;
+      const nextOrdinal = direction === "next" ? (current + 1) % diffCount : (current - 1 + diffCount) % diffCount;
+      const blockIndex = diffBlockIndexes[nextOrdinal];
+      window.requestAnimationFrame(() => {
+        blockRefs.current.get(blockIndex)?.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "center",
+        });
+      });
+      return { diffIdentity, ordinal: nextOrdinal };
+    });
+  }
 
   if (!diff.hasChanges) {
     return (
@@ -82,13 +131,68 @@ export function ChapterVersionDiffView(props: Props) {
         </div>
       </div>
 
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-canvas/60 px-3 py-2"
+        aria-label="chapter_version_diff_navigation"
+      >
+        <div
+          className="text-xs font-medium text-subtext"
+          aria-label={`第 ${currentDiffOrdinal + 1} / 共 ${diffCount} 处`}
+        >
+          第 <span className="text-ink">{currentDiffOrdinal + 1}</span> / 共{" "}
+          <span className="text-ink">{diffCount}</span> 处
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={diffCount <= 1}
+            onClick={() => jumpToDiff("previous")}
+            title={diffCount <= 1 ? "只有一处差异" : "跳转到上一个差异"}
+            type="button"
+          >
+            <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            上一个差异
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={diffCount <= 1}
+            onClick={() => jumpToDiff("next")}
+            title={diffCount <= 1 ? "只有一处差异" : "跳转到下一个差异"}
+            type="button"
+          >
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            下一个差异
+          </button>
+        </div>
+      </div>
+
       <div className="grid gap-3">
-        {diff.blocks.map((block, index) => (
-          <div className="grid gap-3 md:grid-cols-2" key={`${index}-${block.type}`}>
-            {renderBlockSide(block, "base")}
-            {renderBlockSide(block, "target")}
-          </div>
-        ))}
+        {diff.blocks.map((block, index) => {
+          const diffOrdinal = diffBlockIndexes.indexOf(index);
+          const current = diffOrdinal === currentDiffOrdinal;
+          return (
+            <div
+              className={clsx(
+                "scroll-mt-6 rounded-md",
+                current && "ring-2 ring-accent/40 ring-offset-2 ring-offset-surface",
+              )}
+              key={`${index}-${block.type}`}
+              ref={(element) => {
+                if (!element) {
+                  blockRefs.current.delete(index);
+                  return;
+                }
+                blockRefs.current.set(index, element);
+              }}
+              aria-current={current ? "location" : undefined}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                {renderBlockSide(block, "base")}
+                {renderBlockSide(block, "target")}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

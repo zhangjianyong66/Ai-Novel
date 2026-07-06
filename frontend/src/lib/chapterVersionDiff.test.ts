@@ -57,4 +57,28 @@ describe("buildChapterVersionDiff", () => {
     expect(diff.blocks[1].baseText).toBe("旧段落。");
     expect(diff.blocks[1].targetText).toBe("新段落。");
   });
+
+  it("pairs the most similar paragraphs inside a consecutive change group", () => {
+    const diff = buildChapterVersionDiff({
+      baseContent:
+        "混合着消毒水、霉菌和柠檬味清洁剂的凉气扑面而来。\n\n他在折叠椅上坐下，从包里掏出廉价威士忌。\n\n门缝里透出一点光。",
+      targetContent:
+        "混合着消毒水、霉菌和柠檬味清洁剂的凉气扑面而来，走廊通风，日光灯管有一根坏了。\n\n他在折叠椅上坐下，从包里掏出廉价威士忌，拧开盖子灌了一口。\n\n门缝里透出一点光。",
+    });
+
+    expect(diff.blocks.map((block) => block.type)).toEqual(["changed", "changed", "equal"]);
+    expect(diff.blocks[0].baseText).toContain("消毒水");
+    expect(diff.blocks[0].targetText).toContain("日光灯");
+    expect(diff.blocks[1].baseText).toContain("折叠椅");
+    expect(diff.blocks[1].targetText).toContain("威士忌");
+  });
+
+  it("keeps unrelated paragraphs as insertions and removals", () => {
+    const diff = buildChapterVersionDiff({
+      baseContent: "第一段。\n\n他握着短剑走进雨夜。\n\n第三段。",
+      targetContent: "第一段。\n\n星舰越过土星环，广播里传来倒计时。\n\n第三段。",
+    });
+
+    expect(diff.blocks.map((block) => block.type)).toEqual(["equal", "removed", "added", "equal"]);
+  });
 });

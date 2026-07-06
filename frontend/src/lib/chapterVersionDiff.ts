@@ -22,6 +22,8 @@ export type ChapterVersionDiffResult = {
 
 type DiffOp<T> = { kind: "equal"; value: T } | { kind: "added"; value: T } | { kind: "removed"; value: T };
 
+const PARAGRAPH_PAIR_SIMILARITY_THRESHOLD = 0.35;
+
 export function buildChapterVersionDiff(input: {
   baseContent: string;
   targetContent: string;
@@ -60,16 +62,28 @@ function coalesceParagraphOps(ops: Array<DiffOp<string>>): ChapterVersionDiffBlo
       continue;
     }
 
-    if (op.kind === "removed" && ops[i + 1]?.kind === "added") {
-      const baseText = op.value;
-      const targetText = ops[i + 1].value;
-      blocks.push({
-        type: "changed",
-        baseText,
-        targetText,
-        ...buildInlineTokenDiff(baseText, targetText),
-      });
+    const group: Array<DiffOp<string>> = [op];
+    while (ops[i + 1]?.kind !== "equal" && i + 1 < ops.length) {
       i += 1;
+      group.push(ops[i]);
+    }
+
+    blocks.push(...coalesceChangeGroup(group));
+  }
+  return blocks;
+}
+
+function coalesceChangeGroup(ops: Array<DiffOp<string>>): ChapterVersionDiffBlock[] {
+  const pairs = pairSimilarParagraphs(ops);
+  const blocks: ChapterVersionDiffBlock[] = [];
+  const emittedPairs = new Set<string>();
+
+  for (const [index, op] of ops.entries()) {
+    const pair = pairs.get(index);
+    if (pair) {
+      if (emittedPairs.has(pair.id)) continue;
+      emittedPairs.add(pair.id);
+      blocks.push(buildChangedBlock(pair.baseText, pair.targetText));
       continue;
     }
 
@@ -82,13 +96,78 @@ function coalesceParagraphOps(ops: Array<DiffOp<string>>): ChapterVersionDiffBlo
       continue;
     }
 
-    blocks.push({
-      type: "removed",
-      baseText: op.value,
-      baseTokens: [{ kind: "removed", text: op.value }],
-    });
+    if (op.kind === "removed") {
+      blocks.push({
+        type: "removed",
+        baseText: op.value,
+        baseTokens: [{ kind: "removed", text: op.value }],
+      });
+    }
   }
+
   return blocks;
+}
+
+function buildChangedBlock(baseText: string, targetText: string): ChapterVersionDiffBlock {
+  return {
+    type: "changed",
+    baseText,
+    targetText,
+    ...buildInlineTokenDiff(baseText, targetText),
+  };
+}
+
+function pairSimilarParagraphs(
+  ops: Array<DiffOp<string>>,
+): Map<number, { id: string; baseText: string; targetText: string }> {
+  const removed = ops
+    .map((op, index) => ({ op, index }))
+    .filter(
+      (entry): entry is { op: Extract<DiffOp<string>, { kind: "removed" }>; index: number } =>
+        entry.op.kind === "removed",
+    );
+  const added = ops
+    .map((op, index) => ({ op, index }))
+    .filter(
+      (entry): entry is { op: Extract<DiffOp<string>, { kind: "added" }>; index: number } => entry.op.kind === "added",
+    );
+
+  const candidates = removed.flatMap((baseEntry) =>
+    added
+      .map((targetEntry) => ({
+        baseIndex: baseEntry.index,
+        targetIndex: targetEntry.index,
+        score: paragraphSimilarity(baseEntry.op.value, targetEntry.op.value),
+      }))
+      .filter((candidate) => candidate.score >= PARAGRAPH_PAIR_SIMILARITY_THRESHOLD),
+  );
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  const usedBaseIndexes = new Set<number>();
+  const usedTargetIndexes = new Set<number>();
+  const pairs = new Map<number, { id: string; baseText: string; targetText: string }>();
+
+  for (const candidate of candidates) {
+    if (usedBaseIndexes.has(candidate.baseIndex) || usedTargetIndexes.has(candidate.targetIndex)) continue;
+
+    const baseOp = ops[candidate.baseIndex];
+    const targetOp = ops[candidate.targetIndex];
+    if (baseOp.kind !== "removed" || targetOp.kind !== "added") continue;
+
+    usedBaseIndexes.add(candidate.baseIndex);
+    usedTargetIndexes.add(candidate.targetIndex);
+
+    const pair = {
+      id: `${candidate.baseIndex}-${candidate.targetIndex}`,
+      baseText: baseOp.value,
+      targetText: targetOp.value,
+    };
+    pairs.set(candidate.baseIndex, pair);
+    pairs.set(candidate.targetIndex, pair);
+  }
+
+  return pairs;
 }
 
 function buildInlineTokenDiff(
@@ -111,6 +190,15 @@ function buildInlineTokenDiff(
 function tokenize(text: string): string[] {
   const tokens = text.match(/[\u4e00-\u9fff]|[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_\u4e00-\u9fff]/gu);
   return tokens ?? [];
+}
+
+function paragraphSimilarity(baseText: string, targetText: string): number {
+  const baseTokens = tokenize(baseText).filter((token) => token.trim());
+  const targetTokens = tokenize(targetText).filter((token) => token.trim());
+  if (!baseTokens.length || !targetTokens.length) return 0;
+
+  const sharedTokenCount = diffSequence(baseTokens, targetTokens).filter((op) => op.kind === "equal").length;
+  return (sharedTokenCount * 2) / (baseTokens.length + targetTokens.length);
 }
 
 function diffSequence<T>(base: T[], target: T[]): Array<DiffOp<T>> {

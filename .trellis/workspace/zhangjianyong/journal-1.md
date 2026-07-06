@@ -698,3 +698,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 章节版本比对差异跳转
+
+**Date**: 2026-07-06
+**Task**: 章节版本比对差异跳转
+**Branch**: `main`
+
+### Summary
+
+为章节版本比对增加上一个/下一个差异循环跳转、当前位置提示和当前差异高亮，并补充组件渲染测试；前端 lint、相关 Vitest 和 build 均已验证通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5c66b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

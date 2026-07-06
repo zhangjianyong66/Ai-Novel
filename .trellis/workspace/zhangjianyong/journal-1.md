@@ -531,3 +531,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 前端 LLM 请求超时统一修复
+
+**Date**: 2026-07-06
+**Task**: 前端 LLM 请求超时统一修复
+**Branch**: `main`
+
+### Summary
+
+统一前端同步等待 LLM 请求的浏览器超时，覆盖章节分析改写、记忆提议、Fractal v2 和 LLM 连接测试，并补充项目规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e0a1301` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

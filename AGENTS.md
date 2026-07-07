@@ -106,6 +106,10 @@
 
 ## 章节自动更新约定
 
+- 章节分析不以“没有建议”为定稿标准；定稿标准是“没有阻断定稿问题”。阻断问题包括章节大纲目标未完成、关键因果不成立、人物行为与人设冲突、前文事实/时间线/世界观冲突、后续章节依赖信息缺失、明显硬错误或格式损坏。
+- 章节分析输出应明确给出 `finalization.verdict`（`ready`/`needs_revision`/`blocked`）、章节目标完成度、最多 3 条 `blocking_issues`、可选优化、润色建议、上一轮问题追踪和后续写作资产；普通文风润色、节奏增强、后续章节建议和全书规划想法不应阻止当前章节定稿。
+- 写作页定稿仍由作者最终决定；未分析或最近分析仍有阻断问题时前端只提示确认，不硬性禁止定稿。
+- “按建议重写”默认只应用章节分析里的 `blocking_issues`；`optional_improvements`、`polish_suggestions`、`followup_assets`、`planning_notes` 属于作者可选项或后续写作资产，不应默认传给重写模型要求改正文。
 - 写作页/章节接口的 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 可由已保存章节或无未保存修改的章节显式触发；章节为草稿时只创建 `vector_rebuild`、`search_rebuild`，章节为 `status=done` 时创建 `vector_rebuild`、`search_rebuild` 和完整章节自动更新链。
 - `PUT /api/chapters/{chapter_id}` 普通保存不创建任何 `ProjectTask`，包括 `vector_rebuild`、`search_rebuild` 和各类内容自动更新；只有显式调用 `trigger_auto_updates` 才触发后台更新任务。
 - 章节 AI 生成、流式生成最终结果、章节 AI 优化/改写拿到完整正文后，应由后端立即保存为 `chapter_versions` 新版本并激活，同步写回 `chapters.content_md` 和 `chapters.active_version_id`，避免前端网络中断导致结果丢失。

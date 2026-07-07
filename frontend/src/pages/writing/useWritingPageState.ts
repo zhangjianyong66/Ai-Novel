@@ -40,6 +40,7 @@ import { useGenerationHistory } from "./useGenerationHistory";
 import { useOutlineSwitcher } from "./useOutlineSwitcher";
 import {
   buildBatchTaskCenterHref,
+  getChapterFinalizationRisk,
   buildProjectTaskCenterHref,
   buildWritingTaskCenterHref,
   hasNonEmptyChapterContent,
@@ -647,8 +648,22 @@ export function useWritingPageState(): WritingPageState {
     [applyChapterDetail, bumpWizardLocal, confirm, refreshWizard, statusUpdating, toast],
   );
 
+  const confirmFinalizeRisk = useCallback(async (): Promise<boolean> => {
+    const risk = getChapterFinalizationRisk(analysis.analysisResult);
+    if (!risk.confirmRequired) return true;
+    return confirm.confirm({
+      title: risk.title,
+      description: `${risk.description} 你仍然可以强制定稿；定稿表示当前章进入稳定版本，可继续推进后续章节。`,
+      confirmText: "仍然定稿",
+      cancelText: "取消",
+      danger: risk.level === "blocked",
+    });
+  }, [analysis.analysisResult, confirm]);
+
   const finalizeAfterSave = useCallback(async () => {
     if (!activeChapter) return;
+    const confirmed = await confirmFinalizeRisk();
+    if (!confirmed) return;
     const ok = await saveChapter();
     if (!ok) return;
 
@@ -667,7 +682,7 @@ export function useWritingPageState(): WritingPageState {
           : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
       toast.toastError(`${err.message} (${err.code})`, err.requestId);
     }
-  }, [activeChapter, applyChapterDetail, saveChapter, toast, updateChapterStatusForChapter]);
+  }, [activeChapter, applyChapterDetail, confirmFinalizeRisk, saveChapter, toast, updateChapterStatusForChapter]);
 
   const runChapterWorkflowAction = useCallback(
     async (actionId: ChapterWorkflowActionId) => {
@@ -681,6 +696,8 @@ export function useWritingPageState(): WritingPageState {
         return;
       }
       if (actionId === "finalize") {
+        const confirmed = await confirmFinalizeRisk();
+        if (!confirmed) return;
         await updateChapterStatusForChapter(activeChapter, "done");
         return;
       }
@@ -712,6 +729,7 @@ export function useWritingPageState(): WritingPageState {
       activeChapter,
       chapterCrud,
       confirm,
+      confirmFinalizeRisk,
       dirty,
       finalizeAfterSave,
       saveAndTriggerAutoUpdates,

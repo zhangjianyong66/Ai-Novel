@@ -1,4 +1,5 @@
 import type { ChapterStatus } from "../../types";
+import type { ChapterAnalyzeResult } from "../../components/writing/types";
 
 export type ChapterAutoUpdatesTriggerResult = {
   tasks: Record<string, string | null>;
@@ -34,6 +35,15 @@ export type ChapterWorkflowState = {
   primaryAction: ChapterWorkflowAction | null;
   secondaryAction: ChapterWorkflowAction | null;
   moreActions: ChapterWorkflowAction[];
+};
+
+export type ChapterFinalizationRiskLevel = "ready" | "needs_revision" | "blocked" | "unanalyzed";
+
+export type ChapterFinalizationRisk = {
+  level: ChapterFinalizationRiskLevel;
+  confirmRequired: boolean;
+  title: string;
+  description: string;
 };
 
 export function hasNonEmptyChapterContent(contentMd: string | null | undefined): boolean {
@@ -159,6 +169,49 @@ export function getChapterWorkflowState(params: {
       : buildWorkflowAction("update_memory", "更新记忆", actionParams),
     secondaryAction: buildWorkflowAction("reopen_draft", "退回草稿", { ...actionParams, confirm: true }),
     moreActions: [buildWorkflowAction("delete", "删除", { ...actionParams, danger: true, confirm: true })],
+  };
+}
+
+export function getChapterFinalizationRisk(
+  analysisResult: Pick<ChapterAnalyzeResult, "analysis"> | null,
+): ChapterFinalizationRisk {
+  if (!analysisResult?.analysis) {
+    return {
+      level: "unanalyzed",
+      confirmRequired: true,
+      title: "尚未进行章节分析",
+      description: "可以由作者直接定稿；如果希望先做质量检查，请先运行章节分析。",
+    };
+  }
+
+  const analysis = analysisResult.analysis;
+  const blockingIssues = analysis.blocking_issues ?? [];
+  const verdict = String(analysis.finalization?.verdict ?? "").trim();
+  if (blockingIssues.length > 0 || verdict === "blocked") {
+    const firstIssue = blockingIssues[0];
+    const issueText = [firstIssue?.title, firstIssue?.issue].filter(Boolean).join("：");
+    return {
+      level: "blocked",
+      confirmRequired: true,
+      title: "当前仍有阻断定稿问题",
+      description: issueText || analysis.finalization?.reason || "最近一次章节分析认为本章仍有影响后续写作的关键问题。",
+    };
+  }
+
+  if (verdict === "needs_revision") {
+    return {
+      level: "needs_revision",
+      confirmRequired: true,
+      title: "分析建议修改后定稿",
+      description: analysis.finalization?.reason || "最近一次章节分析认为仍有需要作者确认的修订项。",
+    };
+  }
+
+  return {
+    level: "ready",
+    confirmRequired: false,
+    title: "可以定稿",
+    description: analysis.finalization?.reason || "最近一次章节分析未发现阻断定稿问题。",
   };
 }
 

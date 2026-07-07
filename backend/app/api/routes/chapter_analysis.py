@@ -85,6 +85,41 @@ def _save_rewrite_version(
         return {"saved_version": active, "active_version": active}
 
 
+def build_rewrite_analysis_payload(analysis: dict[str, object]) -> dict[str, object]:
+    """
+    默认“按建议重写”只应用阻断定稿问题；普通优化和润色建议保留给作者取舍。
+    """
+    blocking_issues = analysis.get("blocking_issues")
+    if isinstance(blocking_issues, list) and blocking_issues:
+        out: dict[str, object] = {
+            "rewrite_scope": "blocking_issues_only",
+            "chapter_summary": analysis.get("chapter_summary") or "",
+            "finalization": analysis.get("finalization") if isinstance(analysis.get("finalization"), dict) else {},
+            "outline_goal": analysis.get("outline_goal") if isinstance(analysis.get("outline_goal"), dict) else {},
+            "blocking_issues": blocking_issues[:3],
+        }
+        previous_issue_tracking = analysis.get("previous_issue_tracking")
+        if isinstance(previous_issue_tracking, list) and previous_issue_tracking:
+            out["previous_issue_tracking"] = previous_issue_tracking
+        return out
+
+    suggestions = analysis.get("suggestions")
+    if isinstance(suggestions, list) and suggestions:
+        return {
+            "rewrite_scope": "legacy_suggestions",
+            "chapter_summary": analysis.get("chapter_summary") or "",
+            "suggestions": suggestions,
+            "overall_notes": analysis.get("overall_notes") or "",
+        }
+
+    return {
+        "rewrite_scope": "no_blocking_issues",
+        "chapter_summary": analysis.get("chapter_summary") or "",
+        "finalization": analysis.get("finalization") if isinstance(analysis.get("finalization"), dict) else {},
+        "outline_goal": analysis.get("outline_goal") if isinstance(analysis.get("outline_goal"), dict) else {},
+    }
+
+
 @router.post("/chapters/{chapter_id}/analyze")
 def analyze_chapter(
     request: Request,
@@ -352,7 +387,8 @@ def rewrite_chapter(
     if not body.analysis:
         raise AppError.validation(message="章节分析结果不能为空（analysis），请先完成章节分析")
 
-    analysis_json = json.dumps(body.analysis, ensure_ascii=False, indent=2)
+    rewrite_analysis = build_rewrite_analysis_payload(body.analysis)
+    analysis_json = json.dumps(rewrite_analysis, ensure_ascii=False, indent=2)
 
     db = SessionLocal()
     try:

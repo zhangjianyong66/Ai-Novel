@@ -51,6 +51,14 @@ PLOT_AUTO_UPDATE_KIND = "plot_auto_update"
 _ANALYSIS_SCHEMA_V1_TOP_LEVEL_KEYS = {
     "schema_version",
     "chapter_summary",
+    "finalization",
+    "outline_goal",
+    "blocking_issues",
+    "optional_improvements",
+    "polish_suggestions",
+    "followup_assets",
+    "previous_issue_tracking",
+    "planning_notes",
     "hooks",
     "foreshadows",
     "plot_points",
@@ -65,6 +73,16 @@ _ANALYSIS_SCHEMA_V1_LIST_ITEM_KEYS: dict[str, set[str]] = {
     "plot_points": {"beat", "excerpt"},
     "character_states": {"character_name", "state_before", "state_after", "psychological_change"},
     "suggestions": {"title", "excerpt", "issue", "recommendation", "priority"},
+    "blocking_issues": {"title", "excerpt", "issue", "recommendation", "severity", "priority"},
+    "optional_improvements": {"title", "excerpt", "issue", "recommendation", "severity", "priority"},
+    "polish_suggestions": {"title", "excerpt", "issue", "recommendation", "severity", "priority"},
+    "followup_assets": {"type", "title", "note"},
+    "previous_issue_tracking": {"issue", "status", "note"},
+}
+
+_ANALYSIS_SCHEMA_V1_OBJECT_KEYS: dict[str, set[str]] = {
+    "finalization": {"verdict", "reason", "recommended_action"},
+    "outline_goal": {"status", "notes"},
 }
 
 
@@ -175,8 +193,47 @@ def validate_analysis_payload(analysis: object) -> dict[str, Any]:
                 if not isinstance(v, str):
                     raise AppError(code="ANALYSIS_PARSE_ERROR", message=f"analysis.{key}[{idx}].{k} 必须是 string", status_code=400)
 
+    def _ensure_object_of_strings(key: str) -> None:
+        if key not in analysis or analysis[key] is None:
+            return
+        value = analysis[key]
+        if not isinstance(value, dict):
+            raise AppError(code="ANALYSIS_PARSE_ERROR", message=f"analysis.{key} 必须是 object", status_code=400)
+        allowed = _ANALYSIS_SCHEMA_V1_OBJECT_KEYS.get(key, set())
+        unknown_item = sorted(set(value.keys()) - allowed)
+        if unknown_item:
+            raise AppError(
+                code="ANALYSIS_SCHEMA_ERROR",
+                message=f"analysis.{key} 含未知字段",
+                status_code=400,
+                details={"unknown_fields": unknown_item},
+            )
+        for k, v in value.items():
+            if v is None:
+                continue
+            if not isinstance(v, str):
+                raise AppError(code="ANALYSIS_PARSE_ERROR", message=f"analysis.{key}.{k} 必须是 string", status_code=400)
+
+    def _ensure_list_of_strings(key: str) -> None:
+        if key not in analysis or analysis[key] is None:
+            return
+        value = analysis[key]
+        if not isinstance(value, list):
+            raise AppError(code="ANALYSIS_PARSE_ERROR", message=f"analysis.{key} 必须是 list", status_code=400)
+        for idx, item in enumerate(value):
+            if not isinstance(item, str):
+                raise AppError(code="ANALYSIS_PARSE_ERROR", message=f"analysis.{key}[{idx}] 必须是 string", status_code=400)
+
     _ensure_str_field("chapter_summary")
     _ensure_str_field("overall_notes")
+    _ensure_object_of_strings("finalization")
+    _ensure_object_of_strings("outline_goal")
+    _ensure_list_of_objects("blocking_issues")
+    _ensure_list_of_objects("optional_improvements")
+    _ensure_list_of_objects("polish_suggestions")
+    _ensure_list_of_objects("followup_assets")
+    _ensure_list_of_objects("previous_issue_tracking")
+    _ensure_list_of_strings("planning_notes")
     _ensure_list_of_objects("hooks")
     _ensure_list_of_objects("plot_points")
     _ensure_list_of_objects("foreshadows")

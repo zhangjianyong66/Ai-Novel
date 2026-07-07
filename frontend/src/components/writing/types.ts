@@ -129,10 +129,43 @@ export type ChapterAnalysisSuggestion = {
   issue?: string;
   recommendation?: string;
   priority?: string;
+  severity?: string;
+};
+
+export type ChapterAnalysisFinalization = {
+  verdict?: "ready" | "needs_revision" | "blocked" | string;
+  reason?: string;
+  recommended_action?: string;
+};
+
+export type ChapterAnalysisOutlineGoal = {
+  status?: "complete" | "partial" | "missing" | "unknown" | string;
+  notes?: string;
+};
+
+export type ChapterAnalysisFollowupAsset = {
+  type?: string;
+  title?: string;
+  note?: string;
+};
+
+export type ChapterAnalysisIssueTracking = {
+  issue?: string;
+  status?: string;
+  note?: string;
 };
 
 export type ChapterAnalysis = {
+  schema_version?: number | null;
   chapter_summary?: string;
+  finalization?: ChapterAnalysisFinalization;
+  outline_goal?: ChapterAnalysisOutlineGoal;
+  blocking_issues?: ChapterAnalysisSuggestion[];
+  optional_improvements?: ChapterAnalysisSuggestion[];
+  polish_suggestions?: ChapterAnalysisSuggestion[];
+  followup_assets?: ChapterAnalysisFollowupAsset[];
+  previous_issue_tracking?: ChapterAnalysisIssueTracking[];
+  planning_notes?: string[];
   hooks?: ChapterAnalysisNote[];
   foreshadows?: ChapterAnalysisNote[];
   plot_points?: ChapterAnalysisPlotPoint[];

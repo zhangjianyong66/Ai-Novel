@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBatchTaskCenterHref,
+  getChapterFinalizationRisk,
   buildProjectTaskCenterHref,
   buildWritingTaskCenterHref,
   getChapterWorkflowState,
@@ -41,6 +42,39 @@ describe("writingPageModels", () => {
     expect(buildProjectTaskCenterHref("p1", "task-1")).toBe("/projects/p1/tasks?project_task_id=task-1");
     expect(buildBatchTaskCenterHref("p1", "task-1")).toBe("/projects/p1/tasks?project_task_id=task-1");
     expect(buildBatchTaskCenterHref("p1", null)).toBeNull();
+  });
+
+  it("derives finalization risk from the latest chapter analysis", () => {
+    expect(getChapterFinalizationRisk(null)).toMatchObject({
+      level: "unanalyzed",
+      confirmRequired: true,
+    });
+
+    expect(
+      getChapterFinalizationRisk({
+        analysis: {
+          finalization: { verdict: "blocked", reason: "仍有因果缺口" },
+          blocking_issues: [{ title: "因果缺口", issue: "关键行动缺少原因" }],
+        },
+      }),
+    ).toMatchObject({
+      level: "blocked",
+      confirmRequired: true,
+      title: "当前仍有阻断定稿问题",
+    });
+
+    expect(
+      getChapterFinalizationRisk({
+        analysis: {
+          finalization: { verdict: "ready", reason: "没有阻断问题" },
+          blocking_issues: [],
+          optional_improvements: [{ title: "增强张力" }],
+        },
+      }),
+    ).toMatchObject({
+      level: "ready",
+      confirmRequired: false,
+    });
   });
 
   it("builds save payload without chapter status", () => {

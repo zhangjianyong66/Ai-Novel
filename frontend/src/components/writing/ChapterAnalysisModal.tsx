@@ -2,7 +2,66 @@ import { useId } from "react";
 
 import { Modal } from "../ui/Modal";
 
-import type { ChapterAnalyzeResult } from "./types";
+import type { ChapterAnalysisSuggestion, ChapterAnalyzeResult } from "./types";
+
+function getFinalizationLabel(verdict?: string): string {
+  if (verdict === "ready") return "可以定稿";
+  if (verdict === "needs_revision") return "建议修改后定稿";
+  if (verdict === "blocked") return "不建议定稿";
+  return "未给出结论";
+}
+
+function getOutlineGoalLabel(status?: string): string {
+  if (status === "complete") return "完成";
+  if (status === "partial") return "部分完成";
+  if (status === "missing") return "未完成";
+  if (status === "unknown") return "无法判断";
+  return status?.trim() || "未给出";
+}
+
+function SuggestionList(props: {
+  title: string;
+  empty: string;
+  items: ChapterAnalysisSuggestion[] | undefined;
+  onLocateInEditor: (excerpt: string) => void;
+}) {
+  const items = props.items ?? [];
+  return (
+    <div className="grid gap-2 rounded-atelier border border-border bg-surface p-3">
+      <div className="text-sm text-ink">{props.title}</div>
+      {items.length === 0 ? (
+        <div className="text-sm text-subtext">{props.empty}</div>
+      ) : (
+        <div className="grid gap-2">
+          {items.map((it, idx) => (
+            <div key={idx} className="rounded-atelier border border-border bg-canvas p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm text-ink">
+                  {(it.title ?? "").trim() || "建议"}{" "}
+                  {(it.severity ?? it.priority ?? "").trim() ? (
+                    <span className="text-xs text-subtext">({it.severity ?? it.priority})</span>
+                  ) : null}
+                </div>
+                {it.excerpt ? (
+                  <button
+                    className="btn btn-ghost px-2 py-1 text-xs"
+                    onClick={() => props.onLocateInEditor(it.excerpt ?? "")}
+                    type="button"
+                  >
+                    定位
+                  </button>
+                ) : null}
+              </div>
+              {it.excerpt ? <div className="mt-2 text-xs text-subtext">{it.excerpt}</div> : null}
+              {it.issue ? <div className="mt-2 text-sm text-ink">问题：{it.issue}</div> : null}
+              {it.recommendation ? <div className="mt-2 text-sm text-ink">建议：{it.recommendation}</div> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ChapterAnalysisModal(props: {
   open: boolean;
@@ -93,6 +152,69 @@ export function ChapterAnalysisModal(props: {
             {props.analysisResult.warnings && props.analysisResult.warnings.length > 0 ? (
               <div className="rounded-atelier border border-border bg-surface p-3 text-xs text-subtext">
                 warnings: {props.analysisResult.warnings.join(", ")}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 rounded-atelier border border-border bg-surface p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm text-ink">定稿结论</div>
+                <span className="rounded-md border border-border bg-canvas px-2 py-1 text-xs text-ink">
+                  {getFinalizationLabel(props.analysisResult.analysis?.finalization?.verdict)}
+                </span>
+              </div>
+              <div className="text-sm text-ink">
+                {(props.analysisResult.analysis?.finalization?.reason ?? "").trim() || "（无说明）"}
+              </div>
+              {props.analysisResult.analysis?.finalization?.recommended_action ? (
+                <div className="text-xs text-subtext">
+                  本轮建议：{props.analysisResult.analysis.finalization.recommended_action}
+                </div>
+              ) : null}
+              <div className="grid gap-1 border-t border-border pt-3 text-sm">
+                <div className="text-ink">
+                  章节目标完成度：{getOutlineGoalLabel(props.analysisResult.analysis?.outline_goal?.status)}
+                </div>
+                {props.analysisResult.analysis?.outline_goal?.notes ? (
+                  <div className="text-subtext">{props.analysisResult.analysis.outline_goal.notes}</div>
+                ) : null}
+              </div>
+            </div>
+
+            <SuggestionList
+              title="阻断定稿问题"
+              empty="无阻断定稿问题，可以定稿。"
+              items={props.analysisResult.analysis?.blocking_issues}
+              onLocateInEditor={props.onLocateInEditor}
+            />
+
+            <SuggestionList
+              title="可选优化"
+              empty="无可选优化。"
+              items={props.analysisResult.analysis?.optional_improvements}
+              onLocateInEditor={props.onLocateInEditor}
+            />
+
+            <SuggestionList
+              title="润色建议"
+              empty="无润色建议。"
+              items={props.analysisResult.analysis?.polish_suggestions}
+              onLocateInEditor={props.onLocateInEditor}
+            />
+
+            {(props.analysisResult.analysis?.previous_issue_tracking ?? []).length > 0 ? (
+              <div className="grid gap-2 rounded-atelier border border-border bg-surface p-3">
+                <div className="text-sm text-ink">上一轮问题追踪</div>
+                <div className="grid gap-2">
+                  {(props.analysisResult.analysis?.previous_issue_tracking ?? []).map((it, idx) => (
+                    <div key={idx} className="rounded-atelier border border-border bg-canvas p-3 text-sm">
+                      <div className="text-ink">
+                        {(it.issue ?? "").trim() || "问题"}{" "}
+                        {(it.status ?? "").trim() ? <span className="text-xs text-subtext">({it.status})</span> : null}
+                      </div>
+                      {it.note ? <div className="mt-1 text-subtext">{it.note}</div> : null}
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
 
@@ -227,6 +349,30 @@ export function ChapterAnalysisModal(props: {
               </div>
             ) : null}
 
+            {(props.analysisResult.analysis?.followup_assets ?? []).length > 0 ||
+            (props.analysisResult.analysis?.planning_notes ?? []).length > 0 ? (
+              <div className="grid gap-2 rounded-atelier border border-border bg-surface p-3">
+                <div className="text-sm text-ink">后续写作资产</div>
+                {(props.analysisResult.analysis?.followup_assets ?? []).map((it, idx) => (
+                  <div key={`asset-${idx}`} className="rounded-atelier border border-border bg-canvas p-3 text-sm">
+                    <div className="text-ink">
+                      {(it.title ?? "").trim() || "资产"}{" "}
+                      {(it.type ?? "").trim() ? <span className="text-xs text-subtext">({it.type})</span> : null}
+                    </div>
+                    {it.note ? <div className="mt-1 text-subtext">{it.note}</div> : null}
+                  </div>
+                ))}
+                {(props.analysisResult.analysis?.planning_notes ?? []).map((note, idx) => (
+                  <div
+                    key={`note-${idx}`}
+                    className="rounded-atelier border border-border bg-canvas p-3 text-sm text-subtext"
+                  >
+                    {note}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <details>
               <summary className="ui-transition-fast cursor-pointer text-xs text-subtext hover:text-ink">
                 raw_output
@@ -252,7 +398,7 @@ export function ChapterAnalysisModal(props: {
             />
           </label>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-subtext">重写结果不会自动保存，记得 Ctrl/Cmd+S 保存。</div>
+            <div className="text-xs text-subtext">默认只应用阻断定稿问题；普通优化和润色由作者自行取舍。</div>
             <button
               className="btn btn-primary"
               disabled={!props.analysisResult || busy}

@@ -52,10 +52,50 @@ class ChapterAnalysisSuggestionSchema(BaseModel):
     priority: str = ""
 
 
+class ChapterAnalysisFinalizationSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    verdict: str = ""
+    reason: str = ""
+    recommended_action: str = ""
+
+
+class ChapterAnalysisOutlineGoalSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = ""
+    notes: str = ""
+
+
+class ChapterAnalysisFollowupAssetSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: str = ""
+    title: str = ""
+    note: str = ""
+
+
+class ChapterAnalysisIssueTrackingSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    issue: str = ""
+    status: str = ""
+    note: str = ""
+
+
 class ChapterAnalysisSchema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    schema_version: int | None = None
     chapter_summary: str = ""
+    finalization: ChapterAnalysisFinalizationSchema = Field(default_factory=ChapterAnalysisFinalizationSchema)
+    outline_goal: ChapterAnalysisOutlineGoalSchema = Field(default_factory=ChapterAnalysisOutlineGoalSchema)
+    blocking_issues: list[ChapterAnalysisSuggestionSchema] = Field(default_factory=list)
+    optional_improvements: list[ChapterAnalysisSuggestionSchema] = Field(default_factory=list)
+    polish_suggestions: list[ChapterAnalysisSuggestionSchema] = Field(default_factory=list)
+    followup_assets: list[ChapterAnalysisFollowupAssetSchema] = Field(default_factory=list)
+    previous_issue_tracking: list[ChapterAnalysisIssueTrackingSchema] = Field(default_factory=list)
+    planning_notes: list[str] = Field(default_factory=list)
     hooks: list[ChapterAnalysisNoteSchema] = Field(default_factory=list)
     foreshadows: list[ChapterAnalysisNoteSchema] = Field(default_factory=list)
     plot_points: list[ChapterAnalysisPlotPointSchema] = Field(default_factory=list)
@@ -228,6 +268,63 @@ def _coerce_suggestions(value: Any) -> list[dict[str, str]]:
     return out
 
 
+def _coerce_finalization(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {"verdict": "", "reason": "", "recommended_action": ""}
+    return {
+        "verdict": str(value.get("verdict") or "").strip(),
+        "reason": str(value.get("reason") or "").strip(),
+        "recommended_action": str(value.get("recommended_action") or value.get("action") or "").strip(),
+    }
+
+
+def _coerce_outline_goal(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {"status": "", "notes": ""}
+    return {
+        "status": str(value.get("status") or "").strip(),
+        "notes": str(value.get("notes") or value.get("note") or "").strip(),
+    }
+
+
+def _coerce_followup_assets(value: Any) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    if not isinstance(value, list):
+        return out
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        asset_type = str(item.get("type") or "").strip()
+        title = str(item.get("title") or "").strip()
+        note = str(item.get("note") or item.get("text") or "").strip()
+        if not asset_type and not title and not note:
+            continue
+        out.append({"type": asset_type, "title": title, "note": note})
+    return out
+
+
+def _coerce_issue_tracking(value: Any) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    if not isinstance(value, list):
+        return out
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        issue = str(item.get("issue") or "").strip()
+        status = str(item.get("status") or "").strip()
+        note = str(item.get("note") or "").strip()
+        if not issue and not status and not note:
+            continue
+        out.append({"issue": issue, "status": status, "note": note})
+    return out
+
+
+def _coerce_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item or "").strip()]
+
+
 def parse_chapter_analysis_output(text: str) -> tuple[dict[str, Any], list[str], dict[str, Any] | None]:
     warnings: list[str] = []
     value, raw_json = extract_json_value(text)
@@ -245,7 +342,16 @@ def parse_chapter_analysis_output(text: str) -> tuple[dict[str, Any], list[str],
     except ValidationError:
         warnings.append("analysis_json_schema_invalid")
         analysis = {
+            "schema_version": value.get("schema_version") if isinstance(value.get("schema_version"), int) else None,
             "chapter_summary": str(value.get("chapter_summary") or value.get("summary") or "").strip(),
+            "finalization": _coerce_finalization(value.get("finalization")),
+            "outline_goal": _coerce_outline_goal(value.get("outline_goal")),
+            "blocking_issues": _coerce_suggestions(value.get("blocking_issues")),
+            "optional_improvements": _coerce_suggestions(value.get("optional_improvements")),
+            "polish_suggestions": _coerce_suggestions(value.get("polish_suggestions")),
+            "followup_assets": _coerce_followup_assets(value.get("followup_assets")),
+            "previous_issue_tracking": _coerce_issue_tracking(value.get("previous_issue_tracking")),
+            "planning_notes": _coerce_str_list(value.get("planning_notes")),
             "hooks": _coerce_note_list(value.get("hooks")),
             "foreshadows": _coerce_note_list(value.get("foreshadows")),
             "plot_points": _coerce_plot_points(value.get("plot_points")),

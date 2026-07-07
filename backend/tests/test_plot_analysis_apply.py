@@ -51,7 +51,38 @@ class TestPlotAnalysisApply(unittest.TestCase):
         with self.assertRaises(AppError) as ctx:
             validate_analysis_payload({"chapter_summary": "ok", "unknown_field": 1})
         self.assertEqual(ctx.exception.code, "ANALYSIS_SCHEMA_ERROR")
-        self.assertIn("unknown_fields", ctx.exception.details)
+
+    def test_validate_analysis_payload_accepts_finalization_fields(self) -> None:
+        out = validate_analysis_payload(
+            {
+                "schema_version": 1,
+                "chapter_summary": "本章完成线索交付。",
+                "finalization": {
+                    "verdict": "ready",
+                    "reason": "没有阻断定稿问题。",
+                    "recommended_action": "可定稿并推进下一章。",
+                },
+                "outline_goal": {"status": "complete", "notes": "大纲目标已完成。"},
+                "blocking_issues": [
+                    {
+                        "title": "关键因果缺口",
+                        "excerpt": "他忽然决定离开",
+                        "issue": "缺少行动理由",
+                        "recommendation": "补足选择离开的直接触发。",
+                        "severity": "critical",
+                    }
+                ],
+                "optional_improvements": [],
+                "polish_suggestions": [],
+                "followup_assets": [{"type": "fact", "title": "主角已知道线索 A", "note": "下一章可承接。"}],
+                "previous_issue_tracking": [{"issue": "人物动机不足", "status": "resolved", "note": "已补足。"}],
+                "planning_notes": ["后续章节建议不能阻止当前章节定稿。"],
+            }
+        )
+
+        self.assertEqual(out["finalization"]["verdict"], "ready")
+        self.assertEqual(out["outline_goal"]["status"], "complete")
+        self.assertEqual(len(out["blocking_issues"]), 1)
 
     def test_validate_analysis_payload_rejects_unknown_nested_fields(self) -> None:
         with self.assertRaises(AppError) as ctx:

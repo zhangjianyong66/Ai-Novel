@@ -1,3 +1,4 @@
+import { formatDateTime } from "../../lib/dateTime";
 import { getLatestRuntimeCheckpoint, type ProjectTaskRuntime } from "../../services/projectTaskRuntime";
 import { StatusBadge } from "./StatusBadge";
 import { TASK_CENTER_COPY } from "./taskCenterCopy";
@@ -204,7 +205,7 @@ export function ProjectTaskRuntimePanel(props: {
                     <span>
                       #{entry.seq} | {entry.event_type}
                     </span>
-                    <span>{entry.created_at || "-"}</span>
+                    <span>{formatDateTime(entry.created_at)}</span>
                   </div>
                   <div className="mt-1">{formatRuntimeTimelineMeta(entry)}</div>
                   {formatRuntimeTimelineStep(entry.step) ? (

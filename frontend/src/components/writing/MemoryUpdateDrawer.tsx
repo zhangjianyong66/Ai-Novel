@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { formatDateTime } from "../../lib/dateTime";
 import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
@@ -642,7 +643,7 @@ export function MemoryUpdateDrawer(props: Props) {
                           {e.entity_type}:{e.name}
                         </div>
                         <div className="mt-1 text-subtext">
-                          {e.deleted_at ? `deleted_at: ${e.deleted_at}` : "active"}
+                          {e.deleted_at ? `deleted_at: ${formatDateTime(e.deleted_at)}` : "active"}
                         </div>
                       </div>
                     ))}

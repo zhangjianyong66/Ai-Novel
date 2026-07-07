@@ -1,4 +1,5 @@
 import type { OutlineGenResult } from "../outlineParsing";
+import { formatDateTimeMinute } from "../../lib/dateTime";
 
 export type OutlineGenForm = {
   chapter_count: number;
@@ -93,7 +94,7 @@ export function buildNextOutlineTitle(outlineCount: number): string {
 }
 
 export function buildGeneratedOutlineTitle(now = new Date()): string {
-  return `AI 大纲 ${now.toISOString().slice(0, 16).replace("T", " ")}`;
+  return `AI 大纲 ${formatDateTimeMinute(now)}`;
 }
 
 export function buildUniqueGeneratedOutlineTitle(existingTitles: readonly string[], now = new Date()): string {

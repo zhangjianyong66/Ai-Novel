@@ -12,13 +12,14 @@ import { useToast } from "../components/ui/toast";
 import { useProjects } from "../contexts/projects";
 import { useChapterMetaList } from "../hooks/useChapterMetaList";
 import { useProjectData } from "../hooks/useProjectData";
+import { formatDateTimeMinute } from "../lib/dateTime";
 import { duration, transition } from "../lib/motion";
 import { UI_COPY } from "../lib/uiCopy";
-import { buildOutlineGenerateRequestInit } from "./outline/outlineGenerateRequest";
 import { ApiError, apiJson } from "../services/apiClient";
 import { chapterStore } from "../services/chapterStore";
 import { computeWizardProgress, setWizardStepSkipped, type WizardStep, type WizardStepKey } from "../services/wizard";
 import type { ChapterListItem, Character, LLMPreset, LLMProfile, Outline, ProjectSettings } from "../types";
+import { buildOutlineGenerateRequestInit } from "./outline/outlineGenerateRequest";
 
 type OutlineGenChapter = { number: number; title: string; beats: string[] };
 type OutlineGenResult = {
@@ -169,7 +170,7 @@ export function ProjectWizardPage() {
       await apiJson<{ outline: Outline }>(`/api/projects/${projectId}/outlines`, {
         method: "POST",
         body: JSON.stringify({
-          title: `AI 大纲 ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
+          title: `AI 大纲 ${formatDateTimeMinute(new Date())}`,
           content_md: outlineMd,
           structure: { chapters: genChapters },
         }),

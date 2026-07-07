@@ -6,6 +6,7 @@ import { RequestIdBadge } from "../components/ui/RequestIdBadge";
 import { ApiError, apiJson } from "../services/apiClient";
 import { useToast } from "../components/ui/toast";
 import { copyText } from "../lib/copyText";
+import { formatDateTime } from "../lib/dateTime";
 import { buildLlmJsonRequestInit } from "../lib/llmRequestTimeout";
 import { UI_COPY } from "../lib/uiCopy";
 import { useProjectData } from "../hooks/useProjectData";
@@ -208,7 +209,7 @@ export function FractalPage() {
         </div>
         <div className="mt-1 text-xs text-subtext">
           分形记忆：{fractalStatusText} | LLM 摘要：{v2StatusText}
-          {result?.updated_at ? ` | 更新时间：${result.updated_at}` : ""}
+          {result?.updated_at ? ` | 更新时间：${formatDateTime(result.updated_at)}` : ""}
         </div>
         <div className="mt-1 text-xs text-subtext">{conclusionText}</div>
       </div>

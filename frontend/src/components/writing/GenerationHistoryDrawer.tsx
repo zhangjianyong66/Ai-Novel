@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { formatDateTime } from "../../lib/dateTime";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { ApiError, apiDownloadAttachment, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
@@ -178,7 +179,7 @@ export function GenerationHistoryDrawer(props: Props) {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 truncate">
-                          <span className="mr-2 text-xs text-subtext">{new Date(r.created_at).toLocaleString()}</span>
+                          <span className="mr-2 text-xs text-subtext">{formatDateTime(r.created_at)}</span>
                           <span className="truncate">{r.type}</span>
                         </div>
                         <span className="shrink-0 text-[11px] text-subtext">{failed ? "failed" : "ok"}</span>

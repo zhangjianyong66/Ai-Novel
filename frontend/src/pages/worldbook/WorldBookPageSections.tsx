@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "../../components/ui/Badge";
 import { Drawer } from "../../components/ui/Drawer";
+import { formatDateTime } from "../../lib/dateTime";
 import { humanizeTaskStatus } from "../../lib/humanize";
 import { UI_COPY } from "../../lib/uiCopy";
 import type { ChapterListItem } from "../../types";
@@ -508,7 +509,7 @@ export function WorldBookEntriesSection(props: WorldBookEntriesSectionProps) {
                       </div>
                     </div>
                   </div>
-                  <div className="shrink-0 text-[11px] text-subtext">{entry.updated_at}</div>
+                  <div className="shrink-0 text-[11px] text-subtext">{formatDateTime(entry.updated_at)}</div>
                 </div>
                 {entry.constant ? null : (
                   <div className="mt-2 line-clamp-2 text-xs text-subtext">

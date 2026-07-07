@@ -17,6 +17,7 @@
 - `.env.docker` 不存在时，脚本会从 `.env.docker.example` 自动复制一份。
 - 如果启动时报 `failed to bind host port 127.0.0.1:6379`，说明宿主机 Redis 端口已被占用；可在 `.env.docker` 中把 `REDIS_PORT` 改为未占用端口（例如 `6380`）。容器内后端和 worker 仍通过 `redis://redis:6379/0` 通信，不受宿主机映射端口影响。
 - Linux.do OIDC discovery/token/userinfo 等运行期后端出站请求需要走宿主机代理时，在 `.env.docker` 设置 `OUTBOUND_PROXY_URL=http://host.docker.internal:10808`；`docker-compose.yml` 已为 backend/rq_worker 配置 `host.docker.internal:host-gateway`，容器内不要使用 `127.0.0.1:10808` 访问宿主机代理。
+- `SECRET_ENCRYPTION_KEY` 留空时由容器 entrypoint 从 `/data/secrets/secret_encryption_key` 生成/读取并导出给主进程；`docker exec` 启动的新进程不会继承 entrypoint 后续导出的环境变量。排查密钥解密问题时，应显式注入该文件内容，例如 `docker exec -e SECRET_ENCRYPTION_KEY="$(docker exec ai-novel-backend-1 cat /data/secrets/secret_encryption_key)" ...`，避免误判为服务端未配置密钥。
 
 ## 公网访问与 frp 代理约定
 
@@ -45,6 +46,11 @@
 - 当前本地环境没有全局 `python` 命令，使用 `python3` 或 `backend/.venv/bin/python`；当前 `backend/.venv` 未安装 `pytest`，`unittest` 风格单测可用 `cd backend && .venv/bin/python -m unittest tests.<module>` 验证。
 - 当前全量 `cd backend && python -m pytest tests` 可能先被既有测试环境问题阻塞：`tests/test_gate_runner.py`、`tests/test_prompt_preset_integrity.py`、`tests/test_security_guard_runner.py` 依赖仓库中不存在的 `scripts.run_gate` / `scripts.guards`；忽略这 3 个文件后，当前还可见既有失败 `test_auth_session.py::TestAuthEndpoints::test_register_rejects_reserved_admin_user_id` 和 `test_prompt_task_reachability_registry.py::TestPromptTaskReachabilityRegistry::test_ui_copy_and_e2e_registry_registered`。
 - 当前全量 `cd frontend && npm run lint` 已可通过；验证前端改动时优先运行全量 lint，必要时可先对本次触碰文件运行 `npx eslint ...`、`npx prettier --check ...` 和 `node scripts/check-ui-classes.mjs` 定位问题。
+
+## 前端时间显示约定
+
+- 前端用户可见的后端时间戳、生成标题时间和导出文件名时间应通过 `frontend/src/lib/dateTime.ts` 格式化，显式使用 `Asia/Shanghai`，避免直接展示 UTC ISO 字符串或使用 `toISOString().slice(...)` 导致比北京时间慢 8 小时。
+- 排序、缓存 key、本地新旧比较、导出 JSON 元数据等机器可读场景仍保留原始 ISO 或 epoch，不要为了显示格式化而改变业务判断值。
 
 ## 认证与账户安全约定
 

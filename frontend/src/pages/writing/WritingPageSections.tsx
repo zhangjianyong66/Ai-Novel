@@ -22,6 +22,7 @@ import { PostEditCompareDrawer } from "../../components/writing/PostEditCompareD
 import { PromptInspectorDrawer } from "../../components/writing/PromptInspectorDrawer";
 import { TablesPanel } from "../../components/writing/TablesPanel";
 import { WritingToolbar } from "../../components/writing/WritingToolbar";
+import { formatDateTime } from "../../lib/dateTime";
 import type { Chapter, ChapterListItem } from "../../types";
 
 import type { ChapterForm } from "./writingUtils";
@@ -163,7 +164,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             <span className="text-subtext">{props.dirty ? WRITING_PAGE_COPY.dirtyBadge : ""}</span>
           </div>
           <div className="mt-1 text-xs text-subtext">
-            {WRITING_PAGE_COPY.updatedAtPrefix} {props.activeChapter.updated_at}
+            {WRITING_PAGE_COPY.updatedAtPrefix} {formatDateTime(props.activeChapter.updated_at)}
           </div>
           <label className="grid gap-1">
             <span className="text-xs text-subtext">{WRITING_PAGE_COPY.titleLabel}</span>

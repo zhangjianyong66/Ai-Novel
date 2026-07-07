@@ -2,6 +2,7 @@ import { useId } from "react";
 import clsx from "clsx";
 import { Check, Diff, History, RotateCcw } from "lucide-react";
 
+import { formatDateTime } from "../../lib/dateTime";
 import type { ChapterVersionDetail, ChapterVersionSummary } from "../../types";
 import { Drawer } from "../ui/Drawer";
 import { ChapterVersionDiffView } from "./ChapterVersionDiffView";
@@ -35,14 +36,8 @@ function sourceLabel(source: string): string {
   return source;
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
 function versionOptionLabel(version: ChapterVersionSummary): string {
-  return `${sourceLabel(version.source)} · ${formatDate(version.created_at)} · ${version.word_count} 字`;
+  return `${sourceLabel(version.source)} · ${formatDateTime(version.created_at)} · ${version.word_count} 字`;
 }
 
 export function ChapterVersionsDrawer(props: Props) {
@@ -105,7 +100,7 @@ export function ChapterVersionsDrawer(props: Props) {
                           </span>
                         ) : null}
                       </span>
-                      <span className="text-xs text-subtext">{formatDate(version.created_at)}</span>
+                      <span className="text-xs text-subtext">{formatDateTime(version.created_at)}</span>
                       <span className="text-xs text-subtext">
                         {version.word_count} 字{version.model ? ` · ${version.model}` : ""}
                       </span>
@@ -122,7 +117,7 @@ export function ChapterVersionsDrawer(props: Props) {
                 {props.selectedVersion ? (
                   <>
                     <span className="font-medium text-ink">{sourceLabel(props.selectedVersion.source)}</span>
-                    <span> · {formatDate(props.selectedVersion.created_at)}</span>
+                    <span> · {formatDateTime(props.selectedVersion.created_at)}</span>
                     <span> · {props.selectedVersion.word_count} 字</span>
                   </>
                 ) : (

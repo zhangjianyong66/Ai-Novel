@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { DebugDetails } from "../../components/atelier/DebugPageShell";
 import { Drawer } from "../../components/ui/Drawer";
+import { formatDateTime, formatUnknownDateTime } from "../../lib/dateTime";
 import { humanizeChangeSetStatus, humanizeTaskStatus } from "../../lib/humanize";
 import { UI_COPY } from "../../lib/uiCopy";
 import type { ProjectTaskRuntime } from "../../services/projectTaskRuntime";
@@ -202,7 +203,7 @@ export function TaskCenterChangeSetsSection(props: TaskCenterChangeSetsSectionPr
               <div className="min-w-0">
                 <div className="truncate text-sm text-ink">{item.title || item.summary_md || item.id}</div>
                 <div className="mt-1 truncate text-xs text-subtext">
-                  章节 ID：{item.chapter_id || "-"} | 更新时间：{item.updated_at || item.created_at || "-"}
+                  章节 ID：{item.chapter_id || "-"} | 更新时间：{formatDateTime(item.updated_at || item.created_at)}
                 </div>
                 {item.request_id ? (
                   <RequestIdRow
@@ -564,10 +565,10 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 />
               ) : null}
               <div>
-                created_at：<span className="font-mono text-ink">{props.selected.item.created_at || "-"}</span>
+                created_at：<span className="font-mono text-ink">{formatDateTime(props.selected.item.created_at)}</span>
               </div>
               <div>
-                updated_at：<span className="font-mono text-ink">{props.selected.item.updated_at || "-"}</span>
+                updated_at：<span className="font-mono text-ink">{formatDateTime(props.selected.item.updated_at)}</span>
               </div>
             </div>
           </section>
@@ -604,7 +605,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 created_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.created_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.created_at,
+                    ),
                   )}
                 </span>
               </div>
@@ -612,7 +615,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 started_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.started_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.started_at,
+                    ),
                   )}
                 </span>
               </div>
@@ -620,7 +625,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 finished_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.finished_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.finished_at,
+                    ),
                   )}
                 </span>
               </div>
@@ -675,7 +682,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 created_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.created_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.created_at,
+                    ),
                   )}
                 </span>
               </div>
@@ -683,7 +692,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 started_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.started_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.started_at,
+                    ),
                   )}
                 </span>
               </div>
@@ -691,7 +702,9 @@ export function TaskCenterDetailDrawer(props: TaskCenterDetailDrawerProps) {
                 finished_at：
                 <span className="font-mono text-ink">
                   {String(
-                    (props.selected.item.timings as Record<string, unknown> | null | undefined)?.finished_at ?? "-",
+                    formatUnknownDateTime(
+                      (props.selected.item.timings as Record<string, unknown> | null | undefined)?.finished_at,
+                    ),
                   )}
                 </span>
               </div>

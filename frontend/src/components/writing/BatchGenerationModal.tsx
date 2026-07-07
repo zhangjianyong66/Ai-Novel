@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+import { formatDateTime } from "../../lib/dateTime";
 import type { ProjectTaskRuntime } from "../../services/projectTaskRuntime";
 import { Modal } from "../ui/Modal";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -354,7 +355,7 @@ export function BatchGenerationModal(props: {
                           <span>
                             #{entry.seq} ? {entry.event_type}
                           </span>
-                          <span>{entry.created_at || "-"}</span>
+                          <span>{formatDateTime(entry.created_at)}</span>
                         </div>
                         <div className="mt-1 text-subtext">
                           {entry.reason ? `原因：${entry.reason}` : "原因：-"}
@@ -381,7 +382,7 @@ export function BatchGenerationModal(props: {
                           <div className="mt-1 break-words text-xs text-subtext">{buildStepLabel(item)}</div>
                           {item.started_at || item.finished_at ? (
                             <div className="mt-1 text-[11px] text-subtext">
-                              开始时间：{item.started_at || "-"} · 结束时间：{item.finished_at || "-"}
+                              开始时间：{formatDateTime(item.started_at)} · 结束时间：{formatDateTime(item.finished_at)}
                             </div>
                           ) : null}
                         </div>

@@ -1,3 +1,4 @@
+import { formatDateTime } from "../../lib/dateTime";
 import type { VectorRerankObs, VectorSuperSortObs } from "./types";
 
 export function safeJson(obj: unknown): string {
@@ -9,10 +10,7 @@ export function safeJson(obj: unknown): string {
 }
 
 export function formatIsoToLocal(iso: string | null | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString();
+  return formatDateTime(iso);
 }
 
 export function normalizeRerankObs(raw: unknown): VectorRerankObs | null {

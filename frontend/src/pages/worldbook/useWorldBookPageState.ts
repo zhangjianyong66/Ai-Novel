@@ -5,6 +5,7 @@ import { useConfirm } from "../../components/ui/confirm";
 import { useToast } from "../../components/ui/toast";
 import { useChapterMetaList } from "../../hooks/useChapterMetaList";
 import { useProjectData } from "../../hooks/useProjectData";
+import { formatDateTimeForFilename } from "../../lib/dateTime";
 import { UI_COPY } from "../../lib/uiCopy";
 import type { ApiError } from "../../services/apiClient";
 import {
@@ -184,7 +185,7 @@ export function useWorldBookPageState(): WorldBookPageState {
     setExporting(true);
     try {
       const out = await exportAllWorldBookEntries(projectId);
-      const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+      const stamp = formatDateTimeForFilename();
       downloadJson(`worldbook_export_all_${projectId}_${stamp}.json`, out);
       toast.toastSuccess(WORLDBOOK_COPY.exportSuccess);
     } catch (error) {

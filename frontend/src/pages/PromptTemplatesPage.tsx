@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { useConfirm } from "../components/ui/confirm";
 import { useToast } from "../components/ui/toast";
 import { copyText } from "../lib/copyText";
+import { formatDateTimeForFilename } from "../lib/dateTime";
 import { PROMPT_STUDIO_TASKS } from "../lib/promptTaskCatalog";
 import { usePersistentOutletIsActive } from "../hooks/usePersistentOutlet";
 import { UnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
@@ -363,7 +364,7 @@ export function PromptTemplatesPage() {
     setBusy(true);
     try {
       const res = await apiJson<{ export: unknown }>(`/api/projects/${projectId}/prompt_presets/export_all`);
-      const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+      const stamp = formatDateTimeForFilename();
       downloadJsonFile(res.data.export, `prompt_presets_all_${stamp}.json`);
       toast.toastSuccess("已导出整套");
     } catch (e) {

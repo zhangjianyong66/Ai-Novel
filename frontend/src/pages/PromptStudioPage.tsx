@@ -5,6 +5,7 @@ import { DebugDetails } from "../components/atelier/DebugPageShell";
 import { useConfirm } from "../components/ui/confirm";
 import { useToast } from "../components/ui/toast";
 import { copyText } from "../lib/copyText";
+import { formatDateTimeForFilename } from "../lib/dateTime";
 import { PROMPT_STUDIO_TASKS } from "../lib/promptTaskCatalog";
 import { UI_COPY } from "../lib/uiCopy";
 import { ApiError, apiJson, sanitizeFilename } from "../services/apiClient";
@@ -462,7 +463,7 @@ export function PromptStudioPage() {
       const a = document.createElement("a");
       a.href = url;
       const safeName = sanitizeFilename(project?.name || "prompt_presets_all") || "prompt_presets_all";
-      const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+      const stamp = formatDateTimeForFilename();
       a.download = `${safeName}_${stamp}.json`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);

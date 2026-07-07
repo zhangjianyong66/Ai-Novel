@@ -9,9 +9,10 @@ import { ThemeToggle } from "../atelier/ThemeToggle";
 import { Drawer } from "../ui/Drawer";
 import { useAuth } from "../../contexts/auth";
 import { PersistentOutletProvider } from "../../hooks/PersistentOutletProvider";
+import { formatEpochSecondsDateTime } from "../../lib/dateTime";
+import { fadeUpVariants, transition } from "../../lib/motion";
 import { resolveRouteMeta } from "../../lib/routes";
 import { UI_COPY } from "../../lib/uiCopy";
-import { fadeUpVariants, transition } from "../../lib/motion";
 import { getCurrentUserId } from "../../services/currentUser";
 import {
   advancedDebugCollapsedStorageKey,
@@ -284,7 +285,7 @@ export function AppShell() {
   const title = routeMeta.title;
   const mainMaxWidth =
     routeMeta.layout === "home" ? "max-w-5xl" : routeMeta.layout === "paper" ? "max-w-4xl" : "max-w-screen-xl";
-  const sessionExpireAtText = auth.session?.expireAt ? new Date(auth.session.expireAt * 1000).toLocaleString() : null;
+  const sessionExpireAtText = auth.session?.expireAt ? formatEpochSecondsDateTime(auth.session.expireAt) : null;
   const mobileNavOpen = mobileNavOpenForPath === pathname;
 
   const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose;

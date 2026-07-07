@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { formatDateTime, formatDateTimeForFilename } from "../../lib/dateTime";
 import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
@@ -296,7 +297,7 @@ export function ContextPreviewDrawer(props: Props) {
       return;
     }
     try {
-      const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+      const stamp = formatDateTimeForFilename();
       const hint = requestId || stamp;
       const filename = `context_preview_bundle_${projectId}_${hint}.json`;
       downloadJson(filename, {
@@ -519,7 +520,7 @@ export function ContextPreviewDrawer(props: Props) {
     setPreviewQueryText(queryText);
     setPreviewSections(sections);
     setBudgetOverrideInputs(DEFAULT_BUDGET_INPUTS);
-    setSyncedAt(new Date().toISOString().replace("T", " ").slice(0, 19));
+    setSyncedAt(formatDateTime(new Date()));
     await fetchPreview({ queryText, sections, budgets: {} });
   }, [computeEffectiveQueryTextFromGenerate, fetchPreview, genMemoryModules]);
 

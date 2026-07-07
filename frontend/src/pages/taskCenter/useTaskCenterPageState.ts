@@ -5,6 +5,7 @@ import { useToast } from "../../components/ui/toast";
 import { useProjectData } from "../../hooks/useProjectData";
 import { useProjectTaskEvents } from "../../hooks/useProjectTaskEvents";
 import { copyText } from "../../lib/copyText";
+import { formatDateTime } from "../../lib/dateTime";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { humanizeChangeSetStatus, humanizeTaskStatus } from "../../lib/humanize";
 import { ApiError, apiJson } from "../../services/apiClient";
@@ -323,8 +324,8 @@ export function useTaskCenterPageState(): TaskCenterPageState {
           `chapter_id=${item.chapter_id || "-"}`,
           `request_id=${item.request_id || "-"}`,
           `idempotency_key=${item.idempotency_key || "-"}`,
-          `created_at=${item.created_at || "-"}`,
-          `updated_at=${item.updated_at || "-"}`,
+          `created_at=${formatDateTime(item.created_at)}`,
+          `updated_at=${formatDateTime(item.updated_at)}`,
         ].join("\n"),
         { title: TASK_CENTER_COPY.copyDebugInfoTitle },
       );

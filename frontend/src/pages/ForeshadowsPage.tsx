@@ -6,6 +6,7 @@ import { useConfirm } from "../components/ui/confirm";
 import { useToast } from "../components/ui/toast";
 import { RequestIdBadge } from "../components/ui/RequestIdBadge";
 import { useChapterMetaList } from "../hooks/useChapterMetaList";
+import { formatDateTime } from "../lib/dateTime";
 import { createRequestSeqGuard } from "../lib/requestSeqGuard";
 import { ApiError, apiJson } from "../services/apiClient";
 import type { ChapterListItem } from "../types";
@@ -294,7 +295,7 @@ export function ForeshadowsPage() {
                   <div className="mt-1 text-[11px] text-subtext">
                     chapter_id:{it.chapter_id || "-"} | score:{String(it.importance_score ?? 0)} | timeline:
                     {String(it.story_timeline ?? 0)}
-                    {it.updated_at ? ` | updated:${it.updated_at}` : ""}
+                    {it.updated_at ? ` | updated:${formatDateTime(it.updated_at)}` : ""}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">

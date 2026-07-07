@@ -4,6 +4,7 @@ import { useConfirm } from "../components/ui/confirm";
 import { useToast } from "../components/ui/toast";
 import { useAuth } from "../contexts/auth";
 import { copyText } from "../lib/copyText";
+import { formatDateTime } from "../lib/dateTime";
 import { humanizeYesNo } from "../lib/humanize";
 import { ApiError, apiJson } from "../services/apiClient";
 
@@ -80,10 +81,7 @@ type EditUserForm = {
 };
 
 function fmtDateTime(value: string | null | undefined): string {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
+  return formatDateTime(value);
 }
 
 function fmtCount(value: number | null | undefined): string {

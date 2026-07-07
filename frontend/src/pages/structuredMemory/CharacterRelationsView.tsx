@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useToast } from "../../components/ui/toast";
+import { formatDateTime } from "../../lib/dateTime";
 import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { ApiError, apiJson } from "../../services/apiClient";
 
@@ -560,7 +561,7 @@ export function CharacterRelationsView(props: {
                     </div>
                     <div className="mt-1 text-[11px] text-subtext">{relId}</div>
                     {r.deleted_at ? (
-                      <div className="mt-1 text-[11px] text-danger">deleted_at: {r.deleted_at}</div>
+                      <div className="mt-1 text-[11px] text-danger">deleted_at: {formatDateTime(r.deleted_at)}</div>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -697,7 +698,7 @@ export function CharacterRelationsView(props: {
                             aria-label={`structured_character_relation_evidence_${relId}_${String(item.id)}`}
                           >
                             <div className="text-[11px] text-subtext">
-                              {item.source_type}:{item.source_id ?? "-"} | {item.created_at ?? "-"}
+                              {item.source_type}:{item.source_id ?? "-"} | {formatDateTime(item.created_at)}
                             </div>
                             <div className="mt-1 whitespace-pre-wrap text-subtext">{item.quote_md || "（空）"}</div>
                           </div>

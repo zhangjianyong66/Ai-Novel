@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.core.errors import AppError
 from app.api.routes import chapter_analysis
 from app.schemas.chapter_analysis import ChapterAnalyzeRequest, ChapterRewriteRequest
 from app.services.generation_service import PreparedLlmCall, RecordedLlmResult
@@ -72,15 +73,64 @@ class TestChapterAnalysisLlmParams(unittest.TestCase):
                                 return_value=("system", "user", None, None, None, None, {}),
                             ):
                                 with patch.object(chapter_analysis, "call_llm_and_record", side_effect=fake_call_llm_and_record):
-                                    chapter_analysis.analyze_chapter(
-                                        request=self._request(),
-                                        chapter_id="chapter-1",
-                                        body=ChapterAnalyzeRequest(),
-                                        user_id="local-user",
-                                    )
+                                    with patch.object(
+                                        chapter_analysis,
+                                        "_save_and_apply_analysis_result",
+                                        return_value={
+                                            "persisted_analysis": {"plot_analysis_id": "pa-1"},
+                                            "apply_result": {"status": "empty", "memories_count": 0},
+                                        },
+                                    ):
+                                        chapter_analysis.analyze_chapter(
+                                            request=self._request(),
+                                            chapter_id="chapter-1",
+                                            body=ChapterAnalyzeRequest(),
+                                            user_id="local-user",
+                                        )
 
         self.assertEqual(captured[0].params["max_tokens"], 12000)
         self.assertEqual(captured[0].params["temperature"], 0.2)
+
+    def test_analyze_chapter_rejects_draft_overrides(self) -> None:
+        with patch.object(chapter_analysis, "SessionLocal", return_value=_FakeDb()):
+            with patch.object(
+                chapter_analysis,
+                "require_chapter_editor",
+                return_value=SimpleNamespace(id="chapter-1", project_id="project-1", status="done"),
+            ):
+                with patch.object(
+                    chapter_analysis,
+                    "_resolve_task_llm_for_call",
+                    return_value=SimpleNamespace(api_key="sk-test", llm_call=self._prepared_call(max_tokens=12000)),
+                ):
+                    with patch.object(chapter_analysis, "ensure_default_chapter_analyze_preset"):
+                        with patch.object(chapter_analysis, "build_chapter_analyze_render_values", return_value={}):
+                            with patch.object(
+                                chapter_analysis,
+                                "render_preset_for_task",
+                                return_value=("system", "user", None, None, None, None, {}),
+                            ):
+                                with patch.object(
+                                    chapter_analysis,
+                                    "call_llm_and_record",
+                                    return_value=RecordedLlmResult(
+                                        text='{"chapter_summary":"ok","hooks":[],"foreshadows":[],"plot_points":[]}',
+                                        finish_reason="stop",
+                                        latency_ms=1,
+                                        dropped_params=[],
+                                        run_id="run-1",
+                                    ),
+                                ):
+                                    with self.assertRaises(AppError) as ctx:
+                                        chapter_analysis.analyze_chapter(
+                                            request=self._request(),
+                                            chapter_id="chapter-1",
+                                            body=ChapterAnalyzeRequest(draft_content_md="未保存草稿"),
+                                            user_id="local-user",
+                                        )
+
+        self.assertEqual(ctx.exception.code, "VALIDATION_ERROR")
+        self.assertEqual(ctx.exception.details.get("reason"), "chapter_analysis_requires_saved_chapter")
 
     def test_auto_memory_update_keeps_configured_max_tokens(self) -> None:
         captured: list[PreparedLlmCall] = []
@@ -142,12 +192,20 @@ class TestChapterAnalysisLlmParams(unittest.TestCase):
                                             "propose_chapter_memory_change_set",
                                             return_value={"idempotent": False, "change_set": {"id": "cs-1"}},
                                         ):
-                                            chapter_analysis.analyze_chapter(
-                                                request=self._request(),
-                                                chapter_id="chapter-1",
-                                                body=ChapterAnalyzeRequest(auto_propose_memory_update=True),
-                                                user_id="local-user",
-                                            )
+                                            with patch.object(
+                                                chapter_analysis,
+                                                "_save_and_apply_analysis_result",
+                                                return_value={
+                                                    "persisted_analysis": {"plot_analysis_id": "pa-1"},
+                                                    "apply_result": {"status": "empty", "memories_count": 0},
+                                                },
+                                            ):
+                                                chapter_analysis.analyze_chapter(
+                                                    request=self._request(),
+                                                    chapter_id="chapter-1",
+                                                    body=ChapterAnalyzeRequest(auto_propose_memory_update=True),
+                                                    user_id="local-user",
+                                                )
 
         self.assertEqual(captured[0].params["max_tokens"], 12000)
         self.assertEqual(captured[1].params["max_tokens"], 9000)

@@ -1,5 +1,106 @@
 # 章节定稿自动更新规范
 
+## Scenario: 章节分析结果持久化与自动应用剧情记忆
+
+### 1. Scope / Trigger
+
+- Trigger: 修改章节分析、章节改写、剧情记忆应用、`plot_analysis` 表、写作页分析弹窗恢复逻辑。
+- 手动章节分析是“已保存章节内容”的分析，不支持未保存草稿分析。
+- 每章只保留最近一次解析成功的分析结果；历史回看不属于当前契约。
+
+### 2. Signatures
+
+- DB: `plot_analysis(id, project_id, chapter_id, analysis_json, generation_run_id, chapter_content_hash, chapter_active_version_id, apply_status, apply_error_json, created_at, updated_at)`
+- Analyze API: `POST /api/chapters/{chapter_id}/analyze`
+- Restore API: `GET /api/chapters/{chapter_id}/analysis`
+- Retry API: `POST /api/chapters/{chapter_id}/analysis/retry_apply`
+- Service helpers:
+  - `save_plot_analysis_snapshot(db, project_id, chapter, analysis, generation_run_id, apply_status, apply_error?)`
+  - `get_latest_plot_analysis_snapshot(db, chapter)`
+  - `apply_chapter_analysis(..., force_reapply=False)`
+
+### 3. Contracts
+
+- `POST /analyze` 请求体不得携带 `draft_title`、`draft_plan`、`draft_summary`、`draft_content_md`；分析必须使用数据库中已保存章节内容。
+- LLM 输出解析成功后，后端写入/更新该章唯一 `plot_analysis` 行，记录：
+  - `analysis_json`: 规范化后的结构化分析。
+  - `generation_run_id`: 本次 `chapter_analyze` run id。
+  - `chapter_content_hash`: 当前 `chapters.content_md` 的 SHA-256。
+  - `chapter_active_version_id`: 当前 `chapters.active_version_id`。
+  - `apply_status`: `pending`、`success`、`empty`、`failed`。
+- 解析失败不得覆盖已有 `plot_analysis`。
+- 分析持久化后立即自动调用 `apply_chapter_analysis(..., force_reapply=True)` 更新该章托管剧情记忆。
+- 自动应用失败不得回滚已保存分析；只更新 `apply_status="failed"` 和 `apply_error_json`。
+- 0 条剧情记忆是成功空结果，`apply_status="empty"`，不是 `INTERNAL_ERROR`。
+- `GET /analysis` 返回 `analysis_result: null | object`，并基于当前章节 hash / active version 计算 `is_stale`。
+- `POST /analysis/retry_apply` 只允许对未过期分析重试；过期分析必须重新分析。
+
+### 4. Validation & Error Matrix
+
+- `POST /analyze` 携带任一草稿字段 -> `VALIDATION_ERROR details.reason="chapter_analysis_requires_saved_chapter"`。
+- 章节不存在或无权限 -> 复用 `require_chapter_viewer/editor` 语义。
+- LLM 输出 `parse_error != None` -> 响应当次解析失败信息，不更新 `plot_analysis`。
+- `POST /analysis/retry_apply` 无持久化分析 -> `NOT_FOUND`。
+- `POST /analysis/retry_apply` 分析已过期 -> `VALIDATION_ERROR details.reason="chapter_analysis_stale"`。
+- `POST /analysis/retry_apply` 持久化分析为空或损坏 -> `VALIDATION_ERROR details.reason="chapter_analysis_empty"`。
+- 自动应用抛出 `AppError` 或未知异常 -> 响应 `apply_result.status="failed"`，并持久化脱敏后的错误摘要。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 用户保存章节后点击分析，刷新页面再打开弹窗，前端通过 `GET /analysis` 恢复最近一次分析和应用状态。
+- Good: 用户修改并保存正文后，旧分析仍可查看但 `is_stale=true`，前端禁用“按建议重写”和“重试应用”。
+- Good: 分析成功但没有可提取剧情记忆，弹窗显示“未提取到可写入的剧情记忆”。
+- Base: 重新分析同一章会覆盖该章托管剧情记忆，但不删除手动创建的记忆。
+- Bad: 前端把未保存编辑器正文作为 `draft_content_md` 发给 `/analyze`，刷新后分析结果与保存正文不匹配。
+- Bad: 自动应用失败时回滚 `plot_analysis`，导致用户刷新后丢失已经成功生成的分析结果。
+
+### 6. Tests Required
+
+- 后端测试：
+  - `POST /analyze` 携带草稿字段时返回 `chapter_analysis_requires_saved_chapter`。
+  - 解析成功后保存 snapshot，可通过 `get_latest_plot_analysis_snapshot` 恢复。
+  - 章节正文 hash 变化后 snapshot 返回 `is_stale=true`。
+  - `apply_chapter_analysis` 允许 0 条 seeds，返回 `memories=[]` 且不抛错。
+  - `plot_auto_update_v1` 继续可应用剧情记忆，不被新增字段破坏。
+- 前端测试/检查：
+  - 有 dirty 状态时禁用/阻止分析。
+  - 过期分析禁用重写和重试应用。
+  - `apiJson<T>()` 的 `T` 使用后端 `data` 内部结构，不包装完整 `ok` 响应。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await apiJson<ChapterAnalyzeResult>(`/api/chapters/${chapterId}/analyze`, {
+  method: "POST",
+  body: JSON.stringify({ draft_content_md: form.content_md }),
+});
+```
+
+#### Correct
+
+```typescript
+if (dirty) {
+  toast.toastError("请先保存当前修改，再执行章节分析。");
+  return;
+}
+await apiJson<ChapterAnalyzeResult>(
+  `/api/chapters/${chapterId}/analyze`,
+  buildLlmJsonRequestInit({ headers, payload, llmTimeoutSeconds: preset.timeout_seconds }),
+);
+```
+
+#### Correct
+
+```python
+save_plot_analysis_snapshot(...)
+try:
+    out = apply_chapter_analysis(..., force_reapply=True)
+except Exception as exc:
+    update_plot_analysis_apply_status(db, chapter_id=chapter_id, status="failed", error=error_payload(exc))
+```
+
 ## Scenario: 章节保存与自动更新触发接口
 
 ### 1. Scope / Trigger

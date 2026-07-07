@@ -17,6 +17,11 @@ class PlotAnalysis(Base):
     chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
 
     analysis_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    generation_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    chapter_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chapter_active_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    apply_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    apply_error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     overall_quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     coherence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     engagement_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -24,10 +29,10 @@ class PlotAnalysis(Base):
     analysis_report_md: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (UniqueConstraint("chapter_id", name="uq_plot_analysis_chapter_id"),)
 
 
 Index("ix_plot_analysis_project_id_created_at", PlotAnalysis.project_id, PlotAnalysis.created_at)
 Index("ix_plot_analysis_project_id_chapter_id", PlotAnalysis.project_id, PlotAnalysis.chapter_id)
-

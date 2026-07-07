@@ -21,7 +21,12 @@ from app.services.generation_service import call_llm_and_record, with_param_over
 from app.services.llm_task_preset_resolver import resolve_task_llm_config
 from app.services.memory_update_service import propose_chapter_memory_change_set
 from app.services.output_contracts import contract_for_task
-from app.services.plot_analysis_service import apply_chapter_analysis as apply_plot_analysis
+from app.services.plot_analysis_service import (
+    apply_chapter_analysis as apply_plot_analysis,
+    get_latest_plot_analysis_snapshot,
+    save_plot_analysis_snapshot,
+    update_plot_analysis_apply_status,
+)
 from app.services.prompt_presets import (
     _ensure_default_preset_from_resource,
     ensure_default_chapter_analyze_preset,
@@ -31,6 +36,73 @@ from app.services.prompt_presets import (
 
 router = APIRouter()
 logger = logging.getLogger("ainovel")
+
+
+def _apply_result_payload(out: dict[str, object]) -> dict[str, object]:
+    memories = out.get("memories")
+    count = len(memories) if isinstance(memories, list) else 0
+    return {
+        "status": "success" if count > 0 else "empty",
+        "memories_count": count,
+        "plot_analysis_id": out.get("plot_analysis_id"),
+        "analysis_hash": out.get("analysis_hash"),
+        "idempotent": bool(out.get("idempotent")),
+    }
+
+
+def _error_payload(exc: Exception) -> dict[str, object]:
+    if isinstance(exc, AppError):
+        return {"code": str(exc.code), "message": str(exc.message), "details": exc.details or {}}
+    return {"code": "INTERNAL_ERROR", "message": "剧情记忆应用失败"}
+
+
+def _save_and_apply_analysis_result(
+    *,
+    request_id: str,
+    user_id: str,
+    chapter_id: str,
+    analysis: dict[str, object],
+    generation_run_id: str | None,
+) -> dict[str, object]:
+    db = SessionLocal()
+    try:
+        chapter = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+        save_plot_analysis_snapshot(
+            db,
+            project_id=chapter.project_id,
+            chapter=chapter,
+            analysis=analysis,
+            generation_run_id=generation_run_id,
+            apply_status="pending",
+        )
+        db.commit()
+        chapter_number = int(getattr(chapter, "number", 0) or 0)
+        content_md = str(getattr(chapter, "content_md", "") or "")
+
+        try:
+            out = apply_plot_analysis(
+                db=db,
+                request_id=request_id,
+                actor_user_id=user_id,
+                project_id=chapter.project_id,
+                chapter_id=chapter_id,
+                chapter_number=chapter_number,
+                analysis=analysis,
+                draft_content_md=content_md,
+                force_reapply=True,
+            )
+            apply_result = _apply_result_payload(out)
+        except Exception as exc:
+            db.rollback()
+            error = _error_payload(exc)
+            update_plot_analysis_apply_status(db, chapter_id=chapter_id, status="failed", error=error)
+            db.commit()
+            apply_result = {"status": "failed", "memories_count": 0, "error": error}
+
+        snapshot = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+        return {"persisted_analysis": snapshot, "apply_result": apply_result}
+    finally:
+        db.close()
 
 
 def _resolve_task_llm_for_call(
@@ -130,6 +202,16 @@ def analyze_chapter(
     x_llm_api_key: str | None = Header(default=None, alias="X-LLM-API-Key", max_length=4096),
 ) -> dict:
     request_id = request.state.request_id
+    if (
+        body.draft_title is not None
+        or body.draft_plan is not None
+        or body.draft_summary is not None
+        or body.draft_content_md is not None
+    ):
+        raise AppError.validation(
+            message="请先保存章节内容，再执行章节分析",
+            details={"reason": "chapter_analysis_requires_saved_chapter"},
+        )
     resolved_api_key = ""
 
     prompt_system = ""
@@ -269,6 +351,15 @@ def analyze_chapter(
         data["parse_error"] = parse_error
     if llm_result.finish_reason is not None:
         data["finish_reason"] = llm_result.finish_reason
+    if parse_error is None and isinstance(data.get("analysis"), dict):
+        persisted = _save_and_apply_analysis_result(
+            request_id=request_id,
+            user_id=user_id,
+            chapter_id=chapter_id,
+            analysis=data["analysis"],
+            generation_run_id=llm_result.run_id,
+        )
+        data.update(persisted)
 
     if auto_memupd:
         if memupd_skip_reason is not None:
@@ -364,6 +455,60 @@ def analyze_chapter(
                     "error": {"code": "INTERNAL_ERROR", "message": "自动记忆更新生成失败"},
                 }
     return ok_payload(request_id=request_id, data=data)
+
+
+@router.get("/chapters/{chapter_id}/analysis")
+def get_chapter_analysis_route(
+    request: Request,
+    db: DbDep,
+    chapter_id: str,
+    user_id: UserIdDep,
+) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_viewer(db, chapter_id=chapter_id, user_id=user_id)
+    snapshot = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+    return ok_payload(request_id=request_id, data={"analysis_result": snapshot})
+
+
+@router.post("/chapters/{chapter_id}/analysis/retry_apply")
+def retry_apply_chapter_analysis_route(
+    request: Request,
+    db: DbDep,
+    chapter_id: str,
+    user_id: UserIdDep,
+) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_editor(db, chapter_id=chapter_id, user_id=user_id)
+    snapshot = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+    if snapshot is None:
+        raise AppError.not_found(message="未找到可应用的章节分析结果")
+    if bool(snapshot.get("is_stale")):
+        raise AppError.validation(message="章节分析已过期，请重新分析", details={"reason": "chapter_analysis_stale"})
+    analysis = snapshot.get("analysis")
+    if not isinstance(analysis, dict) or not analysis:
+        raise AppError.validation(message="章节分析结果为空，请重新分析", details={"reason": "chapter_analysis_empty"})
+
+    try:
+        out = apply_plot_analysis(
+            db=db,
+            request_id=request_id,
+            actor_user_id=user_id,
+            project_id=chapter.project_id,
+            chapter_id=chapter_id,
+            chapter_number=int(chapter.number),
+            analysis=analysis,
+            draft_content_md=chapter.content_md or "",
+            force_reapply=True,
+        )
+        apply_result = _apply_result_payload(out)
+    except Exception as exc:
+        db.rollback()
+        error = _error_payload(exc)
+        update_plot_analysis_apply_status(db, chapter_id=chapter_id, status="failed", error=error)
+        db.commit()
+        apply_result = {"status": "failed", "memories_count": 0, "error": error}
+    refreshed = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+    return ok_payload(request_id=request_id, data={"analysis_result": refreshed, "apply_result": apply_result})
 
 
 @router.post("/chapters/{chapter_id}/rewrite")

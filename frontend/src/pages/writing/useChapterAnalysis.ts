@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { ChapterAnalyzeResult, ChapterRewriteResult, GenerateForm } from "../../components/writing/types";
+import type {
+  ChapterAnalysisApplyResult,
+  ChapterAnalyzeResult,
+  ChapterRewriteResult,
+  GenerateForm,
+  PersistedChapterAnalysis,
+} from "../../components/writing/types";
 import type { ToastApi } from "../../components/ui/toast";
 import { buildLlmJsonRequestInit } from "../../lib/llmRequestTimeout";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
@@ -20,6 +26,30 @@ export function resolveAnalysisAfterRewrite(
   return current;
 }
 
+function resultFromPersistedAnalysis(persisted: PersistedChapterAnalysis): ChapterAnalyzeResult {
+  return {
+    analysis: persisted.analysis,
+    generation_run_id: persisted.generation_run_id ?? "",
+    persisted_analysis: persisted,
+    apply_result: {
+      status: persisted.apply_status ?? "pending",
+      memories_count: undefined,
+      plot_analysis_id: persisted.plot_analysis_id,
+      error: persisted.apply_error ?? null,
+    },
+  };
+}
+
+function mergeApplyState(
+  current: ChapterAnalyzeResult | null,
+  analysisResult: PersistedChapterAnalysis | null,
+  applyResult: ChapterAnalysisApplyResult | null,
+): ChapterAnalyzeResult | null {
+  if (!analysisResult) return current;
+  const next = resultFromPersistedAnalysis(analysisResult);
+  return { ...next, apply_result: applyResult ?? next.apply_result };
+}
+
 export function useChapterAnalysis(args: {
   activeChapter: Chapter | null;
   preset: LLMPreset | null;
@@ -35,6 +65,7 @@ export function useChapterAnalysis(args: {
 
   const [open, setOpen] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisHistoryLoading, setAnalysisHistoryLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<ChapterAnalyzeResult | null>(null);
   const [analysisFocus, setAnalysisFocus] = useState("");
   const [rewriteInstruction, setRewriteInstruction] = useState<string>(WRITING_PAGE_COPY.analyzeInstructionDefault);
@@ -72,7 +103,31 @@ export function useChapterAnalysis(args: {
     setApplyLoading(false);
   }, [activeChapter?.id]);
 
-  const openModal = useCallback(() => setOpen(true), []);
+  const loadPersistedAnalysis = useCallback(async () => {
+    if (!activeChapter) return;
+    const seq = analyzeGuardRef.current.next();
+    setAnalysisHistoryLoading(true);
+    try {
+      const res = await apiJson<{ analysis_result: PersistedChapterAnalysis | null }>(
+        `/api/chapters/${activeChapter.id}/analysis`,
+      );
+      if (!analyzeGuardRef.current.isLatest(seq)) return;
+      setAnalysisResult(res.data.analysis_result ? resultFromPersistedAnalysis(res.data.analysis_result) : null);
+    } catch (e) {
+      if (!analyzeGuardRef.current.isLatest(seq)) return;
+      const err = e as ApiError;
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+    } finally {
+      if (analyzeGuardRef.current.isLatest(seq)) {
+        setAnalysisHistoryLoading(false);
+      }
+    }
+  }, [activeChapter, toast]);
+
+  const openModal = useCallback(() => {
+    setOpen(true);
+    void loadPersistedAnalysis();
+  }, [loadPersistedAnalysis]);
   const closeModal = useCallback(() => setOpen(false), []);
 
   const analyzeChapter = useCallback(async () => {
@@ -83,6 +138,10 @@ export function useChapterAnalysis(args: {
     }
     if (!(form.content_md ?? "").trim()) {
       toast.toastError(WRITING_PAGE_COPY.analyzeEmptyContent);
+      return;
+    }
+    if (dirty) {
+      toast.toastError(WRITING_PAGE_COPY.analyzeNeedsSaveFirst);
       return;
     }
 
@@ -102,10 +161,6 @@ export function useChapterAnalysis(args: {
           character_ids: genForm.context.character_ids,
           previous_chapter: genForm.context.previous_chapter === "none" ? null : genForm.context.previous_chapter,
         },
-        draft_title: form.title,
-        draft_plan: form.plan,
-        draft_summary: form.summary,
-        draft_content_md: form.content_md,
       };
 
       const res = await apiJson<ChapterAnalyzeResult>(
@@ -135,7 +190,7 @@ export function useChapterAnalysis(args: {
         setAnalysisLoading(false);
       }
     }
-  }, [activeChapter, analysisFocus, form, genForm, preset, toast]);
+  }, [activeChapter, analysisFocus, dirty, form, genForm, preset, toast]);
 
   const rewriteFromAnalysis = useCallback(async () => {
     if (!activeChapter || !form) return;
@@ -145,6 +200,10 @@ export function useChapterAnalysis(args: {
     }
     if (!analysisResult?.analysis) {
       toast.toastError(WRITING_PAGE_COPY.rewriteNeedsAnalysis);
+      return;
+    }
+    if (analysisResult.persisted_analysis?.is_stale) {
+      toast.toastError(WRITING_PAGE_COPY.analyzeStaleActionBlocked);
       return;
     }
     if (!(form.content_md ?? "").trim()) {
@@ -211,6 +270,7 @@ export function useChapterAnalysis(args: {
   }, [
     activeChapter,
     analysisResult?.analysis,
+    analysisResult?.persisted_analysis?.is_stale,
     form,
     genForm,
     onChapterPersisted,
@@ -226,25 +286,22 @@ export function useChapterAnalysis(args: {
       toast.toastError(WRITING_PAGE_COPY.rewriteNeedsAnalysis);
       return;
     }
+    if (analysisResult.persisted_analysis?.is_stale) {
+      toast.toastError(WRITING_PAGE_COPY.analyzeStaleActionBlocked);
+      return;
+    }
 
     const seq = applyGuardRef.current.next();
     setApplyLoading(true);
     try {
       const res = await apiJson<{
-        idempotent: boolean;
-        analysis_hash: string;
-        plot_analysis_id: string;
-        memories: unknown[];
-      }>(`/api/chapters/${activeChapter.id}/analysis/apply`, {
-        method: "POST",
-        body: JSON.stringify({
-          analysis: analysisResult.analysis,
-          draft_content_md: form.content_md,
-        }),
-      });
+        analysis_result: PersistedChapterAnalysis | null;
+        apply_result: ChapterAnalysisApplyResult | null;
+      }>(`/api/chapters/${activeChapter.id}/analysis/retry_apply`, { method: "POST" });
       if (!applyGuardRef.current.isLatest(seq)) return;
 
-      const count = (res.data.memories ?? []).length;
+      setAnalysisResult((current) => mergeApplyState(current, res.data.analysis_result, res.data.apply_result));
+      const count = res.data.apply_result?.memories_count ?? 0;
       toast.toastSuccess(getWritingApplyMemorySuccess(count), res.request_id, {
         label: WRITING_PAGE_COPY.openChapterAnalysis,
         onClick: () => {
@@ -271,13 +328,22 @@ export function useChapterAnalysis(args: {
         setApplyLoading(false);
       }
     }
-  }, [activeChapter, analysisResult?.analysis, form, navigate, saveChapter, toast]);
+  }, [
+    activeChapter,
+    analysisResult?.analysis,
+    analysisResult?.persisted_analysis?.is_stale,
+    form,
+    navigate,
+    saveChapter,
+    toast,
+  ]);
 
   return {
     open,
     openModal,
     closeModal,
-    analysisLoading,
+    analysisLoading: analysisLoading || analysisHistoryLoading,
+    analysisHistoryLoading,
     analysisResult,
     analysisFocus,
     setAnalysisFocus,
@@ -288,5 +354,6 @@ export function useChapterAnalysis(args: {
     rewriteFromAnalysis,
     applyLoading,
     applyAnalysisToMemory,
+    canAnalyze: !dirty,
   };
 }

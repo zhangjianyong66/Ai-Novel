@@ -52,6 +52,8 @@ export const WRITING_PAGE_COPY = {
   memoryUpdateNeedsSaveFirst: "请先保存当前章节后再进行记忆更新。",
   promptPresetRequired: "请先在 Prompts 页保存 LLM 配置",
   analyzeEmptyContent: "正文为空，无法分析",
+  analyzeNeedsSaveFirst: "请先保存当前修改，再执行章节分析。",
+  analyzeStaleActionBlocked: "该分析基于旧版本正文，请重新分析后再执行此操作。",
   analyzeDone: "分析完成",
   analyzeParseFailedPrefix: "分析解析失败：",
   analyzeInstructionDefault: "按分析建议重写，减少重复，保持叙事连续。",

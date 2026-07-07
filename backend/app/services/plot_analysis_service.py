@@ -43,6 +43,10 @@ from app.services.search_index_service import schedule_search_rebuild_task
 from app.services.vector_rag_service import schedule_vector_rebuild_task
 
 _MANAGED_MEMORY_TYPES = {"chapter_summary", "hook", "plot_point", "foreshadow", "character_state"}
+_APPLY_STATUS_PENDING = "pending"
+_APPLY_STATUS_SUCCESS = "success"
+_APPLY_STATUS_EMPTY = "empty"
+_APPLY_STATUS_FAILED = "failed"
 
 logger = logging.getLogger("ainovel")
 
@@ -133,6 +137,106 @@ def compute_analysis_hash(analysis: dict[str, Any]) -> tuple[str, str]:
     canonical = _canonical_json(analysis)
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return canonical, digest
+
+
+def compute_chapter_content_hash(content_md: str | None) -> str:
+    return hashlib.sha256(str(content_md or "").encode("utf-8")).hexdigest()
+
+
+def _safe_json_object(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _plot_analysis_is_stale(*, row: PlotAnalysis, chapter: Chapter) -> bool:
+    content_hash = str(getattr(row, "chapter_content_hash", "") or "").strip()
+    active_version_id = str(getattr(row, "chapter_active_version_id", "") or "").strip()
+    current_hash = compute_chapter_content_hash(getattr(chapter, "content_md", None))
+    current_version_id = str(getattr(chapter, "active_version_id", "") or "").strip()
+    if not content_hash:
+        return True
+    if content_hash != current_hash:
+        return True
+    if active_version_id and active_version_id != current_version_id:
+        return True
+    return False
+
+
+def plot_analysis_snapshot(row: PlotAnalysis, *, chapter: Chapter) -> dict[str, Any]:
+    return {
+        "plot_analysis_id": row.id,
+        "analysis": _safe_json(row.analysis_json, {}),
+        "generation_run_id": row.generation_run_id,
+        "chapter_content_hash": row.chapter_content_hash,
+        "chapter_active_version_id": row.chapter_active_version_id,
+        "apply_status": row.apply_status or _APPLY_STATUS_PENDING,
+        "apply_error": _safe_json_object(row.apply_error_json),
+        "is_stale": _plot_analysis_is_stale(row=row, chapter=chapter),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def get_latest_plot_analysis_snapshot(db: Session, *, chapter: Chapter) -> dict[str, Any] | None:
+    row = db.execute(select(PlotAnalysis).where(PlotAnalysis.chapter_id == chapter.id).limit(1)).scalars().first()
+    if row is None:
+        return None
+    return plot_analysis_snapshot(row, chapter=chapter)
+
+
+def save_plot_analysis_snapshot(
+    db: Session,
+    *,
+    project_id: str,
+    chapter: Chapter,
+    analysis: object,
+    generation_run_id: str | None,
+    apply_status: str = _APPLY_STATUS_PENDING,
+    apply_error: dict[str, Any] | None = None,
+) -> PlotAnalysis:
+    validated = validate_analysis_payload(analysis)
+    canonical_json, _analysis_hash = compute_analysis_hash(validated)
+    now = utc_now()
+    row = db.execute(select(PlotAnalysis).where(PlotAnalysis.chapter_id == chapter.id).limit(1)).scalars().first()
+    if row is None:
+        row = PlotAnalysis(
+            id=new_id(),
+            project_id=project_id,
+            chapter_id=str(chapter.id),
+            analysis_json=canonical_json,
+            created_at=now,
+        )
+        db.add(row)
+    else:
+        row.analysis_json = canonical_json
+    row.generation_run_id = generation_run_id
+    row.chapter_content_hash = compute_chapter_content_hash(getattr(chapter, "content_md", None))
+    row.chapter_active_version_id = str(getattr(chapter, "active_version_id", "") or "").strip() or None
+    row.apply_status = apply_status
+    row.apply_error_json = json.dumps(apply_error, ensure_ascii=False) if apply_error else None
+    row.updated_at = now
+    return row
+
+
+def update_plot_analysis_apply_status(
+    db: Session,
+    *,
+    chapter_id: str,
+    status: str,
+    error: dict[str, Any] | None = None,
+) -> PlotAnalysis | None:
+    row = db.execute(select(PlotAnalysis).where(PlotAnalysis.chapter_id == chapter_id).limit(1)).scalars().first()
+    if row is None:
+        return None
+    row.apply_status = status
+    row.apply_error_json = json.dumps(error, ensure_ascii=False) if error else None
+    row.updated_at = utc_now()
+    return row
 
 
 def validate_analysis_payload(analysis: object) -> dict[str, Any]:
@@ -325,25 +429,23 @@ def extract_story_memory_seeds(
             chapter_summary = "；".join(pieces).strip()
     if not chapter_summary:
         chapter_summary = (content_md or "").strip()[:300].strip()
-    if not chapter_summary:
-        chapter_summary = "（未生成摘要）"
-
-    seeds.append(
-        {
-            "memory_type": "chapter_summary",
-            "title": None,
-            "content": chapter_summary,
-            "full_context_md": None,
-            "importance_score": 1.0,
-            "tags": ["chapter_summary"],
-            "story_timeline": timeline,
-            "text_position": -1,
-            "text_length": 0,
-            "is_foreshadow": 0,
-            "foreshadow_resolved_at_chapter_id": None,
-            "metadata": None,
-        }
-    )
+    if chapter_summary:
+        seeds.append(
+            {
+                "memory_type": "chapter_summary",
+                "title": None,
+                "content": chapter_summary,
+                "full_context_md": None,
+                "importance_score": 1.0,
+                "tags": ["chapter_summary"],
+                "story_timeline": timeline,
+                "text_position": -1,
+                "text_length": 0,
+                "is_foreshadow": 0,
+                "foreshadow_resolved_at_chapter_id": None,
+                "metadata": None,
+            }
+        )
 
     hooks = analysis.get("hooks")
     if isinstance(hooks, list):
@@ -490,6 +592,7 @@ def apply_chapter_analysis(
     chapter_number: int,
     analysis: object,
     draft_content_md: str | None,
+    force_reapply: bool = False,
 ) -> dict[str, Any]:
     validated = validate_analysis_payload(analysis)
     canonical_json, analysis_hash = compute_analysis_hash(validated)
@@ -500,7 +603,7 @@ def apply_chapter_analysis(
         .first()
     )
 
-    if existing is not None:
+    if existing is not None and not force_reapply:
         existing_hash = hashlib.sha256((existing.analysis_json or "").encode("utf-8")).hexdigest()
         if existing_hash == analysis_hash:
             memories = (
@@ -550,7 +653,6 @@ def apply_chapter_analysis(
             existing.analysis_json = canonical_json
             existing.created_at = now
             plot = existing
-
         db.execute(
             delete(StoryMemory).where(
                 StoryMemory.project_id == project_id,
@@ -590,9 +692,9 @@ def apply_chapter_analysis(
             )
 
         db.add_all(created)
-
-        if not created:
-            raise AppError(code="INTERNAL_ERROR", message="未生成任何 story_memories", status_code=500)
+        plot.apply_status = _APPLY_STATUS_SUCCESS if created else _APPLY_STATUS_EMPTY
+        plot.apply_error_json = None
+        plot.updated_at = now
 
         generation_run_id = new_id()
         db.add(

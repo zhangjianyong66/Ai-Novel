@@ -68,6 +68,7 @@ export function ChapterAnalysisModal(props: {
   analysisLoading: boolean;
   rewriteLoading: boolean;
   applyLoading: boolean;
+  canAnalyze: boolean;
   analysisFocus: string;
   setAnalysisFocus: (value: string) => void;
   analysisResult: ChapterAnalyzeResult | null;
@@ -80,6 +81,11 @@ export function ChapterAnalysisModal(props: {
   onRewriteFromAnalysis: () => void;
 }) {
   const busy = props.analysisLoading || props.rewriteLoading || props.applyLoading;
+  const isStale = Boolean(props.analysisResult?.persisted_analysis?.is_stale);
+  const applyStatus =
+    props.analysisResult?.apply_result?.status ?? props.analysisResult?.persisted_analysis?.apply_status;
+  const applyError = props.analysisResult?.apply_result?.error ?? props.analysisResult?.persisted_analysis?.apply_error;
+  const showRetryApply = applyStatus === "failed" && !isStale;
   const titleId = useId();
   return (
     <Modal
@@ -94,7 +100,7 @@ export function ChapterAnalysisModal(props: {
             章节分析
           </div>
           <div className="mt-1 text-xs text-subtext">
-            分析与重写只会写入“生成记录”；保存到记忆库会写入长期记忆（不影响章节正文）。
+            分析基于已保存章节内容；完成后会自动保存分析结果并更新剧情记忆。
           </div>
         </div>
         <button className="btn btn-secondary" aria-label="关闭" onClick={props.onClose} disabled={busy} type="button">
@@ -115,17 +121,15 @@ export function ChapterAnalysisModal(props: {
         </label>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-primary" disabled={busy} onClick={props.onAnalyze} type="button">
-            {props.analysisLoading ? "分析中..." : props.analysisResult ? "重新分析" : "开始分析"}
-          </button>
           <button
-            className="btn btn-secondary"
-            disabled={!props.analysisResult || busy}
-            onClick={props.onApplyAnalysisToMemory}
+            className="btn btn-primary"
+            disabled={busy || !props.canAnalyze}
+            onClick={props.onAnalyze}
             type="button"
           >
-            {props.applyLoading ? "保存中..." : "保存到记忆库"}
+            {props.analysisLoading ? "分析中..." : props.analysisResult ? "重新分析" : "开始分析"}
           </button>
+          {!props.canAnalyze ? <span className="text-xs text-subtext">请先保存当前修改后再分析。</span> : null}
           {props.analysisResult?.generation_run_id ? (
             <button
               className="btn btn-secondary"
@@ -140,6 +144,40 @@ export function ChapterAnalysisModal(props: {
 
         {props.analysisResult ? (
           <div className="grid gap-4">
+            {isStale ? (
+              <div className="rounded-atelier border border-warning/40 bg-warning/10 p-3 text-sm text-ink">
+                此分析基于旧版本正文。可以查看，但需要重新分析后才能按建议重写或应用剧情记忆。
+              </div>
+            ) : null}
+
+            {applyStatus ? (
+              <div className="rounded-atelier border border-border bg-surface p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-ink">
+                    剧情记忆：
+                    {applyStatus === "success"
+                      ? `已应用${props.analysisResult.apply_result?.memories_count != null ? `（${props.analysisResult.apply_result.memories_count} 条）` : ""}`
+                      : applyStatus === "empty"
+                        ? "未提取到可写入的剧情记忆"
+                        : applyStatus === "failed"
+                          ? "应用失败"
+                          : "等待应用"}
+                  </div>
+                  {showRetryApply ? (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={busy}
+                      onClick={props.onApplyAnalysisToMemory}
+                      type="button"
+                    >
+                      {props.applyLoading ? "重试中..." : "重试应用"}
+                    </button>
+                  ) : null}
+                </div>
+                {applyError?.message ? <div className="mt-2 text-xs text-subtext">{applyError.message}</div> : null}
+              </div>
+            ) : null}
+
             {props.analysisResult.parse_error?.message ? (
               <div className="rounded-atelier border border-border bg-surface p-3 text-sm text-accent">
                 解析失败：{props.analysisResult.parse_error.message}
@@ -401,7 +439,7 @@ export function ChapterAnalysisModal(props: {
             <div className="text-xs text-subtext">默认只应用阻断定稿问题；普通优化和润色由作者自行取舍。</div>
             <button
               className="btn btn-primary"
-              disabled={!props.analysisResult || busy}
+              disabled={!props.analysisResult || busy || isStale}
               onClick={props.onRewriteFromAnalysis}
               type="button"
             >

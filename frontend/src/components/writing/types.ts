@@ -182,6 +182,32 @@ export type ChapterAnalyzeResult = {
   finish_reason?: string;
   dropped_params?: string[];
   generation_run_id: string;
+  persisted_analysis?: PersistedChapterAnalysis | null;
+  apply_result?: ChapterAnalysisApplyResult | null;
+};
+
+export type ChapterAnalysisApplyStatus = "pending" | "success" | "empty" | "failed" | string;
+
+export type ChapterAnalysisApplyResult = {
+  status: ChapterAnalysisApplyStatus;
+  memories_count?: number;
+  plot_analysis_id?: string | null;
+  analysis_hash?: string | null;
+  idempotent?: boolean;
+  error?: { code?: string; message?: string; details?: unknown } | null;
+};
+
+export type PersistedChapterAnalysis = {
+  plot_analysis_id: string;
+  analysis: ChapterAnalysis;
+  generation_run_id?: string | null;
+  chapter_content_hash?: string | null;
+  chapter_active_version_id?: string | null;
+  apply_status?: ChapterAnalysisApplyStatus | null;
+  apply_error?: { code?: string; message?: string; details?: unknown } | null;
+  is_stale?: boolean;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
 export type ChapterRewriteResult = {

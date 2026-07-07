@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -14,6 +15,8 @@ from app.services.plot_analysis_service import (
     apply_chapter_analysis,
     compute_analysis_hash,
     extract_story_memory_seeds,
+    get_latest_plot_analysis_snapshot,
+    save_plot_analysis_snapshot,
     validate_analysis_payload,
 )
 
@@ -27,7 +30,12 @@ class TestPlotAnalysisApply(unittest.TestCase):
             conn.exec_driver_sql("CREATE TABLE users (id VARCHAR(64) PRIMARY KEY)")
             conn.exec_driver_sql("CREATE TABLE projects (id VARCHAR(36) PRIMARY KEY)")
             conn.exec_driver_sql("CREATE TABLE outlines (id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36))")
-            conn.exec_driver_sql("CREATE TABLE chapters (id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36), outline_id VARCHAR(36))")
+            conn.exec_driver_sql(
+                "CREATE TABLE chapters ("
+                "id VARCHAR(36) PRIMARY KEY, project_id VARCHAR(36), outline_id VARCHAR(36), "
+                "content_md TEXT, active_version_id VARCHAR(36)"
+                ")"
+            )
             conn.execute(text("INSERT INTO users (id) VALUES (:id)"), {"id": "local-user"})
             conn.execute(text("INSERT INTO projects (id) VALUES (:id)"), {"id": "project-1"})
             conn.execute(text("INSERT INTO outlines (id, project_id) VALUES (:id, :project_id)"), {"id": "outline-1", "project_id": "project-1"})
@@ -179,3 +187,48 @@ class TestPlotAnalysisApply(unittest.TestCase):
             self.assertEqual(ids1, ids2)
             self.assertEqual(db.query(PlotAnalysis).count(), 1)
             self.assertEqual(db.query(GenerationRun).filter(GenerationRun.type == "analysis_apply").count(), 1)
+
+    def test_apply_allows_zero_story_memories(self) -> None:
+        SessionLocal = self._make_db()
+
+        with SessionLocal() as db:
+            out = apply_chapter_analysis(
+                db=db,
+                request_id="req-empty",
+                actor_user_id="local-user",
+                project_id="project-1",
+                chapter_id="chapter-1",
+                chapter_number=1,
+                analysis={"chapter_summary": "", "hooks": [], "foreshadows": [], "plot_points": []},
+                draft_content_md="",
+            )
+
+            self.assertFalse(out["idempotent"])
+            self.assertEqual(out["memories"], [])
+            self.assertEqual(db.query(PlotAnalysis).count(), 1)
+            self.assertEqual(db.query(StoryMemory).count(), 0)
+
+    def test_saved_snapshot_can_be_restored_and_marks_stale_after_content_changes(self) -> None:
+        SessionLocal = self._make_db()
+
+        with SessionLocal() as db:
+            chapter = SimpleNamespace(id="chapter-1", content_md="已保存正文", active_version_id="version-1")
+            save_plot_analysis_snapshot(
+                db,
+                project_id="project-1",
+                chapter=chapter,
+                analysis={"chapter_summary": "本章摘要"},
+                generation_run_id="run-1",
+                apply_status="success",
+            )
+            db.commit()
+
+            restored = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+            self.assertIsNotNone(restored)
+            self.assertFalse(restored["is_stale"])
+            self.assertEqual(restored["analysis"]["chapter_summary"], "本章摘要")
+            self.assertEqual(restored["generation_run_id"], "run-1")
+
+            chapter.content_md = "新的已保存正文"
+            stale = get_latest_plot_analysis_snapshot(db, chapter=chapter)
+            self.assertTrue(stale["is_stale"])

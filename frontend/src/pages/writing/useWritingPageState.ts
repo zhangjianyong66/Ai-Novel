@@ -917,6 +917,7 @@ export function useWritingPageState(): WritingPageState {
       analysisLoading: analysis.analysisLoading,
       rewriteLoading: analysis.rewriteLoading,
       applyLoading: analysis.applyLoading,
+      canAnalyze: analysis.canAnalyze,
       analysisFocus: analysis.analysisFocus,
       setAnalysisFocus: analysis.setAnalysisFocus,
       analysisResult: analysis.analysisResult,

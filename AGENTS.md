@@ -120,6 +120,7 @@
 - 章节正文版本只管理 `content_md`，不回滚标题、计划、摘要或状态；AI 覆盖前如果当前正文没有匹配的激活版本，应懒创建 `manual_snapshot`，当前正文已等于激活版本时不重复创建快照。
 - 版本激活与普通正文保存一样只标记 vector dirty，不自动创建 `ProjectTask`；`done` 章节不能直接激活历史版本，必须先通过状态接口回退到 `drafting`。
 - 写作页切换章节历史版本必须先预览再激活；有未保存修改时禁止激活历史版本，生成/优化接口响应中的 `saved_version` / `active_version` 表示后端已保存并激活，前端应刷新章节详情而不是继续提示“确认后保存”。
+- 写作页章节版本比较的段落 diff 可以将相似删除/新增段落合并为 changed 块，但配对和渲染必须保持旧版与新版各自的原文段落顺序；不要用纯“最高相似度优先”的非单调贪心配对导致任一侧段落倒序。
 - `PATCH /api/chapters/{chapter_id}/status` 是章节状态修改的唯一入口，请求体包含 `status` 和 `expected_status`；合法流转为 `planned -> drafting`、`drafting -> planned`、`drafting -> done`、`done -> drafting`。状态修改只改状态、标记 vector dirty，不创建任何 `ProjectTask`。
 - `PUT /api/chapters/{chapter_id}` 只保存标题、计划、正文和摘要；请求体只要包含 `status` 就返回 `details.reason=chapter_status_update_requires_status_endpoint`。已定稿章节仍默认只读，直接通过 `PUT` 修改内容返回 `details.reason=chapter_done_readonly`。
 - 前端写作页状态修改必须使用状态徽标和合法动作按钮，不能使用状态下拉框或把 `status` 放入保存 payload；有未保存内容修改时应先保存，`done -> drafting` 必须二次确认。

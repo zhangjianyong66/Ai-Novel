@@ -73,6 +73,17 @@ describe("buildChapterVersionDiff", () => {
     expect(diff.blocks[1].targetText).toContain("威士忌");
   });
 
+  it("keeps inserted target paragraphs before their later matched paragraph", () => {
+    const diff = buildChapterVersionDiff({
+      baseContent: "第一段。\n\n拇指又一次悬在拨号键上方。\n\n第三段。",
+      targetContent: "第一段。\n\n他站起来，走进浴室。\n\n拇指又一次悬在拨号键上方，他最终按下通话。\n\n第三段。",
+    });
+
+    expect(diff.blocks.map((block) => block.type)).toEqual(["equal", "added", "changed", "equal"]);
+    expect(diff.blocks[1].targetText).toBe("他站起来，走进浴室。");
+    expect(diff.blocks[2].targetText).toContain("拨号键");
+  });
+
   it("keeps unrelated paragraphs as insertions and removals", () => {
     const diff = buildChapterVersionDiff({
       baseContent: "第一段。\n\n他握着短剑走进雨夜。\n\n第三段。",

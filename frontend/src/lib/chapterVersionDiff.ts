@@ -24,6 +24,17 @@ type DiffOp<T> = { kind: "equal"; value: T } | { kind: "added"; value: T } | { k
 
 const PARAGRAPH_PAIR_SIMILARITY_THRESHOLD = 0.35;
 
+type RemovedParagraphEntry = { op: Extract<DiffOp<string>, { kind: "removed" }>; index: number; order: number };
+type AddedParagraphEntry = { op: Extract<DiffOp<string>, { kind: "added" }>; index: number; order: number };
+type ParagraphPair = {
+  id: string;
+  baseOrder: number;
+  targetOrder: number;
+  baseText: string;
+  targetText: string;
+};
+type PairPlan = { pairCount: number; pairs: ParagraphPair[]; score: number };
+
 export function buildChapterVersionDiff(input: {
   baseContent: string;
   targetContent: string;
@@ -74,38 +85,56 @@ function coalesceParagraphOps(ops: Array<DiffOp<string>>): ChapterVersionDiffBlo
 }
 
 function coalesceChangeGroup(ops: Array<DiffOp<string>>): ChapterVersionDiffBlock[] {
-  const pairs = pairSimilarParagraphs(ops);
+  const removed = collectRemovedParagraphs(ops);
+  const added = collectAddedParagraphs(ops);
+  const pairs = pairSimilarParagraphs(removed, added);
   const blocks: ChapterVersionDiffBlock[] = [];
-  const emittedPairs = new Set<string>();
+  let baseCursor = 0;
+  let targetCursor = 0;
 
-  for (const [index, op] of ops.entries()) {
-    const pair = pairs.get(index);
-    if (pair) {
-      if (emittedPairs.has(pair.id)) continue;
-      emittedPairs.add(pair.id);
-      blocks.push(buildChangedBlock(pair.baseText, pair.targetText));
-      continue;
+  for (const pair of pairs) {
+    while (baseCursor < pair.baseOrder) {
+      blocks.push(buildRemovedBlock(removed[baseCursor].op.value));
+      baseCursor += 1;
     }
 
-    if (op.kind === "added") {
-      blocks.push({
-        type: "added",
-        targetText: op.value,
-        targetTokens: [{ kind: "added", text: op.value }],
-      });
-      continue;
+    while (targetCursor < pair.targetOrder) {
+      blocks.push(buildAddedBlock(added[targetCursor].op.value));
+      targetCursor += 1;
     }
 
-    if (op.kind === "removed") {
-      blocks.push({
-        type: "removed",
-        baseText: op.value,
-        baseTokens: [{ kind: "removed", text: op.value }],
-      });
-    }
+    blocks.push(buildChangedBlock(pair.baseText, pair.targetText));
+    baseCursor = pair.baseOrder + 1;
+    targetCursor = pair.targetOrder + 1;
+  }
+
+  while (baseCursor < removed.length) {
+    blocks.push(buildRemovedBlock(removed[baseCursor].op.value));
+    baseCursor += 1;
+  }
+
+  while (targetCursor < added.length) {
+    blocks.push(buildAddedBlock(added[targetCursor].op.value));
+    targetCursor += 1;
   }
 
   return blocks;
+}
+
+function buildAddedBlock(targetText: string): ChapterVersionDiffBlock {
+  return {
+    type: "added",
+    targetText,
+    targetTokens: [{ kind: "added", text: targetText }],
+  };
+}
+
+function buildRemovedBlock(baseText: string): ChapterVersionDiffBlock {
+  return {
+    type: "removed",
+    baseText,
+    baseTokens: [{ kind: "removed", text: baseText }],
+  };
 }
 
 function buildChangedBlock(baseText: string, targetText: string): ChapterVersionDiffBlock {
@@ -117,57 +146,66 @@ function buildChangedBlock(baseText: string, targetText: string): ChapterVersion
   };
 }
 
-function pairSimilarParagraphs(
-  ops: Array<DiffOp<string>>,
-): Map<number, { id: string; baseText: string; targetText: string }> {
-  const removed = ops
+function collectRemovedParagraphs(ops: Array<DiffOp<string>>): RemovedParagraphEntry[] {
+  return ops
     .map((op, index) => ({ op, index }))
     .filter(
       (entry): entry is { op: Extract<DiffOp<string>, { kind: "removed" }>; index: number } =>
         entry.op.kind === "removed",
-    );
-  const added = ops
+    )
+    .map((entry, order) => ({ ...entry, order }));
+}
+
+function collectAddedParagraphs(ops: Array<DiffOp<string>>): AddedParagraphEntry[] {
+  return ops
     .map((op, index) => ({ op, index }))
     .filter(
       (entry): entry is { op: Extract<DiffOp<string>, { kind: "added" }>; index: number } => entry.op.kind === "added",
-    );
+    )
+    .map((entry, order) => ({ ...entry, order }));
+}
 
-  const candidates = removed.flatMap((baseEntry) =>
-    added
-      .map((targetEntry) => ({
-        baseIndex: baseEntry.index,
-        targetIndex: targetEntry.index,
-        score: paragraphSimilarity(baseEntry.op.value, targetEntry.op.value),
-      }))
-      .filter((candidate) => candidate.score >= PARAGRAPH_PAIR_SIMILARITY_THRESHOLD),
-  );
+function pairSimilarParagraphs(removed: RemovedParagraphEntry[], added: AddedParagraphEntry[]): ParagraphPair[] {
+  const emptyPlan: PairPlan = { pairCount: 0, pairs: [], score: 0 };
+  const dp = Array.from({ length: removed.length + 1 }, () => Array<PairPlan>(added.length + 1).fill(emptyPlan));
 
-  candidates.sort((a, b) => b.score - a.score);
+  for (let i = 1; i <= removed.length; i += 1) {
+    for (let j = 1; j <= added.length; j += 1) {
+      let best = betterPairPlan(dp[i - 1][j], dp[i][j - 1]);
+      const baseEntry = removed[i - 1];
+      const targetEntry = added[j - 1];
+      const similarity = paragraphSimilarity(baseEntry.op.value, targetEntry.op.value);
 
-  const usedBaseIndexes = new Set<number>();
-  const usedTargetIndexes = new Set<number>();
-  const pairs = new Map<number, { id: string; baseText: string; targetText: string }>();
+      if (similarity >= PARAGRAPH_PAIR_SIMILARITY_THRESHOLD) {
+        const previous = dp[i - 1][j - 1];
+        const withPair: PairPlan = {
+          pairCount: previous.pairCount + 1,
+          pairs: [
+            ...previous.pairs,
+            {
+              id: `${baseEntry.index}-${targetEntry.index}`,
+              baseOrder: baseEntry.order,
+              targetOrder: targetEntry.order,
+              baseText: baseEntry.op.value,
+              targetText: targetEntry.op.value,
+            },
+          ],
+          score: previous.score + similarity,
+        };
+        best = betterPairPlan(best, withPair);
+      }
 
-  for (const candidate of candidates) {
-    if (usedBaseIndexes.has(candidate.baseIndex) || usedTargetIndexes.has(candidate.targetIndex)) continue;
-
-    const baseOp = ops[candidate.baseIndex];
-    const targetOp = ops[candidate.targetIndex];
-    if (baseOp.kind !== "removed" || targetOp.kind !== "added") continue;
-
-    usedBaseIndexes.add(candidate.baseIndex);
-    usedTargetIndexes.add(candidate.targetIndex);
-
-    const pair = {
-      id: `${candidate.baseIndex}-${candidate.targetIndex}`,
-      baseText: baseOp.value,
-      targetText: targetOp.value,
-    };
-    pairs.set(candidate.baseIndex, pair);
-    pairs.set(candidate.targetIndex, pair);
+      dp[i][j] = best;
+    }
   }
 
-  return pairs;
+  return dp[removed.length][added.length].pairs;
+}
+
+function betterPairPlan(a: PairPlan, b: PairPlan): PairPlan {
+  if (a.score !== b.score) return a.score > b.score ? a : b;
+  if (a.pairCount !== b.pairCount) return a.pairCount > b.pairCount ? a : b;
+  return a;
 }
 
 function buildInlineTokenDiff(

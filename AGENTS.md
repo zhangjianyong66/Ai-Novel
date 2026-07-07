@@ -46,6 +46,7 @@
 - 当前本地环境没有全局 `python` 命令，使用 `python3` 或 `backend/.venv/bin/python`；当前 `backend/.venv` 未安装 `pytest`，`unittest` 风格单测可用 `cd backend && .venv/bin/python -m unittest tests.<module>` 验证。
 - 当前全量 `cd backend && python -m pytest tests` 可能先被既有测试环境问题阻塞：`tests/test_gate_runner.py`、`tests/test_prompt_preset_integrity.py`、`tests/test_security_guard_runner.py` 依赖仓库中不存在的 `scripts.run_gate` / `scripts.guards`；忽略这 3 个文件后，当前还可见既有失败 `test_auth_session.py::TestAuthEndpoints::test_register_rejects_reserved_admin_user_id` 和 `test_prompt_task_reachability_registry.py::TestPromptTaskReachabilityRegistry::test_ui_copy_and_e2e_registry_registered`。
 - 当前全量 `cd frontend && npm run lint` 已可通过；验证前端改动时优先运行全量 lint，必要时可先对本次触碰文件运行 `npx eslint ...`、`npx prettier --check ...` 和 `node scripts/check-ui-classes.mjs` 定位问题。
+- 前端 Vitest 当前配置为 Node 环境（`frontend/vitest.config.ts`），未安装 `jsdom`、`happy-dom` 或 Testing Library；需要覆盖 hook 状态规则时，优先抽取纯函数/状态模型进行单测，除非先明确引入浏览器 DOM 测试环境。
 
 ## 前端时间显示约定
 

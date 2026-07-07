@@ -12,6 +12,14 @@ import type { Chapter, LLMPreset } from "../../types";
 import { getWritingApplyMemorySuccess, WRITING_PAGE_COPY } from "./writingPageCopy";
 import type { ChapterForm } from "./writingUtils";
 
+export function resolveAnalysisAfterRewrite(
+  current: ChapterAnalyzeResult | null,
+  rewrite: Pick<ChapterRewriteResult, "saved_version" | "active_version">,
+): ChapterAnalyzeResult | null {
+  if (rewrite.saved_version || rewrite.active_version) return null;
+  return current;
+}
+
 export function useChapterAnalysis(args: {
   activeChapter: Chapter | null;
   preset: LLMPreset | null;
@@ -180,9 +188,11 @@ export function useChapterAnalysis(args: {
       if (res.data.saved_version || res.data.active_version) {
         const latest = await chapterStore.loadChapterDetail(activeChapter.id, { force: true });
         onChapterPersisted?.(latest);
+        setAnalysisResult((current) => resolveAnalysisAfterRewrite(current, res.data));
         toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedSaved, res.request_id);
       } else {
         setForm((prev) => (prev ? { ...prev, content_md: nextContent } : prev));
+        setAnalysisResult((current) => resolveAnalysisAfterRewrite(current, res.data));
         toast.toastSuccess(WRITING_PAGE_COPY.rewriteAppliedUnsaved, res.request_id);
       }
       const droppedParams = res.data.dropped_params ?? [];

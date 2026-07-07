@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request, Response
@@ -27,6 +28,19 @@ def _safe_filename(name: str) -> str:
     name = name.strip() or "ainovel"
     name = re.sub(r"[\\\\/:*?\"<>|]+", "_", name)
     return name[:80]
+
+
+def _download_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M%S")
+
+
+def _download_filenames(base_name: str, suffix: str) -> tuple[str, str]:
+    base_utf8 = _safe_filename(base_name)
+    timestamp = _download_timestamp()
+    filename_utf8 = f"{base_utf8}_{timestamp}{suffix}"
+    base_ascii = re.sub(r"[^A-Za-z0-9._-]+", "_", base_utf8).strip("._-") or "ainovel"
+    filename_ascii = f"{base_ascii}_{timestamp}{suffix}"
+    return filename_utf8, filename_ascii
 
 
 @router.get("/projects/{project_id}/export/markdown")
@@ -128,10 +142,7 @@ def export_markdown(
 
     content = "\n".join(parts).rstrip() + "\n"
 
-    base_utf8 = _safe_filename(project.name)
-    filename_utf8 = f"{base_utf8}.md"
-    base_ascii = re.sub(r"[^A-Za-z0-9._-]+", "_", base_utf8).strip("._-") or "ainovel"
-    filename_ascii = f"{base_ascii}.md"
+    filename_utf8, filename_ascii = _download_filenames(project.name, ".md")
     quoted = quote(filename_utf8)
     headers = {
         "Content-Disposition": f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{quoted}",
@@ -147,10 +158,7 @@ def export_bundle(request: Request, db: DbDep, user_id: UserIdDep, project_id: s
 
     payload = json.dumps(export_obj, ensure_ascii=False, indent=2) + "\n"
 
-    base_utf8 = _safe_filename(project.name)
-    filename_utf8 = f"{base_utf8}.bundle.json"
-    base_ascii = re.sub(r"[^A-Za-z0-9._-]+", "_", base_utf8).strip("._-") or "ainovel"
-    filename_ascii = f"{base_ascii}.bundle.json"
+    filename_utf8, filename_ascii = _download_filenames(project.name, ".bundle.json")
     quoted = quote(filename_utf8)
     headers = {
         "Content-Disposition": f"attachment; filename=\"{filename_ascii}\"; filename*=UTF-8''{quoted}",

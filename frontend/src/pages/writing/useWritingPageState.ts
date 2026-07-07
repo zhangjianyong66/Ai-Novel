@@ -1015,6 +1015,7 @@ export function useWritingPageState(): WritingPageState {
       onClose: () => setContextPreviewOpen(false),
       projectId,
       outlineId: activeChapter?.outline_id ?? undefined,
+      chapterNumber: activeChapter?.number ?? null,
       memoryInjectionEnabled: genForm.memory_injection_enabled,
       genInstruction: genForm.instruction,
       genChapterPlan: activeChapter?.plan ?? "",

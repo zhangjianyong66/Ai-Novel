@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from datetime import datetime, timezone
@@ -185,6 +186,8 @@ class TestProjectBundleRoundtrip(unittest.TestCase):
             self.assertEqual(outline_memory.scope, "outline")
             self.assertEqual(outline_memory.outline_id, imported_outline_id)
             self.assertEqual(outline_memory.chapter_id, imported_chapter.id)
+            self.assertEqual(outline_memory.memory_type, "next_requirement")
+            self.assertEqual(json.loads(str(outline_memory.metadata_json or "{}")).get("target_chapter_number"), 2)
             project_memory = memories_by_title["project memory"]
             self.assertEqual(project_memory.scope, "project")
             self.assertIsNone(project_memory.outline_id)
@@ -359,7 +362,7 @@ def _seed_project(db: Session) -> None:
             chapter_id="c1",
             outline_id="o1",
             scope="outline",
-            memory_type="note",
+            memory_type="next_requirement",
             title="outline memory",
             content="c",
             full_context_md=None,
@@ -370,7 +373,15 @@ def _seed_project(db: Session) -> None:
             text_length=0,
             is_foreshadow=0,
             foreshadow_resolved_at_chapter_id=None,
-            metadata_json=None,
+            metadata_json=json.dumps(
+                {
+                    "source": "chapter_analysis.followup_assets",
+                    "asset_type": "next_chapter_requirement",
+                    "target_chapter_number": 2,
+                    "lifecycle": "next_chapter_only",
+                },
+                ensure_ascii=False,
+            ),
         )
     )
     db.add(

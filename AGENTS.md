@@ -113,6 +113,9 @@
 - 写作页手动章节分析只允许基于已保存章节内容运行；有未保存修改时前端应阻止，后端也应拒绝携带 `draft_title`/`draft_plan`/`draft_summary`/`draft_content_md` 的分析请求。
 - 手动章节分析解析成功后应持久化为该章最近一次 `plot_analysis`，记录 `generation_run_id`、章节正文 hash、`active_version_id` 和应用状态；刷新后点击分析弹窗应从后端恢复，正文变化后旧分析标记为过期且禁止重写/重试应用。
 - 手动章节分析成功后自动应用到剧情记忆，同时章节分析弹窗保留常驻“保存到记忆库”按钮，用于把已恢复/已分析结果中的钩子、伏笔、情节点重新写入剧情记忆；应用失败时保留分析结果并提供重试入口，提取 0 条剧情记忆视为成功空结果。
+- 章节分析字段按用途分层：`finalization`、`blocking_issues`、`optional_improvements`、`polish_suggestions` 是质量评审层，不直接注入后续章节生成；`chapter_summary`、`hooks`、`foreshadows`、`plot_points`、`character_states` 是章节事实层，可沉淀为受管 `StoryMemory`。
+- 章节分析 `followup_assets` 只有标准白名单类型会自动沉淀：`continuity_fact` 写入 `StoryMemory.memory_type=continuity_fact` 并进入普通 `story_memory`；`future_payoff` 写入未回收伏笔型 `StoryMemory.memory_type=foreshadow,is_foreshadow=1`；`next_chapter_requirement` 写入短生命周期 `StoryMemory.memory_type=next_requirement`，由后端设置 `metadata.target_chapter_number=当前章节号+1` 和 `metadata.lifecycle=next_chapter_only`。
+- `next_requirement` 不进入普通 `story_memory` 或 story_memory 向量索引，只在章节生成记忆注入开启时通过专用 `NextChapterRequirements` 区块注入目标章节；不会自动续期，若下一章仍未满足，应由下一章分析重新生成资产。
 - 写作页定稿仍由作者最终决定；未分析或最近分析仍有阻断问题时前端只提示确认，不硬性禁止定稿。
 - “按建议重写”默认只应用章节分析里的 `blocking_issues`；`optional_improvements`、`polish_suggestions`、`followup_assets`、`planning_notes` 属于作者可选项或后续写作资产，不应默认传给重写模型要求改正文。
 - 写作页/章节接口的 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 可由已保存章节或无未保存修改的章节显式触发；章节为草稿时只创建 `vector_rebuild`、`search_rebuild`，章节为 `status=done` 时创建 `vector_rebuild`、`search_rebuild` 和完整章节自动更新链。

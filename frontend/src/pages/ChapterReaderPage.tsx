@@ -17,6 +17,7 @@ import type { MemoryContextPack } from "../components/writing/types";
 const EMPTY_PACK: MemoryContextPack = {
   worldbook: {},
   story_memory: {},
+  next_requirements: {},
   semantic_history: {},
   foreshadow_open_loops: {},
   structured: {},

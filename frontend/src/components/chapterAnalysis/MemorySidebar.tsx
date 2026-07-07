@@ -113,6 +113,8 @@ const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "foreshadow", label: labelForAnnotationType("foreshadow") },
   { value: "plot_point", label: labelForAnnotationType("plot_point") },
   { value: "character_state", label: labelForAnnotationType("character_state") },
+  { value: "continuity_fact", label: labelForAnnotationType("continuity_fact") },
+  { value: "next_requirement", label: labelForAnnotationType("next_requirement") },
   { value: "other", label: "其他" },
 ];
 

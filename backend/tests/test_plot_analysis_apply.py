@@ -139,6 +139,46 @@ class TestPlotAnalysisApply(unittest.TestCase):
         self.assertEqual(len(plot_points), 1)
         self.assertIn("主角抵达青云峰", str(plot_points[0].get("content") or ""))
 
+    def test_extract_story_memory_seeds_maps_injectable_followup_assets(self) -> None:
+        seeds = extract_story_memory_seeds(
+            chapter_number=11,
+            analysis={
+                "chapter_summary": "摘要",
+                "followup_assets": [
+                    {"type": "continuity_fact", "title": "线索归属", "note": "钥匙已经交给林澈。"},
+                    {"type": "next_chapter_requirement", "title": "下一章承接", "note": "下一章必须让林澈使用钥匙。"},
+                    {"type": "future_payoff", "title": "旧钟声", "note": "旧钟声将在后续揭示真实来源。"},
+                    {"type": "optional_idea", "title": "可选桥段", "note": "可以增加雨夜气氛。"},
+                    {"type": "legacy free text", "title": "旧格式", "note": "不应自动注入。"},
+                ],
+            },
+            content_md="正文",
+        )
+
+        by_type = {}
+        for seed in seeds:
+            by_type.setdefault(seed.get("memory_type"), []).append(seed)
+
+        continuity = by_type["continuity_fact"][0]
+        self.assertEqual(continuity["content"], "钥匙已经交给林澈。")
+        self.assertEqual(continuity["title"], "线索归属")
+        self.assertEqual(continuity["importance_score"], 0.7)
+        self.assertEqual(continuity["metadata"]["asset_type"], "continuity_fact")
+
+        next_requirement = by_type["next_requirement"][0]
+        self.assertEqual(next_requirement["content"], "下一章必须让林澈使用钥匙。")
+        self.assertEqual(next_requirement["importance_score"], 0.9)
+        self.assertEqual(next_requirement["metadata"]["target_chapter_number"], 12)
+        self.assertEqual(next_requirement["metadata"]["lifecycle"], "next_chapter_only")
+
+        future_payoff = [s for s in by_type["foreshadow"] if s.get("metadata", {}).get("asset_type") == "future_payoff"][0]
+        self.assertEqual(future_payoff["content"], "旧钟声将在后续揭示真实来源。")
+        self.assertEqual(future_payoff["is_foreshadow"], 1)
+
+        all_contents = "\n".join(str(s.get("content") or "") for s in seeds)
+        self.assertNotIn("可以增加雨夜气氛", all_contents)
+        self.assertNotIn("不应自动注入", all_contents)
+
     def test_apply_is_idempotent_and_does_not_duplicate(self) -> None:
         SessionLocal = self._make_db()
         analysis = {
@@ -187,6 +227,50 @@ class TestPlotAnalysisApply(unittest.TestCase):
             self.assertEqual(ids1, ids2)
             self.assertEqual(db.query(PlotAnalysis).count(), 1)
             self.assertEqual(db.query(GenerationRun).filter(GenerationRun.type == "analysis_apply").count(), 1)
+
+    def test_apply_rebuilds_managed_followup_asset_memories(self) -> None:
+        SessionLocal = self._make_db()
+
+        with SessionLocal() as db:
+            apply_chapter_analysis(
+                db=db,
+                request_id="req-1",
+                actor_user_id="local-user",
+                project_id="project-1",
+                chapter_id="chapter-1",
+                chapter_number=1,
+                analysis={
+                    "chapter_summary": "本章摘要",
+                    "followup_assets": [
+                        {"type": "continuity_fact", "title": "旧事实", "note": "旧事实内容"},
+                        {"type": "next_chapter_requirement", "title": "旧要求", "note": "旧要求内容"},
+                    ],
+                },
+                draft_content_md="正文",
+            )
+            apply_chapter_analysis(
+                db=db,
+                request_id="req-2",
+                actor_user_id="local-user",
+                project_id="project-1",
+                chapter_id="chapter-1",
+                chapter_number=1,
+                analysis={
+                    "chapter_summary": "本章摘要",
+                    "followup_assets": [
+                        {"type": "continuity_fact", "title": "新事实", "note": "新事实内容"},
+                    ],
+                },
+                draft_content_md="正文",
+                force_reapply=True,
+            )
+
+            rows = db.query(StoryMemory).order_by(StoryMemory.memory_type.asc(), StoryMemory.title.asc()).all()
+            contents = [str(row.content or "") for row in rows]
+            self.assertIn("新事实内容", contents)
+            self.assertNotIn("旧事实内容", contents)
+            self.assertNotIn("旧要求内容", contents)
+            self.assertEqual(db.query(StoryMemory).filter(StoryMemory.memory_type == "next_requirement").count(), 0)
 
     def test_apply_allows_zero_story_memories(self) -> None:
         SessionLocal = self._make_db()

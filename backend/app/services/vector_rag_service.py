@@ -1316,6 +1316,8 @@ def build_project_chunks(*, db: Session, project_id: str, sources: list[VectorSo
             .all()
         )
         for m in rows:
+            if str(m.memory_type or "").strip() == "next_requirement":
+                continue
             title = (m.title or "").strip()
             content = (m.content or "").strip()
             if not content:

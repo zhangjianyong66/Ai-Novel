@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 MemoryContextSection = Literal[
     "worldbook",
     "story_memory",
+    "next_requirements",
     "semantic_history",
     "foreshadow_open_loops",
     "structured",
@@ -41,6 +42,7 @@ class MemoryContextPackOut(BaseModel):
 
     worldbook: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)
     story_memory: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)
+    next_requirements: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)
     semantic_history: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)
     foreshadow_open_loops: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)
     structured: MemoryContextSectionOut = Field(default_factory=MemoryContextSectionOut)

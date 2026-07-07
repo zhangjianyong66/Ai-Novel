@@ -55,6 +55,7 @@ export type GenerateForm = {
 export type MemoryContextPack = {
   worldbook: Record<string, unknown>;
   story_memory: Record<string, unknown>;
+  next_requirements: Record<string, unknown>;
   semantic_history: Record<string, unknown>;
   foreshadow_open_loops: Record<string, unknown>;
   structured: Record<string, unknown>;

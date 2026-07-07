@@ -30,6 +30,9 @@
   - `apply_status`: `pending`、`success`、`empty`、`failed`。
 - 解析失败不得覆盖已有 `plot_analysis`。
 - 分析持久化后立即自动调用 `apply_chapter_analysis(..., force_reapply=True)` 更新该章托管剧情记忆。
+- 章节分析字段按用途分层：质量评审层 `finalization` / `blocking_issues` / `optional_improvements` / `polish_suggestions` 不直接注入后续生成；章节事实层 `chapter_summary` / `hooks` / `foreshadows` / `plot_points` / `character_states` 可沉淀为受管 `StoryMemory`。
+- `followup_assets` 只允许标准白名单类型自动沉淀：`continuity_fact` -> `StoryMemory.memory_type="continuity_fact"`；`next_chapter_requirement` -> `StoryMemory.memory_type="next_requirement"` 且后端设置 `metadata.target_chapter_number = 当前章节号 + 1`、`metadata.lifecycle = "next_chapter_only"`；`future_payoff` -> `StoryMemory.memory_type="foreshadow"` 且 `is_foreshadow=1`。`author_note`、`optional_idea`、未知或旧自由文本类型只保留在分析快照，不自动写入 StoryMemory。
+- `next_requirement` 是短生命周期要求，只能通过 `NextChapterRequirements` 专用区块注入目标章节；它不得进入普通 `story_memory` 区块，也不得作为 story_memory 向量 chunk 进入 Vector RAG，避免重复放大权重或污染远期章节。
 - 自动应用失败不得回滚已保存分析；只更新 `apply_status="failed"` 和 `apply_error_json`。
 - 0 条剧情记忆是成功空结果，`apply_status="empty"`，不是 `INTERNAL_ERROR`。
 - `GET /analysis` 返回 `analysis_result: null | object`，并基于当前章节 hash / active version 计算 `is_stale`。
@@ -54,6 +57,8 @@
 - Good: 用户修改并保存正文后，旧分析仍可查看但 `is_stale=true`，前端禁用“按建议重写”和保存/重试应用剧情记忆。
 - Good: 分析成功但没有可提取剧情记忆，弹窗显示“未提取到可写入的剧情记忆”。
 - Base: 重新分析同一章会覆盖该章托管剧情记忆，但不删除手动创建的记忆。
+- Good: 重新分析同一章会覆盖 `continuity_fact`、`next_requirement` 等章节分析受管记忆，避免旧后续资产继续注入。
+- Good: 第 N 章分析产生的 `next_requirement` 只注入第 N+1 章生成；第 N+2 章及以后不自动继承，除非后续章节分析重新生成。
 - Bad: 前端把未保存编辑器正文作为 `draft_content_md` 发给 `/analyze`，刷新后分析结果与保存正文不匹配。
 - Bad: 自动应用失败时回滚 `plot_analysis`，导致用户刷新后丢失已经成功生成的分析结果。
 
@@ -64,6 +69,8 @@
   - 解析成功后保存 snapshot，可通过 `get_latest_plot_analysis_snapshot` 恢复。
   - 章节正文 hash 变化后 snapshot 返回 `is_stale=true`。
   - `apply_chapter_analysis` 允许 0 条 seeds，返回 `memories=[]` 且不抛错。
+  - `followup_assets` 中 `continuity_fact` / `next_chapter_requirement` / `future_payoff` 分别沉淀为连续性事实、下一章要求和未回收伏笔；未知类型不写入 StoryMemory。
+  - `next_requirement` 只出现在 `NextChapterRequirements` 专用区块，普通 `story_memory` 和 story_memory 向量 chunk 均不包含它。
   - `plot_auto_update_v1` 继续可应用剧情记忆，不被新增字段破坏。
   - `plot_auto_update_v1` 遇到 `finish_reason="length"` / `output_truncated` 时不应用结果、不删除旧 `StoryMemory`。
   - `plot_auto_update_v1` 调用 LLM 时不得在 `llm_call_overrides_by_attempt` 中写入固定 `max_tokens` 小上限。

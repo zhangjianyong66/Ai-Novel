@@ -16,6 +16,8 @@ const TYPE_LABELS: Record<string, string> = {
   foreshadow: "伏笔",
   plot_point: "情节点",
   character_state: "人物状态",
+  continuity_fact: "连续性事实",
+  next_requirement: "下一章要求",
 };
 
 export function labelForAnnotationType(type: string): string {
@@ -34,6 +36,10 @@ export function sortKeyForAnnotationType(type: string): number {
       return 40;
     case "character_state":
       return 50;
+    case "continuity_fact":
+      return 60;
+    case "next_requirement":
+      return 70;
     default:
       return 999;
   }

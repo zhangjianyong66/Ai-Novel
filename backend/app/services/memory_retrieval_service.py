@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -28,6 +29,7 @@ _TRUNCATION_MARK = "\n…(truncated)\n"
 _ALLOWED_SECTIONS = {
     "worldbook",
     "story_memory",
+    "next_requirements",
     "semantic_history",
     "foreshadow_open_loops",
     "structured",
@@ -126,6 +128,17 @@ def _format_story_memory_text_md(*, memories: list[StoryMemory], char_limit: int
     return _wrap_and_truncate_block(tag="StoryMemory", inner="\n\n".join(parts), char_limit=char_limit)
 
 
+def _format_next_requirements_text_md(*, memories: list[StoryMemory], char_limit: int) -> tuple[str, bool]:
+    parts: list[str] = []
+    for m in memories:
+        title = str(m.title or "").strip() or "下一章要求"
+        content = str(m.content or "").strip()
+        if len(content) > 800:
+            content = content[:800].rstrip() + "…"
+        parts.append(f"### {title}\n{content}".rstrip())
+    return _wrap_and_truncate_block(tag="NextChapterRequirements", inner="\n\n".join(parts), char_limit=char_limit)
+
+
 def _format_semantic_history_text_md(
     *,
     memories: list[StoryMemory],
@@ -160,6 +173,28 @@ def _format_foreshadow_open_loops_text_md(*, foreshadows: list[StoryMemory], cha
             content = content[:800].rstrip() + "…"
         parts.append(f"### {title}\n{content}".rstrip())
     return _wrap_and_truncate_block(tag="ForeshadowOpenLoops", inner="\n\n".join(parts), char_limit=char_limit)
+
+
+def _story_memory_metadata(row: StoryMemory) -> dict[str, Any]:
+    raw = str(getattr(row, "metadata_json", "") or "").strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _target_chapter_number_matches(row: StoryMemory, *, chapter_number: int | None) -> bool:
+    if chapter_number is None:
+        return False
+    metadata = _story_memory_metadata(row)
+    try:
+        target = int(metadata.get("target_chapter_number"))
+    except Exception:
+        return False
+    return target == int(chapter_number)
 
 
 def _extract_query_tokens(query_text: str, *, limit: int) -> list[str]:
@@ -245,6 +280,7 @@ def retrieve_memory_context_pack(
     db: Session,
     project_id: str,
     outline_id: str | None = None,
+    chapter_number: int | None = None,
     query_text: str = "",
     include_deleted: bool = False,
     section_enabled: dict[str, bool] | None = None,
@@ -258,6 +294,7 @@ def retrieve_memory_context_pack(
     budgets = {str(k): v for k, v in budgets_raw.items() if str(k) in _ALLOWED_SECTIONS}
     worldbook_enabled = bool(enabled_map.get("worldbook", True))
     story_memory_enabled = bool(enabled_map.get("story_memory", True))
+    next_requirements_enabled = bool(enabled_map.get("next_requirements", True))
     semantic_history_enabled = bool(enabled_map.get("semantic_history", False))
     foreshadow_open_loops_enabled = bool(enabled_map.get("foreshadow_open_loops", False))
     structured_enabled = bool(enabled_map.get("structured", True))
@@ -270,6 +307,11 @@ def retrieve_memory_context_pack(
     story_memory_budget = (
         _clamp_char_limit(budgets.get("story_memory"), default=_MEMORY_TEXT_MD_CHAR_LIMIT)
         if "story_memory" in budgets
+        else _MEMORY_TEXT_MD_CHAR_LIMIT
+    )
+    next_requirements_budget = (
+        _clamp_char_limit(budgets.get("next_requirements"), default=_MEMORY_TEXT_MD_CHAR_LIMIT)
+        if "next_requirements" in budgets
         else _MEMORY_TEXT_MD_CHAR_LIMIT
     )
     semantic_history_budget = (
@@ -345,6 +387,7 @@ def retrieve_memory_context_pack(
                 select(StoryMemory)
                 .where(StoryMemory.project_id == project_id)
                 .where(_story_memory_scope_clause(outline_id=outline_id))
+                .where(StoryMemory.memory_type != "next_requirement")
                 .order_by(StoryMemory.importance_score.desc(), StoryMemory.updated_at.desc())
             )
             if tokens:
@@ -395,6 +438,66 @@ def retrieve_memory_context_pack(
                 "items": [],
                 "text_md": "",
                 "error": "story_memory_query_failed",
+            }
+
+    next_requirements: dict[str, Any] = {"enabled": False, "disabled_reason": "empty", "items": [], "text_md": ""}
+    if not next_requirements_enabled:
+        next_requirements = {"enabled": False, "disabled_reason": "disabled", "items": [], "text_md": ""}
+    elif chapter_number is None:
+        next_requirements = {"enabled": False, "disabled_reason": "missing_chapter_number", "items": [], "text_md": ""}
+    else:
+        try:
+            limit_plus_one = 41
+            candidate_rows = (
+                db.execute(
+                    select(StoryMemory)
+                    .where(StoryMemory.project_id == project_id)
+                    .where(_story_memory_scope_clause(outline_id=outline_id))
+                    .where(StoryMemory.memory_type == "next_requirement")
+                    .order_by(StoryMemory.importance_score.desc(), StoryMemory.updated_at.desc())
+                    .limit(limit_plus_one)
+                )
+                .scalars()
+                .all()
+            )
+            rows = [m for m in candidate_rows if _target_chapter_number_matches(m, chapter_number=chapter_number)]
+            truncated = len(rows) > (limit_plus_one - 1)
+            rows = rows[: limit_plus_one - 1]
+            items = []
+            for m in rows[:20]:
+                content = str(m.content or "").strip()
+                items.append(
+                    {
+                        "id": m.id,
+                        "chapter_id": m.chapter_id,
+                        "memory_type": m.memory_type,
+                        "title": m.title,
+                        "importance_score": float(m.importance_score or 0.0),
+                        "story_timeline": int(m.story_timeline or 0),
+                        "target_chapter_number": int(chapter_number),
+                        "content_preview": (content[:200].rstrip() + "…") if len(content) > 200 else content,
+                    }
+                )
+            text_md, text_truncated = _format_next_requirements_text_md(
+                memories=rows[:12], char_limit=int(next_requirements_budget)
+            )
+            enabled = bool(rows)
+            next_requirements = {
+                "enabled": enabled,
+                "disabled_reason": None if enabled else "empty",
+                "target_chapter_number": int(chapter_number),
+                "items": items,
+                "truncated": bool(truncated or text_truncated),
+                "text_md": text_md,
+            }
+            next_requirements["text_chars"] = len(str(text_md or ""))
+        except Exception:
+            next_requirements = {
+                "enabled": False,
+                "disabled_reason": "error",
+                "items": [],
+                "text_md": "",
+                "error": "next_requirements_query_failed",
             }
 
     vector_query_text = (query_text or "").strip()
@@ -811,6 +914,18 @@ def retrieve_memory_context_pack(
             "budget_source": "override" if "story_memory" in budgets else "default",
         },
         {
+            "section": "next_requirements",
+            "enabled": bool(next_requirements.get("enabled")),
+            "disabled_reason": next_requirements.get("disabled_reason"),
+            "note": "story_memories(memory_type=next_requirement,target_chapter_number=current)",
+            "target_chapter_number": next_requirements.get("target_chapter_number"),
+            "text_chars": int(next_requirements.get("text_chars") or len(str(next_requirements.get("text_md") or ""))),
+            "token_estimate": estimate_tokens(str(next_requirements.get("text_md") or "")),
+            "truncated": bool(next_requirements.get("truncated")) if "truncated" in next_requirements else None,
+            "budget_char_limit": int(next_requirements_budget),
+            "budget_source": "override" if "next_requirements" in budgets else "default",
+        },
+        {
             "section": "semantic_history",
             "enabled": bool(semantic_history.get("enabled")),
             "disabled_reason": semantic_history.get("disabled_reason"),
@@ -915,6 +1030,7 @@ def retrieve_memory_context_pack(
             {
                 "worldbook": worldbook,
                 "story_memory": story_memory,
+                "next_requirements": next_requirements,
                 "semantic_history": semantic_history,
                 "foreshadow_open_loops": foreshadow_open_loops,
                 "structured": structured,

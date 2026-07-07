@@ -323,6 +323,7 @@ def _resolve_memory_modules(raw_modules: dict[str, bool]) -> dict[str, bool]:
     return {
         "worldbook": bool(raw_modules.get("worldbook", True)),
         "story_memory": bool(raw_modules.get("story_memory", True)),
+        "next_requirements": True,
         "semantic_history": bool(raw_modules.get("semantic_history", False)),
         "foreshadow_open_loops": bool(raw_modules.get("foreshadow_open_loops", False)),
         "structured": bool(raw_modules.get("structured", True)),
@@ -376,6 +377,7 @@ def _prepare_chapter_memory_injection(
             db=db,
             project_id=project_id,
             outline_id=str(getattr(chapter, "outline_id", "") or "") or None,
+            chapter_number=int(getattr(chapter, "number", 0) or 0),
             query_text=memory_query_text,
             section_enabled=memory_modules,
         )

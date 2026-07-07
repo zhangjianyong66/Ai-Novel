@@ -130,6 +130,7 @@ def preview_project_memory(
         db=db,
         project_id=project_id,
         outline_id=body.outline_id,
+        chapter_number=body.chapter_number,
         query_text=body.query_text,
         include_deleted=False,
         section_enabled=body.section_enabled,

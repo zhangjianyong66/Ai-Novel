@@ -243,6 +243,26 @@
       "cache": null
     },
     {
+      "identifier": "sys.memory.next_requirements",
+      "name": "记忆：下一章要求（自动）",
+      "role": "system",
+      "enabled": true,
+      "template_file": "templates/sys.memory.next_requirements.md",
+      "marker_key": "memory.next_requirements.text_md",
+      "injection_position": "relative",
+      "injection_depth": null,
+      "injection_order": 102,
+      "triggers": [
+        "chapter_generate"
+      ],
+      "forbid_overrides": false,
+      "budget": {
+        "priority": "important",
+        "maxTokens": 1000
+      },
+      "cache": null
+    },
+    {
       "identifier": "sys.memory.story_memory",
       "name": "记忆：情节记忆（可选）",
       "role": "system",
@@ -251,7 +271,7 @@
       "marker_key": "memory.story_memory.text_md",
       "injection_position": "relative",
       "injection_depth": null,
-      "injection_order": 102,
+      "injection_order": 103,
       "triggers": [
         "chapter_generate"
       ],
@@ -271,7 +291,7 @@
       "marker_key": "memory.structured.text_md",
       "injection_position": "relative",
       "injection_depth": null,
-      "injection_order": 103,
+      "injection_order": 104,
       "triggers": [
         "chapter_generate"
       ],
@@ -291,7 +311,7 @@
       "marker_key": "memory.tables.text_md",
       "injection_position": "relative",
       "injection_depth": null,
-      "injection_order": 104,
+      "injection_order": 105,
       "triggers": [
         "chapter_generate"
       ],
@@ -311,7 +331,7 @@
       "marker_key": "memory.vector_rag.text_md",
       "injection_position": "relative",
       "injection_depth": null,
-      "injection_order": 104,
+      "injection_order": 105,
       "triggers": [
         "chapter_generate"
       ],

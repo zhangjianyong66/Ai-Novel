@@ -42,7 +42,15 @@ from app.services.prompt_presets import ensure_default_chapter_analyze_preset, r
 from app.services.search_index_service import schedule_search_rebuild_task
 from app.services.vector_rag_service import schedule_vector_rebuild_task
 
-_MANAGED_MEMORY_TYPES = {"chapter_summary", "hook", "plot_point", "foreshadow", "character_state"}
+_MANAGED_MEMORY_TYPES = {
+    "chapter_summary",
+    "hook",
+    "plot_point",
+    "foreshadow",
+    "character_state",
+    "continuity_fact",
+    "next_requirement",
+}
 _APPLY_STATUS_PENDING = "pending"
 _APPLY_STATUS_SUCCESS = "success"
 _APPLY_STATUS_EMPTY = "empty"
@@ -400,6 +408,17 @@ def _find_position(content_md: str, needle: str) -> tuple[int, int]:
     return int(idx), int(len(target))
 
 
+def _followup_asset_metadata(asset_type: str, *, target_chapter_number: int | None = None) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "source": "chapter_analysis.followup_assets",
+        "asset_type": asset_type,
+    }
+    if target_chapter_number is not None:
+        metadata["target_chapter_number"] = int(target_chapter_number)
+        metadata["lifecycle"] = "next_chapter_only"
+    return metadata
+
+
 def extract_story_memory_seeds(
     *,
     chapter_number: int,
@@ -568,6 +587,75 @@ def extract_story_memory_seeds(
                     "metadata": None,
                 }
             )
+
+    followup_assets = analysis.get("followup_assets")
+    if isinstance(followup_assets, list):
+        for item in followup_assets:
+            if not isinstance(item, dict):
+                continue
+            asset_type = str(item.get("type") or "").strip()
+            title = str(item.get("title") or "").strip()
+            note = str(item.get("note") or "").strip()
+            content = note or title
+            if not content:
+                continue
+            if len(content) > 800:
+                content = content[:800].rstrip() + "…"
+
+            if asset_type == "continuity_fact":
+                seeds.append(
+                    {
+                        "memory_type": "continuity_fact",
+                        "title": title[:80].strip() or None,
+                        "content": content,
+                        "full_context_md": None,
+                        "importance_score": 0.7,
+                        "tags": ["continuity_fact", "followup_asset"],
+                        "story_timeline": timeline,
+                        "text_position": -1,
+                        "text_length": 0,
+                        "is_foreshadow": 0,
+                        "foreshadow_resolved_at_chapter_id": None,
+                        "metadata": _followup_asset_metadata("continuity_fact"),
+                    }
+                )
+            elif asset_type == "next_chapter_requirement":
+                seeds.append(
+                    {
+                        "memory_type": "next_requirement",
+                        "title": title[:80].strip() or None,
+                        "content": content,
+                        "full_context_md": None,
+                        "importance_score": 0.9,
+                        "tags": ["next_requirement", "followup_asset"],
+                        "story_timeline": timeline,
+                        "text_position": -1,
+                        "text_length": 0,
+                        "is_foreshadow": 0,
+                        "foreshadow_resolved_at_chapter_id": None,
+                        "metadata": _followup_asset_metadata(
+                            "next_chapter_requirement",
+                            target_chapter_number=timeline + 1,
+                        ),
+                    }
+                )
+            elif asset_type == "future_payoff":
+                seeds.append(
+                    {
+                        "memory_type": "foreshadow",
+                        "title": title[:80].strip() or None,
+                        "content": content,
+                        "full_context_md": None,
+                        "importance_score": 0.8,
+                        "tags": ["foreshadow", "future_payoff", "followup_asset"],
+                        "story_timeline": timeline,
+                        "text_position": -1,
+                        "text_length": 0,
+                        "is_foreshadow": 1,
+                        "foreshadow_resolved_at_chapter_id": None,
+                        "metadata": _followup_asset_metadata("future_payoff"),
+                    }
+                )
 
     return seeds
 

@@ -764,3 +764,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 章节分析后续资产注入
+
+**Date**: 2026-07-07
+**Task**: 章节分析后续资产注入
+**Branch**: `main`
+
+### Summary
+
+实现章节分析 followup_assets 的选择性沉淀与后续章节专用记忆区块，补充后端注入逻辑、前端预览展示、prompt contract、测试和项目规范。验证通过后端相关 unittest 与前端 lint。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0d25291` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

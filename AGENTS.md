@@ -27,7 +27,7 @@
 - 本机复用用户级 `frpc.service`（`~/.config/systemd/user/frpc.service`，配置 `~/.frpc/frpc.ini`）连接 ecs2 的 frps；Ai-Novel 公网隧道使用 `type = http`、`local_ip = 127.0.0.1`、`local_port = 5173`、`custom_domains = ainovel.zhangjianyong.top`。
 - ecs2 上 `ainovel.zhangjianyong.top` 由 `/usr/local/nginx/conf/conf.d/ainovel.zhangjianyong.top.conf` 提供 HTTPS 入口，反代到本机 frps HTTP vhost `http://127.0.0.1:8080`，再由 frp 转发回本地 `5173`。
 - ecs2 的 nginx 是 `/usr/local/nginx/sbin/nginx` 自管进程，不是 `nginx.service`；修改配置后使用 `/usr/local/nginx/sbin/nginx -t` 检查，并用 `/usr/local/nginx/sbin/nginx -s reload` 重载。
-- 公网链路当前两层 nginx 代理读写超时均为 `3600s`：ecs2 站点配置和 `frontend/nginx.conf` 的 `/api/` 都设置了 `proxy_read_timeout 3600s`、`proxy_send_timeout 3600s`；frps/frpc 当前未额外配置应用层请求超时。
+- 公网链路当前 ecs2 nginx、frps HTTP vhost、本地前端 nginx 代理读写/响应头等待超时均按长请求配置：ecs2 站点配置和 `frontend/nginx.conf` 的 `/api/` 都设置了 `proxy_read_timeout 3600s`、`proxy_send_timeout 3600s`；ecs2 `/etc/frp/frps.ini` 设置 `vhost_http_timeout = 3600`，避免 frps 默认 60 秒等待响应头超时导致长时间 LLM 请求在公网链路返回 404，而后端稍后实际成功。
 - 大模型实际调用上限主要由 LLM preset / task preset 的 `timeout_seconds` 决定，后端 httpx read timeout 使用该值；前端非流式大纲/章节生成会使用 `timeout_seconds * 1000 + 60000` 作为浏览器请求超时，普通 API 默认仍是 120 秒。
 - ecs2 证书续签接入现有 `/root/ssl_auto_renew/ssl_auto_renew.sh` 和 `/root/ssl_auto_renew/domains.conf`；新增域名需在 `domains.conf` 中登记域名到 nginx 配置文件的映射。
 

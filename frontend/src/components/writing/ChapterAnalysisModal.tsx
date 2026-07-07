@@ -2,6 +2,7 @@ import { useId } from "react";
 
 import { Modal } from "../ui/Modal";
 
+import { getAnalysisMemoryApplyButtonState } from "./chapterAnalysisModalState";
 import type { ChapterAnalysisSuggestion, ChapterAnalyzeResult } from "./types";
 
 function getFinalizationLabel(verdict?: string): string {
@@ -86,6 +87,11 @@ export function ChapterAnalysisModal(props: {
     props.analysisResult?.apply_result?.status ?? props.analysisResult?.persisted_analysis?.apply_status;
   const applyError = props.analysisResult?.apply_result?.error ?? props.analysisResult?.persisted_analysis?.apply_error;
   const showRetryApply = applyStatus === "failed" && !isStale;
+  const memoryApplyButton = getAnalysisMemoryApplyButtonState({
+    analysisResult: props.analysisResult,
+    busy,
+    applyLoading: props.applyLoading,
+  });
   const titleId = useId();
   return (
     <Modal
@@ -129,6 +135,16 @@ export function ChapterAnalysisModal(props: {
           >
             {props.analysisLoading ? "分析中..." : props.analysisResult ? "重新分析" : "开始分析"}
           </button>
+          {memoryApplyButton.visible ? (
+            <button
+              className="btn btn-secondary"
+              disabled={memoryApplyButton.disabled}
+              onClick={props.onApplyAnalysisToMemory}
+              type="button"
+            >
+              {memoryApplyButton.label}
+            </button>
+          ) : null}
           {!props.canAnalyze ? <span className="text-xs text-subtext">请先保存当前修改后再分析。</span> : null}
           {props.analysisResult?.generation_run_id ? (
             <button

@@ -13,7 +13,7 @@ from app.services import project_task_service
 
 
 class TestPlotAutoUpdateTaskErrorDetails(unittest.TestCase):
-    def test_plot_auto_update_llm_call_failed_records_attempts(self) -> None:
+    def _make_session_with_plot_task(self) -> sessionmaker:
         engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
         self.addCleanup(engine.dispose)
 
@@ -40,6 +40,11 @@ class TestPlotAutoUpdateTaskErrorDetails(unittest.TestCase):
                 )
             )
             db.commit()
+
+        return SessionLocal
+
+    def test_plot_auto_update_llm_call_failed_records_attempts(self) -> None:
+        SessionLocal = self._make_session_with_plot_task()
 
         failure = {
             "ok": False,
@@ -73,3 +78,33 @@ class TestPlotAutoUpdateTaskErrorDetails(unittest.TestCase):
             self.assertIsInstance(details.get("attempts"), list)
             self.assertGreaterEqual(len(details.get("attempts") or []), 1)
 
+    def test_plot_auto_update_output_truncated_records_how_to_fix(self) -> None:
+        SessionLocal = self._make_session_with_plot_task()
+
+        failure = {
+            "ok": False,
+            "project_id": "p1",
+            "chapter_id": "c1",
+            "reason": "output_truncated",
+            "run_id": "run-truncated",
+            "finish_reason": "length",
+            "warnings": ["output_truncated"],
+        }
+
+        with patch.object(project_task_service, "SessionLocal", SessionLocal), patch(
+            "app.services.plot_analysis_service.plot_auto_update_v1", return_value=failure
+        ):
+            project_task_service.run_project_task(task_id="pt-plot")
+
+        with SessionLocal() as db:
+            task = db.get(ProjectTask, "pt-plot")
+            self.assertIsNotNone(task)
+            assert task is not None
+            self.assertEqual(task.status, "failed")
+            err = json.loads(task.error_json or "{}")
+            details = err.get("details") or {}
+            self.assertEqual(details.get("reason"), "output_truncated")
+            self.assertEqual(details.get("run_id"), "run-truncated")
+            self.assertEqual(details.get("warnings"), ["output_truncated"])
+            how_to_fix = details.get("how_to_fix") or []
+            self.assertTrue(any("max_tokens" in str(item) for item in how_to_fix))

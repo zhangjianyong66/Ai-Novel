@@ -943,6 +943,8 @@ def run_project_task(*, task_id: str) -> str:
                     how_to_fix = ["先在项目中选择/绑定可用的 LLM Profile，并刷新页面后重试任务"]
                 elif reason == "llm_call_failed":
                     how_to_fix = ["检查 base_url / 网络连通性（可用「模型配置 → 测试连接」验证）", "确认模型与参数兼容；必要时切换 provider/model 后重试"]
+                elif reason == "output_truncated":
+                    how_to_fix = ["模型输出被截断：请提高该任务或项目 LLM 配置的 max_tokens 后重试", "也可以减少章节分析输出复杂度或换用更稳定输出 JSON 的模型"]
                 elif reason == "parse_error":
                     how_to_fix = ["模型输出未满足 JSON 合同：可在任务详情中查看 run_id 并定位输出", "尝试更换模型/降低温度后重试"]
                 elif reason == "apply_failed":
@@ -1021,6 +1023,8 @@ def run_project_task(*, task_id: str) -> str:
                     how_to_fix = ["先在项目中选择/绑定可用的 LLM Profile，并刷新页面后重试任务"]
                 elif reason == "llm_call_failed":
                     how_to_fix = ["检查 base_url / 网络连通性（可用「模型配置 → 测试连接」验证）", "确认模型与参数兼容；必要时切换 provider/model 后重试"]
+                elif reason == "output_truncated":
+                    how_to_fix = ["模型输出被截断：请提高该任务或项目 LLM 配置的 max_tokens 后重试", "也可以减少章节分析输出复杂度或换用更稳定输出 JSON 的模型"]
                 elif reason == "parse_error":
                     how_to_fix = ["模型输出未满足 JSON 合同：可在任务详情中查看 run_id 并定位输出", "尝试更换模型/降低温度后重试"]
                 elif reason == "apply_failed":
@@ -1098,6 +1102,8 @@ def run_project_task(*, task_id: str) -> str:
                     how_to_fix = ["先在项目中选择/绑定可用的 LLM Profile，并刷新页面后重试任务"]
                 elif reason == "llm_call_failed":
                     how_to_fix = ["检查 base_url / 网络连通性（可用「模型配置 → 测试连接」验证）", "确认模型与参数兼容；必要时切换 provider/model 后重试"]
+                elif reason == "output_truncated":
+                    how_to_fix = ["模型输出被截断：请提高该任务或项目 LLM 配置的 max_tokens 后重试", "也可以减少章节分析输出复杂度或换用更稳定输出 JSON 的模型"]
                 elif reason == "parse_error":
                     how_to_fix = ["模型输出未满足 JSON 合同：可在任务详情中查看 run_id 并定位输出", "尝试更换模型/降低温度后重试"]
                 elif reason == "apply_failed":

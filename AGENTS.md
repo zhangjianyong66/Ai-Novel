@@ -82,6 +82,7 @@
 ## LLM 调用参数约定
 
 - 大纲生成、大纲分段补全/修复、大纲 JSON 修复、通用 JSON 修复、Fractal v2 等基于既有 `PreparedLlmCall` 派生的 LLM 调用，应保留模型配置页或任务预设解析后的 `max_tokens`；只覆盖必要的 `temperature` 等采样参数，避免固定小上限截断结构化输出。
+- 剧情记忆自动更新 `plot_auto_update` 同样不得用代码内固定小上限覆盖 LLM 配置/任务预设里的 `max_tokens`；若模型返回 `finish_reason=length` 或解析警告包含 `output_truncated`，任务必须失败并保留旧 `StoryMemory`，不能继续应用截断分析结果。
 - 章节生成和批量章节生成的 `target_word_count` 只作为提示词里的写作目标，不得用它重新估算或覆盖 LLM 配置/任务预设里的 `max_tokens`；实际调用上限以解析后的 LLM 配置为准。
 - 排查实际 LLM 调用模型时，以 `generation_runs` 表为准；该表任务类型字段名是 `type`（例如 `chapter_analyze`、`chapter_rewrite`），不是 `run_type`。任务级模型覆盖配置在 `llm_task_presets.task_key/provider/model` 中，项目默认配置在 `llm_presets.provider/model` 中。
 - 排查实际 LLM 提示词时，也以 `generation_runs.prompt_system`、`prompt_user`、`prompt_render_log_json` 为准；代码里的默认 prompt 资源更新后，数据库中已存在的项目 `prompt_presets`/`prompt_blocks` 不会自动刷新，需在 Prompt Studio 重置默认预设/提示块，或调用后端的 reset-to-default 逻辑后再重新生成。
@@ -111,7 +112,7 @@
 - 章节分析输出应明确给出 `finalization.verdict`（`ready`/`needs_revision`/`blocked`）、章节目标完成度、最多 3 条 `blocking_issues`、可选优化、润色建议、上一轮问题追踪和后续写作资产；普通文风润色、节奏增强、后续章节建议和全书规划想法不应阻止当前章节定稿。
 - 写作页手动章节分析只允许基于已保存章节内容运行；有未保存修改时前端应阻止，后端也应拒绝携带 `draft_title`/`draft_plan`/`draft_summary`/`draft_content_md` 的分析请求。
 - 手动章节分析解析成功后应持久化为该章最近一次 `plot_analysis`，记录 `generation_run_id`、章节正文 hash、`active_version_id` 和应用状态；刷新后点击分析弹窗应从后端恢复，正文变化后旧分析标记为过期且禁止重写/重试应用。
-- 手动章节分析成功后自动应用到剧情记忆，常驻“应用到记忆库”按钮不再作为主流程；应用失败时保留分析结果并提供重试入口，提取 0 条剧情记忆视为成功空结果。
+- 手动章节分析成功后自动应用到剧情记忆，同时章节分析弹窗保留常驻“保存到记忆库”按钮，用于把已恢复/已分析结果中的钩子、伏笔、情节点重新写入剧情记忆；应用失败时保留分析结果并提供重试入口，提取 0 条剧情记忆视为成功空结果。
 - 写作页定稿仍由作者最终决定；未分析或最近分析仍有阻断问题时前端只提示确认，不硬性禁止定稿。
 - “按建议重写”默认只应用章节分析里的 `blocking_issues`；`optional_improvements`、`polish_suggestions`、`followup_assets`、`planning_notes` 属于作者可选项或后续写作资产，不应默认传给重写模型要求改正文。
 - 写作页/章节接口的 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 可由已保存章节或无未保存修改的章节显式触发；章节为草稿时只创建 `vector_rebuild`、`search_rebuild`，章节为 `status=done` 时创建 `vector_rebuild`、`search_rebuild` 和完整章节自动更新链。

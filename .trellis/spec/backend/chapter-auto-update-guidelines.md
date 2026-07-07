@@ -34,12 +34,15 @@
 - 0 条剧情记忆是成功空结果，`apply_status="empty"`，不是 `INTERNAL_ERROR`。
 - `GET /analysis` 返回 `analysis_result: null | object`，并基于当前章节 hash / active version 计算 `is_stale`。
 - `POST /analysis/retry_apply` 只允许对未过期分析重试；过期分析必须重新分析。
+- `plot_auto_update_v1` 必须保留模型配置页或任务预设解析后的 `max_tokens`；重试只允许覆盖必要的采样参数（例如 `temperature`），不得用 `2048/1024/512` 等固定小上限覆盖输出预算。
+- `plot_auto_update_v1` 解析到 `finish_reason="length"` 或 `warnings` 包含 `output_truncated` 时，必须返回失败（`reason="output_truncated"`）且不得调用 `apply_chapter_analysis`，避免删除旧 `StoryMemory` 后只写入截断片段。
 
 ### 4. Validation & Error Matrix
 
 - `POST /analyze` 携带任一草稿字段 -> `VALIDATION_ERROR details.reason="chapter_analysis_requires_saved_chapter"`。
 - 章节不存在或无权限 -> 复用 `require_chapter_viewer/editor` 语义。
 - LLM 输出 `parse_error != None` -> 响应当次解析失败信息，不更新 `plot_analysis`。
+- `plot_auto_update_v1` 输出被截断 -> `ok=false reason="output_truncated"`，保留旧 `plot_analysis` 和旧 `StoryMemory`，任务错误详情应提示提高 `max_tokens` 后重试。
 - `POST /analysis/retry_apply` 无持久化分析 -> `NOT_FOUND`。
 - `POST /analysis/retry_apply` 分析已过期 -> `VALIDATION_ERROR details.reason="chapter_analysis_stale"`。
 - `POST /analysis/retry_apply` 持久化分析为空或损坏 -> `VALIDATION_ERROR details.reason="chapter_analysis_empty"`。
@@ -48,7 +51,7 @@
 ### 5. Good/Base/Bad Cases
 
 - Good: 用户保存章节后点击分析，刷新页面再打开弹窗，前端通过 `GET /analysis` 恢复最近一次分析和应用状态。
-- Good: 用户修改并保存正文后，旧分析仍可查看但 `is_stale=true`，前端禁用“按建议重写”和“重试应用”。
+- Good: 用户修改并保存正文后，旧分析仍可查看但 `is_stale=true`，前端禁用“按建议重写”和保存/重试应用剧情记忆。
 - Good: 分析成功但没有可提取剧情记忆，弹窗显示“未提取到可写入的剧情记忆”。
 - Base: 重新分析同一章会覆盖该章托管剧情记忆，但不删除手动创建的记忆。
 - Bad: 前端把未保存编辑器正文作为 `draft_content_md` 发给 `/analyze`，刷新后分析结果与保存正文不匹配。
@@ -62,9 +65,11 @@
   - 章节正文 hash 变化后 snapshot 返回 `is_stale=true`。
   - `apply_chapter_analysis` 允许 0 条 seeds，返回 `memories=[]` 且不抛错。
   - `plot_auto_update_v1` 继续可应用剧情记忆，不被新增字段破坏。
+  - `plot_auto_update_v1` 遇到 `finish_reason="length"` / `output_truncated` 时不应用结果、不删除旧 `StoryMemory`。
+  - `plot_auto_update_v1` 调用 LLM 时不得在 `llm_call_overrides_by_attempt` 中写入固定 `max_tokens` 小上限。
 - 前端测试/检查：
   - 有 dirty 状态时禁用/阻止分析。
-  - 过期分析禁用重写和重试应用。
+  - 过期分析禁用重写和保存/重试应用。
   - `apiJson<T>()` 的 `T` 使用后端 `data` 内部结构，不包装完整 `ok` 响应。
 
 ### 7. Wrong vs Correct

@@ -125,3 +125,128 @@ class TestPlotAutoUpdateService(unittest.TestCase):
             self.assertIn("hook", types)
             self.assertIn("plot_point", types)
             self.assertIn("foreshadow", types)
+
+    def test_plot_auto_update_v1_does_not_apply_truncated_output(self) -> None:
+        model_out = _compact_json_dumps(
+            {
+                "chapter_summary": "Summary",
+                "hooks": [],
+                "foreshadows": [],
+                "plot_points": [],
+                "suggestions": [],
+                "overall_notes": "",
+            }
+        )
+
+        with self.SessionLocal() as db:
+            db.add(
+                StoryMemory(
+                    id="old-memory",
+                    project_id="p1",
+                    chapter_id="c1",
+                    outline_id="o1",
+                    scope="outline",
+                    memory_type="plot_point",
+                    title="Old",
+                    content="Old memory should remain",
+                    importance_score=0.5,
+                    story_timeline=1,
+                )
+            )
+            db.commit()
+
+        with patch("app.services.plot_analysis_service.SessionLocal", self.SessionLocal), patch(
+            "app.services.plot_analysis_service.ensure_default_chapter_analyze_preset", return_value=None
+        ), patch(
+            "app.services.plot_analysis_service.build_chapter_analyze_render_values", return_value={}
+        ), patch(
+            "app.services.plot_analysis_service.render_preset_for_task",
+            return_value=("sys", "user", None, None, None, None, {}),
+        ), patch(
+            "app.services.plot_analysis_service.resolve_api_key_for_project", return_value="masked_api_key"
+        ), patch(
+            "app.services.plot_analysis_service.call_llm_and_record_with_retries",
+            return_value=(
+                RecordedLlmResult(
+                    text=model_out,
+                    finish_reason="length",
+                    latency_ms=1,
+                    dropped_params=[],
+                    run_id="run-truncated",
+                ),
+                [{"attempt": 1, "request_id": "rid-test", "run_id": "run-truncated"}],
+            ),
+        ), patch("app.services.plot_analysis_service.schedule_vector_rebuild_task", return_value=None), patch(
+            "app.services.plot_analysis_service.schedule_search_rebuild_task", return_value=None
+        ):
+            res = plot_auto_update_v1(project_id="p1", actor_user_id="u1", request_id="rid-test", chapter_id="c1")
+
+        self.assertFalse(bool(res.get("ok")))
+        self.assertEqual(res.get("reason"), "output_truncated")
+        self.assertEqual(res.get("run_id"), "run-truncated")
+        self.assertIn("output_truncated", res.get("warnings") or [])
+
+        with self.SessionLocal() as db:
+            memories = db.execute(select(StoryMemory).where(StoryMemory.project_id == "p1", StoryMemory.chapter_id == "c1")).scalars().all()
+            self.assertEqual(len(memories), 1)
+            self.assertEqual(memories[0].id, "old-memory")
+            self.assertEqual(memories[0].content, "Old memory should remain")
+            self.assertEqual(db.execute(select(PlotAnalysis).where(PlotAnalysis.chapter_id == "c1")).scalars().first(), None)
+
+    def test_plot_auto_update_v1_uses_configured_max_tokens_without_fixed_cap(self) -> None:
+        model_out = _compact_json_dumps(
+            {
+                "chapter_summary": "Summary",
+                "hooks": [],
+                "foreshadows": [],
+                "plot_points": [],
+                "suggestions": [],
+                "overall_notes": "",
+            }
+        )
+        captured: dict[str, object] = {}
+
+        def fake_call_llm_and_record_with_retries(**kwargs):  # type: ignore[no-untyped-def]
+            captured["overrides"] = kwargs.get("llm_call_overrides_by_attempt")
+            return (
+                RecordedLlmResult(
+                    text=model_out,
+                    finish_reason=None,
+                    latency_ms=1,
+                    dropped_params=[],
+                    run_id="run-test",
+                ),
+                [{"attempt": 1, "request_id": "rid-test", "run_id": "run-test"}],
+            )
+
+        with self.SessionLocal() as db:
+            preset = db.get(LLMPreset, "p1")
+            self.assertIsNotNone(preset)
+            assert preset is not None
+            preset.max_tokens = 12000
+            db.commit()
+
+        with patch("app.services.plot_analysis_service.SessionLocal", self.SessionLocal), patch(
+            "app.services.plot_analysis_service.ensure_default_chapter_analyze_preset", return_value=None
+        ), patch(
+            "app.services.plot_analysis_service.build_chapter_analyze_render_values", return_value={}
+        ), patch(
+            "app.services.plot_analysis_service.render_preset_for_task",
+            return_value=("sys", "user", None, None, None, None, {}),
+        ), patch(
+            "app.services.plot_analysis_service.resolve_api_key_for_project", return_value="masked_api_key"
+        ), patch(
+            "app.services.plot_analysis_service.call_llm_and_record_with_retries",
+            side_effect=fake_call_llm_and_record_with_retries,
+        ), patch("app.services.plot_analysis_service.schedule_vector_rebuild_task", return_value=None), patch(
+            "app.services.plot_analysis_service.schedule_search_rebuild_task", return_value=None
+        ):
+            res = plot_auto_update_v1(project_id="p1", actor_user_id="u1", request_id="rid-test", chapter_id="c1")
+
+        self.assertTrue(bool(res.get("ok")))
+        overrides = captured.get("overrides")
+        self.assertIsInstance(overrides, dict)
+        assert isinstance(overrides, dict)
+        self.assertEqual(overrides.get(1), {"temperature": 0.2})
+        self.assertEqual(overrides.get(2), {"temperature": 0.1})
+        self.assertEqual(overrides.get(3), {"temperature": 0.0})

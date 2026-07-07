@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { getAnalysisMemoryApplyButtonState } from "../../components/writing/chapterAnalysisModalState";
 import type { ChapterAnalyzeResult, ChapterRewriteResult } from "../../components/writing/types";
 import { resolveAnalysisAfterRewrite } from "./useChapterAnalysis";
 
@@ -27,5 +28,42 @@ describe("resolveAnalysisAfterRewrite", () => {
 
   it("keeps the previous analysis when the rewrite only updates the local editor draft", () => {
     expect(resolveAnalysisAfterRewrite(analysisResult, rewriteResult({}))).toBe(analysisResult);
+  });
+});
+
+describe("getAnalysisMemoryApplyButtonState", () => {
+  it("shows the manual save-to-memory action whenever a fresh analysis result exists", () => {
+    expect(
+      getAnalysisMemoryApplyButtonState({
+        analysisResult,
+        busy: false,
+        applyLoading: false,
+      }),
+    ).toEqual({
+      visible: true,
+      disabled: false,
+      label: "保存到记忆库",
+    });
+  });
+
+  it("keeps the manual action visible but disabled for stale analysis results", () => {
+    expect(
+      getAnalysisMemoryApplyButtonState({
+        analysisResult: {
+          ...analysisResult,
+          persisted_analysis: {
+            plot_analysis_id: "pa1",
+            analysis: analysisResult.analysis,
+            is_stale: true,
+          },
+        },
+        busy: false,
+        applyLoading: false,
+      }),
+    ).toEqual({
+      visible: true,
+      disabled: true,
+      label: "保存到记忆库",
+    });
   });
 });

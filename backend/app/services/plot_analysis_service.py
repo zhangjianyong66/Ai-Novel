@@ -965,13 +965,6 @@ def plot_auto_update_v1(
 
     llm_attempts: list[dict[str, Any]] = []
     try:
-        base_max_tokens = llm_call.params.get("max_tokens") if llm_call is not None else None
-
-        def _clamp_max_tokens(limit: int) -> int:
-            if isinstance(base_max_tokens, int) and base_max_tokens > 0:
-                return min(int(limit), int(base_max_tokens))
-            return int(limit)
-
         retry_instruction = (
             "【重试模式】上一轮调用失败/超时。请输出更短、更保守的 chapter_analyze JSON：\n"
             "- 只输出裸 JSON（不要 Markdown，不要代码块）\n"
@@ -995,9 +988,9 @@ def plot_auto_update_v1(
             max_attempts=max_attempts,
             retry_messages_system_instruction=retry_instruction,
             llm_call_overrides_by_attempt={
-                1: {"temperature": 0.2, "max_tokens": _clamp_max_tokens(2048)},
-                2: {"temperature": 0.1, "max_tokens": _clamp_max_tokens(1024)},
-                3: {"temperature": 0.0, "max_tokens": _clamp_max_tokens(512)},
+                1: {"temperature": 0.2},
+                2: {"temperature": 0.1},
+                3: {"temperature": 0.0},
             },
             backoff_base_seconds=task_llm_retry_base_seconds(),
             backoff_max_seconds=task_llm_retry_max_seconds(),
@@ -1032,6 +1025,17 @@ def plot_auto_update_v1(
 
     contract = contract_for_task("chapter_analyze")
     parsed = contract.parse(llm_result.text, finish_reason=llm_result.finish_reason)
+    if str(llm_result.finish_reason or "").strip().lower() == "length" or "output_truncated" in list(parsed.warnings or []):
+        return {
+            "ok": False,
+            "project_id": pid,
+            "chapter_id": cid,
+            "reason": "output_truncated",
+            "run_id": llm_result.run_id,
+            "finish_reason": llm_result.finish_reason,
+            "warnings": [*list(parsed.warnings or []), *([] if len(list(llm_attempts or [])) < 2 else ["llm_retry_used"])],
+            "parse_error": parsed.parse_error,
+        }
     if parsed.parse_error is not None:
         return {
             "ok": False,

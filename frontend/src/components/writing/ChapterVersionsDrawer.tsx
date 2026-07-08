@@ -1,6 +1,6 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import clsx from "clsx";
-import { Check, Diff, History, RotateCcw } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Diff, History, RotateCcw } from "lucide-react";
 
 import { formatDateTime } from "../../lib/dateTime";
 import type { ChapterVersionDetail, ChapterVersionSummary } from "../../types";
@@ -50,6 +50,8 @@ export function ChapterVersionsDrawer(props: Props) {
   const selectedLabel = props.selectedVersion ? versionOptionLabel(props.selectedVersion) : "目标版本";
   const compareBaseLabel = props.compareBaseVersion ? versionOptionLabel(props.compareBaseVersion) : "基准版本";
   const compactCompare = props.compareMode;
+  const [mobileControlsExpanded, setMobileControlsExpanded] = useState(false);
+  const controlsCollapsed = compactCompare && !mobileControlsExpanded;
 
   return (
     <Drawer
@@ -57,7 +59,7 @@ export function ChapterVersionsDrawer(props: Props) {
       side="bottom"
       onClose={props.onClose}
       ariaLabelledBy={titleId}
-      panelClassName="h-[86dvh] w-full !overflow-hidden rounded-t-atelier border-t border-border bg-surface shadow-panel sm:h-full sm:max-w-5xl sm:rounded-none sm:border-l sm:border-t-0"
+      panelClassName="h-dvh w-full !overflow-hidden bg-surface shadow-panel sm:h-full sm:max-w-5xl sm:border-l sm:border-border"
     >
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5 sm:py-4">
@@ -78,7 +80,12 @@ export function ChapterVersionsDrawer(props: Props) {
             compactCompare ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,34dvh)_minmax(0,1fr)]",
           )}
         >
-          <div className="min-h-0 min-w-0 overflow-hidden border-b border-border md:border-b-0 md:border-r">
+          <div
+            className={clsx(
+              "min-h-0 min-w-0 overflow-hidden border-b border-border md:block md:border-b-0 md:border-r",
+              controlsCollapsed && "hidden",
+            )}
+          >
             <div
               className={clsx(
                 "h-full",
@@ -133,19 +140,41 @@ export function ChapterVersionsDrawer(props: Props) {
                 compactCompare ? "gap-2 px-3 py-2 sm:px-4" : "gap-3 px-4 py-3 sm:px-5",
               )}
             >
-              <div className="min-w-0 truncate text-sm text-subtext">
-                {props.selectedVersion ? (
-                  <>
-                    <span className="font-medium text-ink">{sourceLabel(props.selectedVersion.source)}</span>
-                    <span> · {formatDateTime(props.selectedVersion.created_at)}</span>
-                    <span> · {props.selectedVersion.word_count} 字</span>
-                  </>
-                ) : (
-                  "选择一个版本查看预览"
-                )}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-1 truncate text-sm text-subtext">
+                  {props.selectedVersion ? (
+                    <>
+                      <span className="font-medium text-ink">{sourceLabel(props.selectedVersion.source)}</span>
+                      <span> · {formatDateTime(props.selectedVersion.created_at)}</span>
+                      <span> · {props.selectedVersion.word_count} 字</span>
+                    </>
+                  ) : (
+                    "选择一个版本查看预览"
+                  )}
+                </div>
+                {compactCompare ? (
+                  <button
+                    className="btn btn-secondary btn-sm shrink-0 px-2 md:hidden"
+                    onClick={() => setMobileControlsExpanded((expanded) => !expanded)}
+                    type="button"
+                    aria-expanded={mobileControlsExpanded}
+                  >
+                    {mobileControlsExpanded ? (
+                      <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {mobileControlsExpanded ? "收起" : "展开"}
+                  </button>
+                ) : null}
               </div>
               {props.compareMode ? (
-                <label className="grid min-w-0 gap-1 md:max-w-md md:flex-1 md:grid-cols-[auto_minmax(0,1fr)] md:items-center">
+                <label
+                  className={clsx(
+                    "min-w-0 gap-1 md:grid md:max-w-md md:flex-1 md:grid-cols-[auto_minmax(0,1fr)] md:items-center",
+                    controlsCollapsed ? "hidden" : "grid",
+                  )}
+                >
                   <span className="text-xs text-subtext">对比基准</span>
                   <select
                     className="select min-w-0 text-xs"
@@ -163,7 +192,8 @@ export function ChapterVersionsDrawer(props: Props) {
               ) : null}
               <div
                 className={clsx(
-                  "grid w-full gap-2 md:flex md:w-auto md:flex-wrap md:items-center",
+                  "w-full gap-2 md:flex md:w-auto md:flex-wrap md:items-center",
+                  controlsCollapsed ? "hidden" : "grid",
                   compactCompare ? "grid-cols-3" : "grid-cols-1 sm:grid-cols-2",
                 )}
               >

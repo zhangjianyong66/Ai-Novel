@@ -215,4 +215,73 @@ describe("ChapterVersionsDrawer", () => {
 
     expect(html).toContain("!overflow-hidden");
   });
+
+  it("uses the full mobile viewport instead of leaving a top gap above the drawer", () => {
+    const selectedVersion = version({ id: "v2", is_active: true, content_md: "目标正文。" });
+    const compareBaseVersion = version({ id: "v1", content_md: "基准正文。" });
+    const versions: ChapterVersionSummary[] = [selectedVersion, compareBaseVersion];
+
+    const html = renderToStaticMarkup(
+      <ChapterVersionsDrawer
+        open
+        loading={false}
+        detailLoading={false}
+        activating={false}
+        compareMode
+        compareLoading={false}
+        versions={versions}
+        selectedVersion={selectedVersion}
+        compareBaseVersion={compareBaseVersion}
+        compareBaseVersionId={compareBaseVersion.id}
+        activeVersionId={selectedVersion.id}
+        canActivate
+        onClose={() => undefined}
+        onSelectVersion={() => undefined}
+        onComparePreviousVersion={() => undefined}
+        onCompareBaseVersionChange={() => undefined}
+        onCloseCompare={() => undefined}
+        onActivateVersion={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("h-dvh");
+    expect(html).not.toContain("h-[86dvh]");
+    expect(html).not.toContain("rounded-t-atelier");
+  });
+
+  it("collapses mobile compare controls by default to prioritize diff content", () => {
+    const selectedVersion = version({ id: "v2", is_active: true, content_md: "目标正文。" });
+    const compareBaseVersion = version({ id: "v1", content_md: "基准正文。" });
+    const versions: ChapterVersionSummary[] = [selectedVersion, compareBaseVersion];
+
+    const html = renderToStaticMarkup(
+      <ChapterVersionsDrawer
+        open
+        loading={false}
+        detailLoading={false}
+        activating={false}
+        compareMode
+        compareLoading={false}
+        versions={versions}
+        selectedVersion={selectedVersion}
+        compareBaseVersion={compareBaseVersion}
+        compareBaseVersionId={compareBaseVersion.id}
+        activeVersionId={selectedVersion.id}
+        canActivate
+        onClose={() => undefined}
+        onSelectVersion={() => undefined}
+        onComparePreviousVersion={() => undefined}
+        onCompareBaseVersionChange={() => undefined}
+        onCloseCompare={() => undefined}
+        onActivateVersion={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("展开");
+    expect(html).toContain("md:block md:border-b-0 md:border-r hidden");
+    expect(html).toContain("md:grid md:max-w-md");
+    expect(html).toContain("md:items-center hidden");
+    expect(html).toContain("hidden grid-cols-3");
+  });
 });

@@ -865,3 +865,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 完成前端移动端核心布局优化
+
+**Date**: 2026-07-08
+**Task**: 完成前端移动端核心布局优化
+**Branch**: `main`
+
+### Summary
+
+优化移动端核心创作路径布局：调整写作工具条、章节状态区、抽屉/弹窗 padding、阅读/预览工具条和向导底栏；完成 frontend lint、build、test 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f8d642` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

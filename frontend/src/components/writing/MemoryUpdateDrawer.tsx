@@ -396,14 +396,14 @@ export function MemoryUpdateDrawer(props: Props) {
       panelClassName="h-full w-full max-w-[860px] overflow-hidden border-l border-border bg-surface shadow-sm"
     >
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm text-ink" id={titleId}>
               {copy.title}
             </div>
             <div className="mt-0.5 truncate text-xs text-subtext">{copy.subtitle}</div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
             <button className="btn btn-secondary" disabled={!projectId} onClick={openTaskCenter} type="button">
               任务中心
             </button>

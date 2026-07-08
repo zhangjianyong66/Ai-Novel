@@ -142,7 +142,7 @@ export function WizardNextBar(props: {
     <>
       <div aria-hidden className="h-[calc(6rem+env(safe-area-inset-bottom))]" />
       <div className="fixed inset-x-0 bottom-0 z-30 pointer-events-none">
-        <div className="mx-auto max-w-screen-xl px-4 pb-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-screen-xl px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8">
           <div
             className={clsx(
               "pointer-events-auto motion-safe:transition-transform motion-safe:duration-atelier motion-safe:ease-atelier",
@@ -150,7 +150,7 @@ export function WizardNextBar(props: {
             )}
           >
             <button
-              className="ui-focus-ring ui-transition-fast inline-flex h-9 items-center gap-2 rounded-atelier border border-border bg-surface/90 px-3 text-xs text-subtext shadow-sm backdrop-blur hover:bg-surface"
+              className="ui-focus-ring ui-transition-fast inline-flex h-9 max-w-full items-center gap-2 rounded-atelier border border-border bg-surface/90 px-3 text-xs text-subtext shadow-sm backdrop-blur hover:bg-surface"
               onClick={() => setCollapsedPersist(!collapsed)}
               type="button"
               aria-label={collapsedLabel}
@@ -161,22 +161,22 @@ export function WizardNextBar(props: {
 
             {collapsed ? (
               <button
-                className="btn btn-primary h-9 ml-2"
+                className="btn btn-primary mt-2 h-9 w-full sm:ml-2 sm:mt-0 sm:w-auto"
                 disabled={Boolean(primary.disabled) || loading || busy}
                 onClick={() => void run(primary.onClick)}
                 type="button"
                 title={loading ? "加载中..." : primary.label}
               >
-                <span className="inline-flex max-w-[240px] items-center gap-2 truncate">
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2 truncate sm:max-w-[240px]">
                   {loading ? "加载中..." : primary.label}
                   <ArrowRight size={16} />
                 </span>
               </button>
             ) : null}
 
-            <div className="mt-2 rounded-atelier border border-border bg-surface/90 p-4 shadow-sm backdrop-blur">
+            <div className="mt-2 rounded-atelier border border-border bg-surface/90 p-3 shadow-sm backdrop-blur sm:p-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtext">
                     {dirty ? (
                       <span className="rounded-atelier bg-accent/10 px-2 py-0.5 text-[11px] text-accent">未保存</span>
@@ -227,7 +227,7 @@ export function WizardNextBar(props: {
                   </div>
                 </div>
 
-                <div className="flex shrink-0 flex-wrap gap-2">
+                <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap">
                   <button
                     className="btn btn-secondary"
                     disabled={!wizardHref || loading || busy}

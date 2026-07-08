@@ -140,7 +140,7 @@ export function GenerationHistoryDrawer(props: Props) {
       open={open}
       onClose={onClose}
       ariaLabelledBy={titleId}
-      panelClassName="h-full w-full max-w-2xl border-l border-border bg-canvas p-6 shadow-sm"
+      panelClassName="h-full w-full max-w-2xl border-l border-border bg-canvas p-4 shadow-sm sm:p-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div>

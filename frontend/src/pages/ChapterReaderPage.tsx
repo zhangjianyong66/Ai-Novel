@@ -483,8 +483,8 @@ export function ChapterReaderPage() {
 
   return (
     <ToolContent className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <button className="btn btn-secondary lg:hidden" onClick={() => setMobileListOpen(true)} type="button">
             <List size={16} />
             章节列表
@@ -530,10 +530,10 @@ export function ChapterReaderPage() {
           >
             下一章
           </button>
-          <span className="text-[11px] text-subtext">快捷键：← / →</span>
+          <span className="col-span-2 text-[11px] text-subtext sm:col-auto">快捷键：← / →</span>
         </div>
 
-        <div className="min-w-0 truncate text-xs text-subtext">
+        <div className="min-w-0 break-words text-xs text-subtext sm:truncate">
           {activeChapterSummary ? `正在阅读：第 ${activeChapterSummary.number} 章` : "请选择章节"}
         </div>
 
@@ -545,7 +545,7 @@ export function ChapterReaderPage() {
         ) : null}
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex min-w-0 gap-4">
         {!collapsed ? (
           <aside className="hidden w-[280px] shrink-0 lg:block">
             <div className="panel h-[calc(100vh-260px)] min-h-[520px] overflow-hidden">{list}</div>
@@ -553,11 +553,11 @@ export function ChapterReaderPage() {
         ) : null}
 
         <section className="min-w-0 flex-1">
-          <div className="panel p-8">
+          <div className="panel p-4 sm:p-8">
             {activeChapterSummary ? (
               <>
                 <div className="mb-4">
-                  <div className="font-content text-2xl text-ink">
+                  <div className="break-words font-content text-2xl text-ink">
                     第 {activeChapterSummary.number} 章
                     {activeChapterSummary.title?.trim() ? ` · ${activeChapterSummary.title}` : ""}
                   </div>
@@ -592,7 +592,7 @@ export function ChapterReaderPage() {
         side="bottom"
         overlayClassName="lg:hidden"
         ariaLabel="章节列表"
-        panelClassName="h-[85vh] w-full overflow-hidden rounded-atelier border border-border bg-surface shadow-sm"
+        panelClassName="flex h-[85vh] w-full flex-col overflow-hidden rounded-atelier border border-border bg-surface shadow-sm"
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="text-sm text-ink">章节列表</div>
@@ -601,7 +601,7 @@ export function ChapterReaderPage() {
             关闭
           </button>
         </div>
-        {list}
+        <div className="min-h-0 flex-1">{list}</div>
       </Drawer>
 
       <Drawer
@@ -610,7 +610,7 @@ export function ChapterReaderPage() {
         side="bottom"
         overlayClassName={memoryCollapsed ? undefined : "xl:hidden"}
         ariaLabel="记忆标注"
-        panelClassName="h-[85vh] w-full overflow-hidden rounded-atelier border border-border bg-surface shadow-sm"
+        panelClassName="flex h-[85vh] w-full flex-col overflow-hidden rounded-atelier border border-border bg-surface shadow-sm"
       >
         {memoryPanel}
       </Drawer>

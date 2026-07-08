@@ -21,10 +21,10 @@ export function OutlineHeaderSection(props: OutlineHeaderSectionProps) {
   return (
     <div className="panel p-4 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 md:basis-auto">
           <span className="text-xs text-subtext">{OUTLINE_COPY.currentOutline}</span>
           <select
-            className="select w-full min-w-0 sm:w-auto"
+            className="select w-full min-w-0 sm:w-auto sm:max-w-sm"
             name="active_outline_id"
             value={props.activeOutlineId}
             onChange={(event) => props.onSwitchOutline(event.target.value)}
@@ -84,7 +84,7 @@ export type OutlineActionsBarProps = {
 export function OutlineActionsBar(props: OutlineActionsBarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
         <button
           className={props.canCreateChapters ? "btn btn-primary" : "btn btn-secondary"}
           disabled={!props.canCreateChapters}
@@ -384,7 +384,7 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
               </div>
               <div className="mt-1 text-[11px] text-subtext">{OUTLINE_COPY.previewActionHint}</div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
               <button className="btn btn-secondary" onClick={props.onClearPreview} type="button">
                 {OUTLINE_COPY.previewCancel}
               </button>

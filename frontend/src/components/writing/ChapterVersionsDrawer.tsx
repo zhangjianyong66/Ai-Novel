@@ -58,7 +58,7 @@ export function ChapterVersionsDrawer(props: Props) {
       panelClassName="h-full w-full max-w-5xl border-l border-border bg-surface shadow-panel"
     >
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div className="flex min-w-0 items-center gap-2">
             <History className="h-4 w-4 text-subtext" aria-hidden="true" />
             <h2 id={titleId} className="truncate text-sm font-semibold text-ink">

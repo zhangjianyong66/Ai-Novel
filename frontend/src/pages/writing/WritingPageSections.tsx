@@ -79,7 +79,7 @@ function WorkflowActionButton(props: {
   return (
     <button
       className={clsx(
-        "btn min-h-10 px-4 shadow-sm",
+        "btn min-h-10 w-full px-4 shadow-sm sm:w-auto",
         action.danger ? "btn-danger" : props.variant === "primary" ? "btn-primary" : "btn-secondary",
       )}
       disabled={action.disabled}
@@ -112,11 +112,11 @@ function WorkflowStatusBadge(props: { label: string; value: string; tone?: Workf
   const tone = props.tone ?? "neutral";
 
   return (
-    <span className="inline-flex h-7 items-center gap-2 rounded-md bg-surface/70 px-2.5 text-xs text-subtext">
-      <span>{props.label}</span>
+    <span className="inline-flex min-h-7 min-w-0 flex-wrap items-center gap-2 rounded-md bg-surface/70 px-2.5 py-1 text-xs text-subtext">
+      <span className="shrink-0">{props.label}</span>
       <span
         className={clsx(
-          "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 font-semibold",
+          "inline-flex min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 font-semibold break-words",
           getStatusToneClasses(tone),
         )}
       >
@@ -181,7 +181,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
           <div className="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
             <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
               <button
-                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                className="btn btn-secondary min-h-10 w-full px-4 shadow-sm sm:w-auto"
                 disabled={props.loadingChapter || props.generating}
                 onClick={props.onOpenVersions}
                 type="button"
@@ -189,7 +189,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 {WRITING_PAGE_COPY.versions}
               </button>
               <button
-                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                className="btn btn-secondary min-h-10 w-full px-4 shadow-sm sm:w-auto"
                 disabled={props.versionCompareDisabled}
                 onClick={props.onComparePreviousVersion}
                 title={props.versionCompareDisabledReason ?? "对比当前激活版本和上一个更早版本"}
@@ -199,7 +199,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 {WRITING_PAGE_COPY.versionCompare}
               </button>
               <button
-                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                className="btn btn-secondary min-h-10 w-full px-4 shadow-sm sm:w-auto"
                 disabled={props.loadingChapter || props.generating}
                 onClick={props.onOpenAnalysis}
                 type="button"
@@ -207,7 +207,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 {WRITING_PAGE_COPY.analysis}
               </button>
               <button
-                className="btn btn-secondary min-h-10 px-4 shadow-sm"
+                className="btn btn-secondary min-h-10 w-full px-4 shadow-sm sm:w-auto"
                 disabled={props.loadingChapter || props.generating}
                 onClick={props.onOpenChapterTrace}
                 type="button"
@@ -216,7 +216,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
               </button>
             </div>
             <div className="hidden h-8 w-px bg-border/80 sm:block" aria-hidden="true" />
-            <div className="flex flex-wrap items-center justify-start gap-2.5 xl:justify-end">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-start sm:gap-2.5 xl:justify-end">
               <WorkflowActionButton
                 action={workflow.secondaryAction}
                 onWorkflowAction={props.onWorkflowAction}
@@ -228,8 +228,8 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 variant="primary"
               />
               {workflow.moreActions.length ? (
-                <details className="relative">
-                  <summary className="btn btn-secondary min-h-10 cursor-pointer list-none px-4 shadow-sm">
+                <details className="relative col-span-2 sm:col-auto">
+                  <summary className="btn btn-secondary min-h-10 w-full cursor-pointer list-none px-4 shadow-sm sm:w-auto">
                     {WRITING_PAGE_COPY.moreActions}
                   </summary>
                   <div className="absolute bottom-full right-0 z-30 mb-2 grid min-w-28 max-w-[calc(100vw-2rem)] gap-1 rounded-atelier border border-border bg-surface p-1 shadow-panel">
@@ -269,7 +269,10 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 tone={getMemoryStatusTone(workflow.memoryStatusLabel)}
               />
               {workflow.dirtyLabel ? (
-                <Badge className="rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-warning/30" tone="warning">
+                <Badge
+                  className="min-w-0 rounded-md px-2.5 py-1 text-xs font-semibold break-words ring-1 ring-warning/30"
+                  tone="warning"
+                >
                   {workflow.dirtyLabel}
                 </Badge>
               ) : null}
@@ -377,7 +380,7 @@ export function WritingChapterListDrawer(props: WritingChapterListDrawerProps) {
       side="left"
       overlayClassName="lg:hidden"
       ariaLabel="章节列表"
-      panelClassName="h-full w-[min(320px,calc(100vw-2rem))] overflow-hidden border-r border-border bg-surface shadow-sm"
+      panelClassName="flex h-full w-[min(320px,calc(100vw-1rem))] flex-col overflow-hidden border-r border-border bg-surface shadow-sm"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="text-sm text-ink">章节列表</div>
@@ -386,7 +389,7 @@ export function WritingChapterListDrawer(props: WritingChapterListDrawerProps) {
         </button>
       </div>
 
-      <div className="h-full p-2">
+      <div className="min-h-0 flex-1 p-2">
         <ChapterListPanel
           chapters={props.chapters}
           activeId={props.activeId}
@@ -414,7 +417,7 @@ export function WritingStreamFloatingCard(props: WritingStreamFloatingCardProps)
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-x-4 bottom-24 z-40 flex justify-center sm:inset-auto sm:bottom-8 sm:right-8 sm:justify-end">
+    <div className="fixed inset-x-3 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 flex justify-center sm:inset-auto sm:bottom-8 sm:right-8 sm:justify-end">
       <div className="w-full max-w-sm rounded-atelier border border-border bg-surface/90 p-3 shadow-sm backdrop-blur">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -429,7 +432,7 @@ export function WritingStreamFloatingCard(props: WritingStreamFloatingCardProps)
           <div className="shrink-0 text-xs text-subtext">{Math.max(0, Math.min(100, props.progress))}%</div>
         </div>
         <ProgressBar ariaLabel="写作页流式生成进度" className="mt-2" value={props.progress} />
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           <button className="btn btn-secondary" onClick={props.onExpand} type="button">
             {WRITING_PAGE_COPY.streamFloatingExpand}
           </button>

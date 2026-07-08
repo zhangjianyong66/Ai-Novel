@@ -557,7 +557,7 @@ export function DashboardPage() {
           setBundleImportOpen(false);
           resetBundleSelection();
         }}
-        panelClassName="surface max-w-2xl p-6"
+        panelClassName="surface max-w-2xl p-4 sm:p-6"
         ariaLabel="导入项目包"
       >
         <div className="font-content text-2xl text-ink">导入项目包</div>
@@ -577,14 +577,14 @@ export function DashboardPage() {
             />
           </label>
 
-          {bundleFileName ? <div className="text-xs text-subtext">已选择：{bundleFileName}</div> : null}
+          {bundleFileName ? <div className="break-all text-xs text-subtext">已选择：{bundleFileName}</div> : null}
           {bundleError ? <div className="callout-danger text-sm">{bundleError}</div> : null}
 
           {bundleSummary ? (
             <div className="grid gap-3 rounded-atelier border border-border bg-canvas p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="font-content text-lg text-ink">{bundleSummary.projectName}</div>
+                <div className="min-w-0">
+                  <div className="break-words font-content text-lg text-ink">{bundleSummary.projectName}</div>
                   <div className="text-xs text-subtext">schema：{bundleSummary.schemaVersion}</div>
                 </div>
                 <div className="text-xs text-subtext">将创建新项目</div>
@@ -642,7 +642,7 @@ export function DashboardPage() {
           ) : null}
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           <button
             className="btn btn-secondary"
             disabled={bundleImporting}
@@ -668,7 +668,7 @@ export function DashboardPage() {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        panelClassName="surface max-w-lg p-6"
+        panelClassName="surface max-w-lg p-4 sm:p-6"
         ariaLabel="创建项目"
       >
         <div className="font-content text-2xl text-ink">创建项目</div>
@@ -702,7 +702,7 @@ export function DashboardPage() {
             />
           </label>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           <button className="btn btn-secondary" onClick={() => setCreateOpen(false)} type="button">
             取消
           </button>

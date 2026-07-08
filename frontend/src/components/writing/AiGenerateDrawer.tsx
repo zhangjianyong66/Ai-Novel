@@ -124,7 +124,7 @@ export function AiGenerateDrawer(props: Props) {
       onClose={closeDrawer}
       side="bottom"
       ariaLabelledBy={titleId}
-      panelClassName="h-[85vh] w-full overflow-y-auto rounded-atelier border-t border-border bg-canvas p-6 shadow-sm sm:h-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0"
+      panelClassName="h-[85vh] w-full overflow-y-auto rounded-atelier border-t border-border bg-canvas p-4 shadow-sm sm:h-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0 sm:p-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

@@ -97,7 +97,7 @@ export function ChapterAnalysisModal(props: {
     <Modal
       open={props.open}
       onClose={busy ? undefined : props.onClose}
-      panelClassName="surface max-w-3xl p-5"
+      panelClassName="surface max-w-3xl p-4 sm:p-5"
       ariaLabelledBy={titleId}
     >
       <div className="flex items-start justify-between gap-3">

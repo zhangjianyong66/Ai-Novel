@@ -763,7 +763,7 @@ export function TablesPanel(props: { open: boolean; onClose: () => void; project
       open={props.open}
       onClose={props.onClose}
       ariaLabelledBy={titleId}
-      panelClassName="h-full w-full max-w-3xl overflow-y-auto border-l border-border bg-canvas p-6 shadow-sm"
+      panelClassName="h-full w-full max-w-3xl overflow-y-auto border-l border-border bg-canvas p-4 shadow-sm sm:p-6"
     >
       <TablesPanelContent
         enabled={props.open}

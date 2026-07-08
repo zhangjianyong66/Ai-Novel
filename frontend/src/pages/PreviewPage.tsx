@@ -174,8 +174,8 @@ export function PreviewPage() {
 
   return (
     <PaperContent className="grid gap-4 pb-24">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <button className="btn btn-ghost px-2 py-1 text-xs" onClick={() => navigate("/")} type="button">
             <ChevronLeft size={16} />
             返回首页
@@ -218,15 +218,15 @@ export function PreviewPage() {
           >
             下一章
           </button>
-          <span className="text-[11px] text-subtext">快捷键：← / →</span>
+          <span className="col-span-2 text-[11px] text-subtext sm:col-auto">快捷键：← / →</span>
         </div>
 
-        <div className="min-w-0 truncate text-xs text-subtext">
+        <div className="min-w-0 break-words text-xs text-subtext sm:truncate">
           {activeChapterSummary ? `正在预览：第 ${activeChapterSummary.number} 章` : "请选择章节"}
         </div>
 
         {activeChapterSummary ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
             <button className="btn btn-secondary" onClick={() => openReader(activeChapterSummary.id)} type="button">
               <StickyNote size={16} />
               阅读标注
@@ -239,7 +239,7 @@ export function PreviewPage() {
         ) : null}
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex min-w-0 gap-4">
         {!collapsed ? (
           <aside className="hidden w-[280px] shrink-0 lg:block">
             <div className="panel h-[calc(100vh-260px)] min-h-[520px] overflow-hidden">{list}</div>
@@ -247,11 +247,11 @@ export function PreviewPage() {
         ) : null}
 
         <section className="min-w-0 flex-1">
-          <div className="panel p-8">
+          <div className="panel p-4 sm:p-8">
             {activeChapterSummary ? (
               <>
                 <div className="mb-4">
-                  <div className="font-content text-2xl text-ink">
+                  <div className="break-words font-content text-2xl text-ink">
                     第 {activeChapterSummary.number} 章
                     {activeChapterSummary.title?.trim() ? ` · ${activeChapterSummary.title}` : ""}
                   </div>

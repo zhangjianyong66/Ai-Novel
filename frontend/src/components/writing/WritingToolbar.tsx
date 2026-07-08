@@ -22,12 +22,12 @@ export function WritingToolbar(props: {
   onCreateChapter: () => void;
 }) {
   return (
-    <div className="panel p-3 sm:p-4">
+    <div className="panel min-w-0 p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 md:basis-auto">
           <span className="text-xs text-subtext">当前大纲</span>
           <select
-            className="select w-full min-w-0 sm:w-auto"
+            className="select w-full min-w-0 sm:w-auto sm:max-w-sm"
             name="active_outline_id"
             value={props.activeOutlineId}
             onChange={(e) => props.onSwitchOutline(e.target.value)}
@@ -42,19 +42,19 @@ export function WritingToolbar(props: {
           <span className="text-xs text-subtext">共 {props.chaptersCount} 章</span>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <button className="btn btn-secondary lg:hidden" onClick={props.onOpenChapterList} type="button">
             <List size={16} />
             章节列表
           </button>
-          <button className="btn btn-primary" onClick={props.onCreateChapter} type="button">
+          <button className="btn btn-primary lg:col-span-1" onClick={props.onCreateChapter} type="button">
             新增章节
           </button>
         </div>
       </div>
 
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-        <span className="w-full text-[11px] text-subtext sm:w-auto">生成</span>
+      <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <span className="col-span-2 text-[11px] text-subtext sm:col-auto sm:w-auto">生成</span>
         <button
           className="btn btn-secondary"
           disabled={props.aiGenerateDisabled}
@@ -81,7 +81,7 @@ export function WritingToolbar(props: {
         </button>
 
         <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
-        <span className="w-full text-[11px] text-subtext sm:w-auto">工具</span>
+        <span className="col-span-2 text-[11px] text-subtext sm:col-auto sm:w-auto">工具</span>
         <button className="btn btn-secondary" onClick={props.onOpenForeshadow} type="button">
           伏笔面板
         </button>

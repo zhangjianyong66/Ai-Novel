@@ -315,7 +315,7 @@ export function AppShell() {
               aria-label={UI_COPY.nav.navMenu}
             >
               <motion.aside
-                className="h-full w-[min(320px,calc(100vw-2rem))] shrink-0 overflow-x-hidden overflow-y-auto border-r border-border bg-surface p-4 shadow-sm"
+                className="h-full w-[min(320px,calc(100vw-1rem))] shrink-0 overflow-x-hidden overflow-y-auto border-r border-border bg-surface p-4 shadow-sm"
                 initial={{ x: -12, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -12, opacity: 0 }}
@@ -662,7 +662,7 @@ export function AppShell() {
         open={helpOpen}
         onClose={closeHelp}
         ariaLabel={UI_COPY.help.title}
-        panelClassName="h-full w-full max-w-xl border-l border-border bg-canvas p-6 shadow-sm"
+        panelClassName="h-full w-full max-w-xl border-l border-border bg-canvas p-4 shadow-sm sm:p-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

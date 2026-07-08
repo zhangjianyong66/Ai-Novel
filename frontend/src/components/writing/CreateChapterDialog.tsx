@@ -32,7 +32,7 @@ export function CreateChapterDialog(props: Props) {
     <Modal
       open={open}
       onClose={saving ? undefined : onClose}
-      panelClassName="surface max-w-lg p-5"
+      panelClassName="surface max-w-lg p-4 sm:p-5"
       ariaLabelledBy={titleId}
     >
       <div className="flex items-start justify-between gap-3">

@@ -997,3 +997,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: 修复写作页记忆更新状态
+
+**Date**: 2026-07-08
+**Task**: 修复写作页记忆更新状态
+**Branch**: `main`
+
+### Summary
+
+新增章节记忆更新状态摘要接口和 force 重跑语义，写作页改为从后端持久状态显示待更新/更新中/已更新/失败，并同步项目说明和 Trellis spec。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `942cae1` | (see git log) |
+| `9a27e33` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

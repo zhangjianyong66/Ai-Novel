@@ -193,7 +193,7 @@ export function ChapterVersionDiffView(props: Props) {
       </div>
 
       <div
-        className="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-border bg-surface/95 px-2 py-2 shadow-sm sm:px-3"
+        className="sticky top-0 z-20 flex items-center gap-2 rounded-none border border-x-0 border-t-0 border-border bg-surface px-2 py-2 shadow-sm sm:px-3 md:rounded-md md:border"
         ref={navigationRef}
         aria-label="chapter_version_diff_navigation"
       >

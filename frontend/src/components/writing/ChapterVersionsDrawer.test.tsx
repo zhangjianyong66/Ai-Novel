@@ -153,6 +153,38 @@ describe("ChapterVersionsDrawer", () => {
     expect(html.indexOf("chapter_version_diff_navigation") - html.indexOf("返回预览")).toBeLessThan(2200);
   });
 
+  it("removes top padding from the compare scroller so sticky diff navigation starts flush under the toolbar", () => {
+    const selectedVersion = version({ id: "v2", is_active: true, content_md: "目标正文。" });
+    const compareBaseVersion = version({ id: "v1", content_md: "基准正文。" });
+    const versions: ChapterVersionSummary[] = [selectedVersion, compareBaseVersion];
+
+    const html = renderToStaticMarkup(
+      <ChapterVersionsDrawer
+        open
+        loading={false}
+        detailLoading={false}
+        activating={false}
+        compareMode
+        compareLoading={false}
+        versions={versions}
+        selectedVersion={selectedVersion}
+        compareBaseVersion={compareBaseVersion}
+        compareBaseVersionId={compareBaseVersion.id}
+        activeVersionId={selectedVersion.id}
+        canActivate
+        onClose={() => undefined}
+        onSelectVersion={() => undefined}
+        onComparePreviousVersion={() => undefined}
+        onCompareBaseVersionChange={() => undefined}
+        onCloseCompare={() => undefined}
+        onActivateVersion={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("px-2 pb-2 pt-0");
+    expect(html).not.toContain("p-2 sm:p-4");
+  });
+
   it("keeps the drawer panel itself from scrolling so diff sticky navigation tracks the content scroller", () => {
     const selectedVersion = version({ id: "v2", is_active: true, content_md: "目标正文。" });
     const compareBaseVersion = version({ id: "v1", content_md: "基准正文。" });

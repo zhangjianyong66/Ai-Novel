@@ -76,6 +76,24 @@ describe("ChapterVersionDiffView", () => {
     expect(html).toContain("top-0");
   });
 
+  it("uses an opaque mobile sticky navigation cover so scrolled diff text cannot show through", () => {
+    const html = renderToStaticMarkup(
+      <ChapterVersionDiffView
+        baseContentMd={"第一段。\n\n旧段落。"}
+        targetContentMd={"第一段。\n\n新段落。"}
+        baseLabel="旧版本"
+        targetLabel="新版本"
+      />,
+    );
+
+    const navigationStart = html.indexOf("chapter_version_diff_navigation");
+    const navigationSnippet = html.slice(Math.max(0, navigationStart - 500), navigationStart + 500);
+
+    expect(navigationSnippet).toContain("bg-surface");
+    expect(navigationSnippet).toContain("rounded-none");
+    expect(navigationSnippet).not.toContain("bg-surface/95");
+  });
+
   it("renders mobile side labels so compact diff columns keep context", () => {
     const html = renderToStaticMarkup(
       <ChapterVersionDiffView

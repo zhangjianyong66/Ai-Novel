@@ -215,7 +215,7 @@ export function ChapterVersionsDrawer(props: Props) {
             <div
               className={clsx(
                 "min-h-0 min-w-0 overflow-x-hidden overflow-y-auto",
-                compactCompare ? "p-2 sm:p-4" : "p-4 sm:p-5",
+                compactCompare ? "px-2 pb-2 pt-0 sm:px-4 sm:pb-4" : "p-4 sm:p-5",
               )}
             >
               {props.blockReason ? <div className="callout-warning mb-4 text-xs">{props.blockReason}</div> : null}

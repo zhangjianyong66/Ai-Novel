@@ -125,6 +125,7 @@
 - 写作页定稿仍由作者最终决定；未分析或最近分析仍有阻断问题时前端只提示确认，不硬性禁止定稿。
 - “按建议重写”默认只应用章节分析里的 `blocking_issues`；`optional_improvements`、`polish_suggestions`、`followup_assets`、`planning_notes` 属于作者可选项或后续写作资产，不应默认传给重写模型要求改正文。
 - 写作页/章节接口的 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 可由已保存章节或无未保存修改的章节显式触发；章节为草稿时只创建 `vector_rebuild`、`search_rebuild`，章节为 `status=done` 时创建 `vector_rebuild`、`search_rebuild` 和完整章节自动更新链。
+- 写作页“记忆状态”必须来自后端持久状态摘要 `GET /api/chapters/{chapter_id}/memory_update_status`，不能只用前端瞬时请求状态推断；状态包括 `unavailable`、`pending`、`updating`、`updated`、`failed`。已更新且章节内容未变化时显示“已更新”，不把“更新记忆”作为主按钮；显式“重新更新记忆”通过 `POST /api/chapters/{chapter_id}/trigger_auto_updates` 的 `force=true` 创建新任务，默认触发仍保持幂等。
 - `PUT /api/chapters/{chapter_id}` 普通保存不创建任何 `ProjectTask`，包括 `vector_rebuild`、`search_rebuild` 和各类内容自动更新；只有显式调用 `trigger_auto_updates` 才触发后台更新任务。
 - 章节 AI 生成、流式生成最终结果、章节 AI 优化/改写拿到完整正文后，应由后端立即保存为 `chapter_versions` 新版本并激活，同步写回 `chapters.content_md` 和 `chapters.active_version_id`，避免前端网络中断导致结果丢失。
 - 章节正文版本只管理 `content_md`，不回滚标题、计划、摘要或状态；AI 覆盖前如果当前正文没有匹配的激活版本，应懒创建 `manual_snapshot`，当前正文已等于激活版本时不重复创建快照。

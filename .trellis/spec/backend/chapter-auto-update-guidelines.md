@@ -126,8 +126,9 @@ except Exception as exc:
 - Save API: `PUT /api/chapters/{chapter_id}`
 - Status API: `PATCH /api/chapters/{chapter_id}/status`
 - Trigger API: `POST /api/chapters/{chapter_id}/trigger_auto_updates`
+- Memory Status API: `GET /api/chapters/{chapter_id}/memory_update_status`
 - Status Body: `{ "status": "planned" | "drafting" | "done", "expected_status": "planned" | "drafting" | "done" }`
-- Trigger Body: `{ "generation_run_id"?: string | null }`
+- Trigger Body: `{ "generation_run_id"?: string | null, "force"?: boolean }`
 - Scheduler: `schedule_chapter_done_tasks(project_id, actor_user_id, request_id, chapter_id, chapter_token, reason)`
 
 ### 3. Contracts
@@ -138,9 +139,18 @@ except Exception as exc:
 - 写作页前端状态修改必须使用独立状态动作按钮；保存 payload 不得包含 `status`。
 - `POST /trigger_auto_updates` 要求章节必须存在且当前用户有编辑权限；章节 `status == "done"` 时调用完整 `schedule_chapter_done_tasks`，否则只调度 `schedule_vector_rebuild_task` 和 `schedule_search_rebuild_task`。
 - `generation_run_id` 传入时作为幂等 token；未传时使用章节 `updated_at`。
+- `force=true` 只用于用户显式“重新更新记忆/重试更新记忆”场景，应在既有 token 后追加新的随机段，强制创建新的可执行 `plot_auto_update` 等章节级更新任务；默认 `force=false` 必须保持既有幂等行为。
 - 成功响应 data 包含：
   - `tasks: Record<string, string | null>`
   - `chapter_token: string | null`
+- `GET /memory_update_status` 成功响应 data 包含 `memory_update_status`：
+  - `status`: `unavailable | pending | updating | updated | failed`
+  - `task_id`: 最近同章 `plot_auto_update` 任务 ID 或 `null`
+  - `task_status`: 最近同章任务状态或 `null`
+  - `plot_analysis_id`: 当前未过期 `plot_analysis` ID 或 `null`
+  - `apply_status`: `plot_analysis.apply_status` 或 `null`
+  - `last_updated_at`: 最近成功应用时间或章节派生 `StoryMemory.updated_at` 最大值
+  - `error_message`: 最近失败任务的脱敏错误摘要，仅 `status=failed` 时返回
 
 ### 4. Validation & Error Matrix
 
@@ -151,6 +161,11 @@ except Exception as exc:
 - `PATCH /status` 的 `expected_status` 与数据库当前状态不一致 -> `AppError.conflict(details={"reason": "chapter_status_conflict"})`。
 - `PATCH /status` 非法状态流转 -> `AppError.validation(details={"reason": "invalid_chapter_status_transition"})`。
 - `POST /trigger_auto_updates` 章节 `status != "done"` -> 成功创建索引重建任务，`worldbook_auto_update`、`characters_auto_update`、`plot_auto_update`、`graph_auto_update`、`table_ai_update`、`fractal_rebuild` 等内容更新任务必须为空。
+- `GET /memory_update_status` 章节 `status != "done"` -> `status="unavailable"`，不创建任务。
+- `GET /memory_update_status` 最近同章 `plot_auto_update.status in ("queued", "running")` -> `status="updating"`。
+- `GET /memory_update_status` 最近同章 `plot_auto_update.status in ("failed", "canceled")` 且没有更新的成功 `plot_analysis`/`StoryMemory` 覆盖 -> `status="failed"`。
+- `GET /memory_update_status` 存在未过期 `plot_analysis.apply_status in ("success", "empty")` 或章节派生 `StoryMemory` -> `status="updated"`。
+- `GET /memory_update_status` 无任务且无成功记忆证据 -> `status="pending"`。
 
 ### 5. Good/Base/Bad Cases
 
@@ -158,10 +173,13 @@ except Exception as exc:
 - Good: 写作页已保存且无未保存修改时，“一键保存并触发更新”仍可点击；保存步骤空跑成功后继续调用 `trigger_auto_updates`。
 - Good: 草稿章节点击“一键保存并触发更新”只补跑 `vector_rebuild` 和 `search_rebuild`，不写入长期记忆、世界书或图谱。
 - Base: 已定稿章节重复触发，调度器按 `chapter_token` 幂等并去重旧 queued 任务。
+- Good: 已定稿章节后台记忆更新成功后，刷新写作页通过 `GET /memory_update_status` 显示“已更新”，不再回到“待更新”。
+- Good: 已更新且章节内容未变化时，用户必须显式点击“重新更新记忆”，前端发送 `force=true`，后端创建新任务而不是复用旧成功任务。
 - Good: 已定稿章节要编辑时，先 `PATCH /status {"status":"drafting","expected_status":"done"}` 回退，之后再普通保存内容。
 - Good: 计划中章节保存非空正文时自动变为草稿；保存空白正文或仅保存标题/计划/摘要时仍保持计划中。
 - Good: 前端只切换状态且没有未保存内容修改时，调用 `PATCH /status`，成功响应后刷新表单基线。
 - Bad: 普通保存或草稿章节直接调用触发接口也创建 `worldbook_auto_update` / `graph_auto_update` 等任务，污染长期记忆和图谱。
+- Bad: 写作页仅用本地 `autoUpdatesTriggering=false` 推断“待更新”，忽略已成功的后台 `plot_auto_update` 和 `StoryMemory`。
 - Bad: `PUT {"status":"drafting","content_md":"..."}` 一边解锁一边修改正文，绕过状态接口。
 - Bad: 前端在回退草稿时通过保存表单提交 `status`。
 
@@ -177,10 +195,13 @@ except Exception as exc:
   - `prev_status == "done"` 时，通过 `PUT` 修改正文/摘要/标题/计划返回 `chapter_done_readonly`，数据库内容不变且不新增 `ProjectTask`。
   - `status != done` 时返回成功，且只新增 `vector_rebuild`、`search_rebuild`。
   - `status == done` 时保留既有幂等行为。
+  - `force=true` 时相同 `generation_run_id` 仍创建新的 `plot_auto_update` 任务。
+  - `GET /memory_update_status` 覆盖 `unavailable`、`pending`、`updating`、`updated`、`failed`。
 - Frontend 测试：
   - 保存 payload 不包含 `status`。
   - 写作页按当前状态只展示合法状态动作；有未保存内容修改时状态动作禁用。
   - `done -> drafting` 使用确认弹窗，其它状态动作不弹确认。
+  - 已更新状态显示“已更新”，不把“更新记忆”作为主按钮，“重新更新记忆”在次要/更多动作中。
 
 ### 7. Wrong vs Correct
 
@@ -191,6 +212,19 @@ if "status" in changed_fields:
     row.status = body.status
 if row.status == "done":
     schedule_chapter_done_tasks(..., chapter_id=row.id, ...)
+```
+
+#### Wrong
+
+```typescript
+const memoryStatusLabel = autoUpdatesTriggering ? "更新中" : memoryUpdateFailed ? "更新失败" : "待更新";
+```
+
+#### Correct
+
+```typescript
+const status = await fetchChapterMemoryUpdateStatus(chapterId);
+const memoryStatusLabel = status.status === "updated" ? "已更新" : "...";
 ```
 
 ## Scenario: 章节 AI 正文版本即时保存

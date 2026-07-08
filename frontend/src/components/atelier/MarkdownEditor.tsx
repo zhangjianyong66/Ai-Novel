@@ -74,10 +74,10 @@ export function MarkdownEditor({
   const isReadOnly = Boolean(readOnly);
 
   return (
-    <div className="surface ui-transition-fast focus-within:border-accent/40">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+    <div className="surface ui-transition-fast overflow-hidden focus-within:border-accent/40">
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
         <LayoutGroup id={`atelier-markdown-editor-tabs-${motionGroupId}`}>
-          <div className="flex gap-1 rounded-atelier bg-surface p-1 text-xs">
+          <div className="flex shrink-0 gap-1 rounded-atelier bg-surface p-1 text-xs">
             <button
               className={clsx(
                 "ui-focus-ring ui-transition-fast relative rounded-atelier px-2 py-1",
@@ -114,13 +114,13 @@ export function MarkdownEditor({
             </button>
           </div>
         </LayoutGroup>
-        <div className="text-xs text-subtext">字数：{value.length}</div>
+        <div className="min-w-0 truncate text-xs text-subtext">字数：{value.length}</div>
       </div>
       {tab === "edit" ? (
         <textarea
           className={clsx(
             mono ? "atelier-mono" : "atelier-content",
-            "w-full resize-y bg-transparent px-3 py-3 text-ink outline-none placeholder:text-subtext/70",
+            "w-full min-w-0 resize-y bg-transparent px-3 py-3 text-ink outline-none placeholder:text-subtext/70",
           )}
           ref={setTextareaRef}
           name={name}
@@ -141,7 +141,7 @@ export function MarkdownEditor({
           }}
         />
       ) : (
-        <div className="atelier-content max-w-none px-3 py-4 text-ink">
+        <div className="atelier-content max-w-none overflow-x-auto break-words px-3 py-4 text-ink">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{value || "_（空）_"}</ReactMarkdown>
         </div>
       )}

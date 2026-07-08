@@ -19,12 +19,12 @@ export type OutlineHeaderSectionProps = {
 
 export function OutlineHeaderSection(props: OutlineHeaderSectionProps) {
   return (
-    <div className="panel p-6 sm:p-8">
+    <div className="panel p-4 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <span className="text-xs text-subtext">{OUTLINE_COPY.currentOutline}</span>
           <select
-            className="select w-auto"
+            className="select w-full min-w-0 sm:w-auto"
             name="active_outline_id"
             value={props.activeOutlineId}
             onChange={(event) => props.onSwitchOutline(event.target.value)}
@@ -84,7 +84,7 @@ export type OutlineActionsBarProps = {
 export function OutlineActionsBar(props: OutlineActionsBarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           className={props.canCreateChapters ? "btn btn-primary" : "btn btn-secondary"}
           disabled={!props.canCreateChapters}
@@ -112,7 +112,7 @@ export function OutlineActionsBar(props: OutlineActionsBarProps) {
 
 export function OutlineGuideSection() {
   return (
-    <div className="panel p-6 sm:p-8">
+    <div className="panel p-4 sm:p-8">
       <div className="text-sm text-ink">{OUTLINE_COPY.flowTitle}</div>
       <div className="mt-1 text-xs text-subtext">{OUTLINE_COPY.flowDescription}</div>
       <div className="mt-1 text-[11px] text-subtext">{OUTLINE_COPY.flowHint}</div>
@@ -152,9 +152,9 @@ export type OutlineTitleModalProps = {
 export function OutlineTitleModal(props: OutlineTitleModalProps) {
   const label = getOutlineTitleModalLabel(props.mode);
   return (
-    <Modal open={props.open} onClose={props.onClose} panelClassName="surface max-w-md p-6" ariaLabel={label}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <Modal open={props.open} onClose={props.onClose} panelClassName="surface max-w-md p-4 sm:p-6" ariaLabel={label}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <div className="font-content text-2xl">{label}</div>
           <div className="mt-1 text-xs text-subtext">{OUTLINE_COPY.titleModalHint}</div>
         </div>
@@ -175,7 +175,7 @@ export function OutlineTitleModal(props: OutlineTitleModalProps) {
         </label>
       </div>
 
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
         <button className="btn btn-secondary" onClick={props.onClose} type="button">
           {OUTLINE_COPY.cancel}
         </button>
@@ -215,11 +215,11 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
     <Modal
       open={props.open}
       onClose={props.onClose}
-      panelClassName="surface max-w-2xl p-6"
+      panelClassName="surface max-w-2xl p-4 sm:p-6"
       ariaLabel={OUTLINE_COPY.generateTitle}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <div className="font-content text-2xl">{OUTLINE_COPY.generateTitle}</div>
           <div className="mt-1 text-xs text-subtext">{OUTLINE_COPY.generateHint}</div>
         </div>
@@ -284,7 +284,7 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
           <div className="text-sm text-ink">{OUTLINE_COPY.advancedTitle}</div>
           <div className="mt-1 text-xs text-subtext">{OUTLINE_COPY.advancedHint}</div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-w-0 items-center gap-2 text-sm text-ink">
               <input
                 className="checkbox"
                 checked={props.genForm.include_world_setting}
@@ -294,7 +294,7 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
               />
               {OUTLINE_COPY.includeWorldSetting}
             </label>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-w-0 items-center gap-2 text-sm text-ink">
               <input
                 className="checkbox"
                 checked={props.genForm.include_characters}
@@ -304,7 +304,7 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
               />
               {OUTLINE_COPY.includeCharacters}
             </label>
-            <label className="flex items-center gap-2 text-sm text-ink sm:col-span-3">
+            <label className="flex min-w-0 items-center gap-2 text-sm text-ink sm:col-span-3">
               <input
                 className="checkbox"
                 checked={props.streamEnabled}
@@ -360,7 +360,7 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
       ) : null}
 
       <div className="mt-5 text-xs text-subtext">{OUTLINE_COPY.riskHint}</div>
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
         <button className="btn btn-secondary" onClick={props.onClose} type="button">
           {OUTLINE_COPY.cancel}
         </button>
@@ -376,15 +376,15 @@ export function OutlineGenerationModal(props: OutlineGenerationModalProps) {
 
       {props.preview ? (
         <div className="panel mt-6 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
               <div className="text-sm text-ink">{OUTLINE_COPY.previewTitle}</div>
               <div className="mt-1 text-xs text-subtext">
                 {getOutlinePreviewMetaText(props.preview.chapters.length, props.preview.parse_error?.message)}
               </div>
               <div className="mt-1 text-[11px] text-subtext">{OUTLINE_COPY.previewActionHint}</div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button className="btn btn-secondary" onClick={props.onClearPreview} type="button">
                 {OUTLINE_COPY.previewCancel}
               </button>

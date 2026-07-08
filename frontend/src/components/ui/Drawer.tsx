@@ -53,7 +53,10 @@ export function Drawer(props: {
       )}
     >
       <motion.div
-        className={clsx("overflow-y-auto", props.panelClassName)}
+        className={clsx(
+          "max-h-dvh min-w-0 max-w-full overflow-x-hidden overflow-y-auto overscroll-contain",
+          props.panelClassName,
+        )}
         role="dialog"
         aria-modal="true"
         aria-label={props.ariaLabelledBy ? undefined : props.ariaLabel}

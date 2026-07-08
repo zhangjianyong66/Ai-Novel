@@ -25,6 +25,14 @@
 - 弹窗使用 `Modal` / `Drawer` / `Overlay`，注意 `aria-modal`、`aria-label` 或 `aria-labelledby`。
 - 请求 ID 展示使用 `RequestIdBadge`。
 
+## 移动端布局约束
+
+- 页面主容器、工作台分栏、卡片和弹窗面板应显式使用 `min-w-0`，避免 flex/grid 子项在 360px 手机宽度下撑出页面级横向滚动。
+- `Drawer` / `Modal` 的调用方不要依赖固定宽度；宽抽屉应同时提供 `w-full`、`max-w-*` 或视口安全宽度，内容区应允许垂直滚动。
+- 手机端按钮组应允许 `flex-wrap` 或纵向排列；关键操作不要放在只能通过页面级横向滚动才能看到的位置。
+- 长标题、模型名、任务键、request id 等不可控文本应使用 `truncate`、`break-words`、`break-all` 或局部 `overflow-x-auto`，按信息类型选择保留可读性或完整性。
+- 复杂表格和调试面板可以使用局部横向滚动兜底，但不应让 `html/body` 或页面主容器出现横向滚动。
+
 ## 可访问性
 
 - 图标按钮必须有 `aria-label` 或 `title`，参考 Toast 关闭按钮。

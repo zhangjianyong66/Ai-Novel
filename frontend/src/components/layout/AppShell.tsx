@@ -315,7 +315,7 @@ export function AppShell() {
               aria-label={UI_COPY.nav.navMenu}
             >
               <motion.aside
-                className="h-full w-[280px] shrink-0 overflow-x-hidden border-r border-border bg-surface p-4 shadow-sm"
+                className="h-full w-[min(320px,calc(100vw-2rem))] shrink-0 overflow-x-hidden overflow-y-auto border-r border-border bg-surface p-4 shadow-sm"
                 initial={{ x: -12, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -12, opacity: 0 }}
@@ -597,10 +597,10 @@ export function AppShell() {
           </LayoutGroup>
         </aside>
 
-        <main className="flex-1">
+        <main className="min-w-0 flex-1 overflow-x-hidden">
           <header className="border-b border-border bg-canvas">
-            <div className={clsx("mx-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8", mainMaxWidth)}>
-              <div className="flex items-center justify-between gap-4">
+            <div className={clsx("mx-auto min-w-0 px-3 py-4 sm:px-6 sm:py-6 lg:px-8", mainMaxWidth)}>
+              <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <button
                     className="btn btn-secondary btn-icon lg:hidden"
@@ -611,9 +611,9 @@ export function AppShell() {
                   >
                     <PanelLeftOpen size={18} />
                   </button>
-                  <h1 className="min-w-0 truncate font-content text-2xl sm:text-3xl">{title}</h1>
+                  <h1 className="min-w-0 truncate font-content text-xl sm:text-3xl">{title}</h1>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <div className="hidden text-right text-xs text-subtext sm:block">
                     <div className="truncate">
                       {auth.status === "authenticated"
@@ -630,7 +630,7 @@ export function AppShell() {
 
                   {auth.status === "authenticated" ? (
                     <button
-                      className="btn btn-secondary"
+                      className="btn btn-secondary px-2 text-xs sm:px-3 sm:text-sm"
                       onClick={async () => {
                         await auth.logout();
                         navigate("/login", { replace: true });
@@ -652,7 +652,7 @@ export function AppShell() {
               </div>
             </div>
           </header>
-          <div className={clsx("mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-8", mainMaxWidth)}>
+          <div className={clsx("mx-auto min-w-0 px-3 py-4 sm:px-6 sm:py-8 lg:px-8", mainMaxWidth)}>
             <PersistentOutlet activeKey={pathname} />
           </div>
         </main>

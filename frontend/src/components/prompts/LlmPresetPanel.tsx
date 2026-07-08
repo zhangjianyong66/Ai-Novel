@@ -182,11 +182,11 @@ function ModuleEditor(props: ModuleEditorProps) {
   }, [props]);
 
   return (
-    <section className="surface border border-border p-4" aria-label={props.title}>
+    <section className="surface border border-border p-3 sm:p-4" aria-label={props.title}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="grid gap-1">
+        <div className="grid min-w-0 gap-1">
           <div className="text-base font-semibold text-ink">{props.title}</div>
-          <div className="text-xs text-subtext">{props.subtitle}</div>
+          <div className="break-words text-xs text-subtext">{props.subtitle}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">{props.headerActions}</div>
       </div>
@@ -466,11 +466,11 @@ export function LlmPresetPanel(props: Props) {
   );
 
   return (
-    <section className="panel p-6">
+    <section className="panel p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="font-content text-xl text-ink">模型编排配置</div>
-          <div className="mt-1 text-xs text-subtext">
+          <div className="mt-1 break-words text-xs text-subtext">
             主模型负责默认调用；任务模块可覆盖特定流程（未覆盖则自动回退主模型）。
           </div>
         </div>
@@ -531,9 +531,9 @@ export function LlmPresetPanel(props: Props) {
               按流程拆分模型。每个模块都可绑定独立 API 配置库，未绑定则回退项目主配置。
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-none">
             <select
-              className="select min-w-[240px]"
+              className="select w-full min-w-0 sm:w-auto sm:min-w-[240px]"
               value={props.selectedAddTaskKey}
               onChange={(e) => props.onSelectAddTaskKey(e.target.value)}
               disabled={props.addableTasks.length === 0 || props.profileBusy}
@@ -579,14 +579,14 @@ export function LlmPresetPanel(props: Props) {
               const taskBusy = task.saving || task.deleting || profileBusy;
               const taskUiLocked = taskBusy || testing;
               return (
-                <div className="rounded-atelier border border-border/70 bg-canvas p-3" key={task.task_key}>
+                <div className="min-w-0 rounded-atelier border border-border/70 bg-canvas p-3" key={task.task_key}>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="grid gap-1">
-                      <div className="text-sm font-semibold text-ink">
+                    <div className="grid min-w-0 gap-1">
+                      <div className="break-words text-sm font-semibold text-ink">
                         [{task.group}] {task.label}
                       </div>
-                      <div className="text-xs text-subtext">{task.description}</div>
-                      <div className="text-[11px] text-subtext">任务键：{task.task_key}</div>
+                      <div className="break-words text-xs text-subtext">{task.description}</div>
+                      <div className="break-all text-[11px] text-subtext">任务键：{task.task_key}</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {task.dirty ? (
@@ -658,9 +658,9 @@ export function LlmPresetPanel(props: Props) {
                             ? `，已保存 Key：${effectiveProfile.masked_api_key ?? "（已保存）"}`
                             : "，尚未保存 Key"}
                         </div>
-                        <div className="mt-1 flex flex-wrap gap-2">
+                        <div className="mt-1 flex min-w-0 flex-wrap gap-2">
                           <input
-                            className="input flex-1 min-w-[220px]"
+                            className="input min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[220px]"
                             disabled={taskUiLocked}
                             placeholder={
                               boundProfile
@@ -808,9 +808,9 @@ export function LlmPresetPanel(props: Props) {
                 ? "请先选择/新建一个 profile，再保存 Key。"
                 : "当前模块 provider 与已绑定 profile 不一致；先统一 provider，再保存或测试。"}
         </div>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <input
-            className="input flex-1"
+            className="input min-w-0 flex-1 basis-full sm:basis-auto"
             placeholder="输入新 Key（不会回显已保存 Key）"
             name="api_key"
             type="password"

@@ -81,11 +81,16 @@
     height: 100%;
   }
 
+  html {
+    overflow-x: hidden;
+  }
+
   body {
     margin: 0;
     font-family: var(--font-ui);
     background: rgb(var(--color-canvas));
     color: rgb(var(--color-ink));
+    overflow-x: hidden;
   }
 
   ::selection {
@@ -185,6 +190,7 @@
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-atelier px-3 py-2 text-sm font-medium;
     @apply ui-focus-ring ui-pressable;
+    @apply min-w-0 whitespace-normal text-center;
   }
 
   .btn-sm {
@@ -217,12 +223,14 @@
     @apply w-full rounded-atelier border border-border bg-canvas px-3 py-2 text-sm text-ink outline-none;
     @apply ui-focus-input ui-transition-fast;
     @apply disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply min-w-0;
   }
 
   .textarea {
     @apply w-full rounded-atelier border border-border bg-canvas px-3 py-3 text-sm text-ink outline-none;
     @apply ui-focus-input ui-transition-fast;
     @apply disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply min-w-0;
   }
 
   .input-underline {
@@ -261,6 +269,7 @@
     @apply w-full rounded-atelier border border-border bg-canvas px-3 py-2 text-sm text-ink outline-none;
     @apply ui-focus-input ui-transition-fast;
     @apply disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply min-w-0;
   }
 
   .checkbox {
@@ -268,7 +277,7 @@
   }
 
   .panel {
-    @apply rounded-atelier border border-border bg-surface shadow-sm;
+    @apply min-w-0 rounded-atelier border border-border bg-surface shadow-sm;
   }
 
   .panel-interactive {
@@ -279,7 +288,7 @@
   }
 
   .surface {
-    @apply rounded-atelier border border-border bg-canvas shadow-sm;
+    @apply min-w-0 rounded-atelier border border-border bg-canvas shadow-sm;
   }
 
   .surface-interactive {

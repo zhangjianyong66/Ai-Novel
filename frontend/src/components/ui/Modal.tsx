@@ -19,10 +19,13 @@ export function Modal(props: {
     <Overlay
       open={props.open}
       onBackdropClick={props.onClose}
-      className={clsx("flex items-center justify-center p-4", props.className)}
+      className={clsx("flex items-center justify-center p-3 sm:p-4", props.className)}
     >
       <motion.div
-        className={clsx("w-full max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain", props.panelClassName)}
+        className={clsx(
+          "max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-x-hidden overflow-y-auto overscroll-contain sm:max-h-[calc(100dvh-2rem)] sm:max-w-[calc(100vw-2rem)]",
+          props.panelClassName,
+        )}
         role="dialog"
         aria-modal="true"
         aria-label={props.ariaLabelledBy ? undefined : props.ariaLabel}

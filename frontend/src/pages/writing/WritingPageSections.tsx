@@ -130,7 +130,7 @@ function WorkflowStatusBadge(props: { label: string; value: string; tone?: Workf
 export function WritingEditorSection(props: WritingEditorSectionProps) {
   if (!props.activeChapter || !props.form) {
     return (
-      <div className="mx-auto w-full max-w-4xl rounded-atelier border border-border bg-surface p-8 text-sm text-subtext shadow-sm">
+      <div className="mx-auto w-full min-w-0 max-w-4xl rounded-atelier border border-border bg-surface p-4 text-sm text-subtext shadow-sm sm:p-8">
         {WRITING_PAGE_COPY.emptyState}
       </div>
     );
@@ -150,14 +150,14 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
   });
 
   return (
-    <div className="mx-auto w-full max-w-4xl rounded-atelier border border-border bg-surface p-5 shadow-sm">
+    <div className="mx-auto w-full min-w-0 max-w-4xl rounded-atelier border border-border bg-surface p-3 shadow-sm sm:p-5">
       {props.isDoneReadonly ? (
         <div className="callout-warning mb-4">
           <div className="text-xs">{getWritingReadonlyCallout()}</div>
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="grid min-w-0 flex-1 gap-4 xl:max-w-[420px]">
           <div className="font-content text-2xl text-ink">
             {getWritingChapterHeading(props.activeChapter.number)}{" "}
@@ -177,9 +177,9 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             />
           </label>
         </div>
-        <div className="grid gap-3 xl:min-w-[560px] xl:max-w-[720px]">
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="grid min-w-0 gap-3 xl:min-w-[560px] xl:max-w-[720px]">
+          <div className="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
+            <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
               <button
                 className="btn btn-secondary min-h-10 px-4 shadow-sm"
                 disabled={props.loadingChapter || props.generating}
@@ -215,8 +215,8 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                 {WRITING_PAGE_COPY.trace}
               </button>
             </div>
-            <div className="h-8 w-px bg-border/80" aria-hidden="true" />
-            <div className="flex flex-wrap items-center justify-end gap-2.5">
+            <div className="hidden h-8 w-px bg-border/80 sm:block" aria-hidden="true" />
+            <div className="flex flex-wrap items-center justify-start gap-2.5 xl:justify-end">
               <WorkflowActionButton
                 action={workflow.secondaryAction}
                 onWorkflowAction={props.onWorkflowAction}
@@ -232,7 +232,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
                   <summary className="btn btn-secondary min-h-10 cursor-pointer list-none px-4 shadow-sm">
                     {WRITING_PAGE_COPY.moreActions}
                   </summary>
-                  <div className="absolute bottom-full right-0 z-30 mb-2 grid min-w-28 gap-1 rounded-atelier border border-border bg-surface p-1 shadow-panel">
+                  <div className="absolute bottom-full right-0 z-30 mb-2 grid min-w-28 max-w-[calc(100vw-2rem)] gap-1 rounded-atelier border border-border bg-surface p-1 shadow-panel">
                     {workflow.moreActions.map((action) => (
                       <button
                         className={clsx(
@@ -253,9 +253,9 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
             </div>
           </div>
 
-          <div className="grid justify-items-end gap-3">
+          <div className="grid justify-items-start gap-3 xl:justify-items-end">
             <div
-              className="flex flex-wrap items-center justify-end gap-1.5 rounded-atelier border border-border/70 bg-canvas/50 p-1 shadow-inner"
+              className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 rounded-atelier border border-border/70 bg-canvas/50 p-1 shadow-inner xl:justify-end"
               aria-live="polite"
             >
               <WorkflowStatusBadge
@@ -344,7 +344,7 @@ export function WritingWorkspace(props: WritingWorkspaceProps) {
   return (
     <>
       <WritingToolbar {...props.toolbarProps} onOpenChapterList={props.chapterListProps.onOpenDrawer} />
-      <div className="flex gap-4">
+      <div className="flex min-w-0 gap-4">
         <aside className={`hidden ${CHAPTER_LIST_SIDEBAR_WIDTH_CLASS} shrink-0 lg:block`}>
           <ChapterListPanel
             chapters={props.chapterListProps.chapters}
@@ -353,7 +353,7 @@ export function WritingWorkspace(props: WritingWorkspaceProps) {
           />
         </aside>
 
-        <section className="min-w-0 flex-1">
+        <section className="min-w-0 flex-1 overflow-x-hidden">
           <WritingEditorSection {...props.editorProps} />
         </section>
       </div>
@@ -377,7 +377,7 @@ export function WritingChapterListDrawer(props: WritingChapterListDrawerProps) {
       side="left"
       overlayClassName="lg:hidden"
       ariaLabel="章节列表"
-      panelClassName={`h-full ${CHAPTER_LIST_SIDEBAR_WIDTH_CLASS} overflow-hidden border-r border-border bg-surface shadow-sm`}
+      panelClassName="h-full w-[min(320px,calc(100vw-2rem))] overflow-hidden border-r border-border bg-surface shadow-sm"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="text-sm text-ink">章节列表</div>

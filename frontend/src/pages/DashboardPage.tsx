@@ -274,18 +274,18 @@ export function DashboardPage() {
   }, [enterProject, navigate, recommendedProject, recommendedWizard, recommendedWizardLoading]);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-content text-3xl text-ink">{greeting}，欢迎回来</div>
-          <div className="mt-1 text-sm text-subtext">
+          <div className="break-words font-content text-2xl text-ink sm:text-3xl">{greeting}，欢迎回来</div>
+          <div className="mt-1 break-words text-sm text-subtext">
             {recommendedProject
               ? `继续「${recommendedProject.name}」的创作，或从下方选择其他项目。`
               : "从创建第一个项目开始。"}
           </div>
         </div>
         <button
-          className="btn btn-primary"
+          className="btn btn-primary w-full sm:w-auto"
           onClick={primaryCta.onClick}
           disabled={primaryCta.disabled}
           aria-label={primaryCta.ariaLabel}
@@ -295,7 +295,7 @@ export function DashboardPage() {
         </button>
       </div>
       <motion.div
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+        className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2"
         initial="hidden"
         animate="show"
         variants={{
@@ -327,7 +327,7 @@ export function DashboardPage() {
           <div className="max-w-xs text-xs text-subtext">上传 `.bundle.json`，导入为一个新项目。</div>
         </button>
 
-        <div className="panel p-6">
+        <div className="panel p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="font-content text-xl text-ink">推荐流程</div>
@@ -381,7 +381,7 @@ export function DashboardPage() {
                 <div className="mt-3 rounded-atelier border border-border bg-canvas p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-subtext">
                     <div>完成度：{recommendedWizard.percent}%</div>
-                    <div className="truncate">
+                    <div className="min-w-0 truncate">
                       {recommendedWizard.nextTitle ? `下一步：${recommendedWizard.nextTitle}` : "已完成"}
                     </div>
                   </div>
@@ -433,7 +433,7 @@ export function DashboardPage() {
             <div className="font-content text-xl text-ink">项目加载失败</div>
             <div className="mt-2 text-sm text-subtext">{error.message}</div>
             {error.requestId ? (
-              <div className="mt-1 flex items-center gap-2 text-xs text-subtext">
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-subtext">
                 <span className="truncate">
                   {UI_COPY.common.requestIdLabel}: <span className="font-mono">{error.requestId}</span>
                 </span>
@@ -483,12 +483,12 @@ export function DashboardPage() {
               <div className="pointer-events-none absolute inset-y-0 left-0 w-3 bg-border/55" />
               <div className="pointer-events-none absolute inset-y-0 left-3 w-8 bg-gradient-to-r from-border/25 to-transparent" />
 
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <div className="truncate font-content text-xl text-ink">{p.name}</div>
+                  <div className="break-words font-content text-xl text-ink">{p.name}</div>
                   <div className="mt-1 text-xs text-subtext">{p.genre ? `类型：${p.genre}` : "未填写类型"}</div>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
                   <button
                     className="btn btn-secondary px-3 py-2 text-xs"
                     onClick={(e) => {
@@ -536,9 +536,11 @@ export function DashboardPage() {
                   <div className="text-xs text-subtext">计算完成度...</div>
                 ) : wizard ? (
                   <>
-                    <div className="flex items-center justify-between gap-3 text-xs text-subtext">
+                    <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-subtext">
                       <div>完成度：{wizard.percent}%</div>
-                      <div className="truncate">{wizard.nextTitle ? `下一步：${wizard.nextTitle}` : "已完成"}</div>
+                      <div className="min-w-0 truncate">
+                        {wizard.nextTitle ? `下一步：${wizard.nextTitle}` : "已完成"}
+                      </div>
                     </div>
                     <ProgressBar ariaLabel={`${p.name} 完成度`} className="mt-2" value={wizard.percent} />
                   </>

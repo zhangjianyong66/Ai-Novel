@@ -73,7 +73,66 @@ describe("ChapterVersionDiffView", () => {
     expect(html).toContain('aria-current="location"');
     expect(html).toContain("chapter_version_diff_navigation");
     expect(html).toContain("sticky");
-    expect(html).toContain("-top-5");
+    expect(html).toContain("top-0");
+  });
+
+  it("renders mobile side labels so compact diff columns keep context", () => {
+    const html = renderToStaticMarkup(
+      <ChapterVersionDiffView
+        baseContentMd="旧段落。"
+        targetContentMd="新段落。"
+        baseLabel="旧版本"
+        targetLabel="新版本"
+      />,
+    );
+
+    expect(html).toContain("md:hidden");
+    expect(html).toContain("基准版本");
+    expect(html).toContain("目标版本");
+  });
+
+  it("keeps base and target side by side on mobile without horizontal diff scrolling", () => {
+    const html = renderToStaticMarkup(
+      <ChapterVersionDiffView
+        baseContentMd="旧段落。"
+        targetContentMd="新段落。"
+        baseLabel="旧版本"
+        targetLabel="新版本"
+      />,
+    );
+
+    expect(html).toContain("grid-cols-[minmax(0,1fr)_minmax(0,1fr)]");
+    expect(html).toContain("min-w-0");
+    expect(html).not.toContain("overflow-x-auto");
+  });
+
+  it("allows long highlighted diff tokens to wrap inside narrow mobile columns", () => {
+    const html = renderToStaticMarkup(
+      <ChapterVersionDiffView
+        baseContentMd="曼谷的夜晚像一块浸透汗水的黑布，沉甸甸地压在帕蓬夜市上空。"
+        targetContentMd=""
+        baseLabel="旧版本"
+        targetLabel="新版本"
+      />,
+    );
+
+    expect(html).toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("does not wrap sticky diff navigation in overflow-hidden containers", () => {
+    const html = renderToStaticMarkup(
+      <ChapterVersionDiffView
+        baseContentMd="旧段落。"
+        targetContentMd="新段落。"
+        baseLabel="旧版本"
+        targetLabel="新版本"
+      />,
+    );
+
+    const beforeNavigation = html.slice(0, html.indexOf("chapter_version_diff_navigation"));
+
+    expect(beforeNavigation).not.toContain("overflow-x-hidden");
+    expect(beforeNavigation).not.toContain("overflow-hidden");
   });
 
   it("does not render diff navigation when contents match", () => {

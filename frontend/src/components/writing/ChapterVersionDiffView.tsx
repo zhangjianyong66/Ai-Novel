@@ -27,9 +27,11 @@ function getScrollParent(element: HTMLElement | null): HTMLElement | Window {
 }
 
 function tokenClassName(token: ChapterVersionDiffToken): string {
-  if (token.kind === "added") return "rounded-sm bg-success/10 px-0.5 text-success";
-  if (token.kind === "removed") return "rounded-sm bg-danger/10 px-0.5 text-danger line-through decoration-danger/60";
-  return "";
+  const wrap = "[overflow-wrap:anywhere]";
+  if (token.kind === "added") return `${wrap} rounded-sm bg-success/10 px-0.5 text-success`;
+  if (token.kind === "removed")
+    return `${wrap} rounded-sm bg-danger/10 px-0.5 text-danger line-through decoration-danger/60`;
+  return wrap;
 }
 
 function renderTokens(tokens: ChapterVersionDiffToken[] | undefined, fallback: string | undefined) {
@@ -65,11 +67,14 @@ function renderBlockSide(block: ChapterVersionDiffBlock, side: "base" | "target"
   return (
     <div
       className={clsx(
-        "min-h-12 whitespace-pre-wrap break-words rounded-md border border-l-4 bg-canvas/50 p-3 font-content text-sm leading-7 text-ink ring-1 ring-inset",
+        "min-w-0 whitespace-pre-wrap break-words rounded-md border border-l-4 bg-canvas/50 p-2 font-content text-[13px] leading-6 text-ink ring-1 ring-inset [overflow-wrap:anywhere] sm:min-h-12 sm:p-3 sm:text-sm sm:leading-7",
         panelTone(block, side),
-        emptyLabel && "flex items-center font-sans text-xs leading-5 text-subtext",
+        emptyLabel && "font-sans text-xs leading-5 text-subtext",
       )}
     >
+      <div className="mb-1 font-sans text-[11px] font-medium leading-4 text-subtext md:hidden">
+        {side === "base" ? "基准版本" : "目标版本"}
+      </div>
       {emptyLabel ?? renderTokens(tokens, text)}
     </div>
   );
@@ -177,8 +182,8 @@ export function ChapterVersionDiffView(props: Props) {
   }
 
   return (
-    <div className="grid gap-3">
-      <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid min-w-0 gap-3">
+      <div className="hidden gap-3 md:grid md:grid-cols-2">
         <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium text-subtext">
           基准版本：<span className="text-ink">{props.baseLabel}</span>
         </div>
@@ -188,20 +193,25 @@ export function ChapterVersionDiffView(props: Props) {
       </div>
 
       <div
-        className="sticky -top-5 z-10 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface/95 px-3 py-2 shadow-sm"
+        className="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-border bg-surface/95 px-2 py-2 shadow-sm sm:px-3"
         ref={navigationRef}
         aria-label="chapter_version_diff_navigation"
       >
         <div
-          className="text-xs font-medium text-subtext"
+          className="shrink-0 text-xs font-medium text-subtext"
           aria-label={`第 ${currentDiffOrdinal + 1} / 共 ${diffCount} 处`}
         >
-          第 <span className="text-ink">{currentDiffOrdinal + 1}</span> / 共{" "}
-          <span className="text-ink">{diffCount}</span> 处
+          <span className="sm:hidden">
+            <span className="text-ink">{currentDiffOrdinal + 1}</span>/<span className="text-ink">{diffCount}</span>
+          </span>
+          <span className="hidden sm:inline">
+            第 <span className="text-ink">{currentDiffOrdinal + 1}</span> / 共{" "}
+            <span className="text-ink">{diffCount}</span> 处
+          </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:flex sm:flex-none sm:items-center">
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm min-w-0 px-1.5 sm:px-2"
             disabled={diffCount <= 1}
             onClick={() => jumpToDiff("previous")}
             title={diffCount <= 1 ? "只有一处差异" : "跳转到上一个差异"}
@@ -211,7 +221,7 @@ export function ChapterVersionDiffView(props: Props) {
             上一个差异
           </button>
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm min-w-0 px-1.5 sm:px-2"
             disabled={diffCount <= 1}
             onClick={() => jumpToDiff("next")}
             title={diffCount <= 1 ? "只有一处差异" : "跳转到下一个差异"}
@@ -223,7 +233,7 @@ export function ChapterVersionDiffView(props: Props) {
         </div>
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid min-w-0 gap-3">
         {diff.blocks.map((block, index) => {
           const diffOrdinal = diffBlockIndexes.indexOf(index);
           const current = diffOrdinal === currentDiffOrdinal;
@@ -231,6 +241,7 @@ export function ChapterVersionDiffView(props: Props) {
             <div
               className={clsx(
                 "scroll-mt-6 rounded-md",
+                "min-w-0 overflow-hidden",
                 current && "ring-2 ring-accent/40 ring-offset-2 ring-offset-surface",
               )}
               key={`${index}-${block.type}`}
@@ -243,7 +254,7 @@ export function ChapterVersionDiffView(props: Props) {
               }}
               aria-current={current ? "location" : undefined}
             >
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 sm:gap-3">
                 {renderBlockSide(block, "base")}
                 {renderBlockSide(block, "target")}
               </div>

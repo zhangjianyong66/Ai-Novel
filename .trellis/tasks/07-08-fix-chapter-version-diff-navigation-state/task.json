@@ -3,7 +3,7 @@
   "name": "fix-chapter-version-diff-navigation-state",
   "title": "修复章节版本差异跳转状态回退",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

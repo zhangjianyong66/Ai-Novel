@@ -7,7 +7,12 @@ import {
   type ChapterVersionDiffBlock,
   type ChapterVersionDiffToken,
 } from "../../lib/chapterVersionDiff";
-import { findCurrentDiffOrdinalByViewport, type DiffViewportRect } from "./chapterVersionDiffNavigation";
+import {
+  findCurrentDiffOrdinalByViewport,
+  resolveDiffNavigationStateAfterScroll,
+  type DiffViewportRect,
+  type ProgrammaticDiffNavigationLock,
+} from "./chapterVersionDiffNavigation";
 
 type Props = {
   baseContentMd: string;
@@ -91,6 +96,7 @@ function prefersReducedMotion(): boolean {
 export function ChapterVersionDiffView(props: Props) {
   const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const navigationRef = useRef<HTMLDivElement | null>(null);
+  const programmaticNavigationLockRef = useRef<ProgrammaticDiffNavigationLock>(null);
   const diffIdentity = `${props.baseContentMd}\u0000${props.targetContentMd}`;
   const [navigationState, setNavigationState] = useState({ diffIdentity: "", ordinal: 0 });
   const diff = useMemo(
@@ -135,8 +141,17 @@ export function ChapterVersionDiffView(props: Props) {
       if (nextOrdinal === null) return;
 
       setNavigationState((previous) => {
-        if (previous.diffIdentity === diffIdentity && previous.ordinal === nextOrdinal) return previous;
-        return { diffIdentity, ordinal: nextOrdinal };
+        const resolved = resolveDiffNavigationStateAfterScroll({
+          diffIdentity,
+          currentState: previous,
+          programmaticLock: programmaticNavigationLockRef.current,
+          scrollOrdinal: nextOrdinal,
+        });
+        programmaticNavigationLockRef.current = resolved.programmaticLock;
+        if (previous.diffIdentity === resolved.state.diffIdentity && previous.ordinal === resolved.state.ordinal) {
+          return previous;
+        }
+        return resolved.state;
       });
     }
 
@@ -163,6 +178,11 @@ export function ChapterVersionDiffView(props: Props) {
       const current = currentDiffOrdinal;
       const nextOrdinal = direction === "next" ? (current + 1) % diffCount : (current - 1 + diffCount) % diffCount;
       const blockIndex = diffBlockIndexes[nextOrdinal];
+      programmaticNavigationLockRef.current = {
+        diffIdentity,
+        fromOrdinal: current,
+        targetOrdinal: nextOrdinal,
+      };
       window.requestAnimationFrame(() => {
         blockRefs.current.get(blockIndex)?.scrollIntoView({
           behavior: prefersReducedMotion() ? "auto" : "smooth",

@@ -6,7 +6,7 @@
 
 目标是让按钮点击后的当前差异序号稳定、可预测：用户点击“下一个差异”后，导航状态应以被点击跳转到的目标差异为准，不能被滚动监听误判回前一个仍部分可见的差异。
 
-## Evidence
+## Background And Evidence
 
 - 截图：`/home/zhangjianyong/下载/粘贴的图像 (21).png`。
 - 用户复现描述：
@@ -14,11 +14,11 @@
   - 点击“下一个差异”跳到第 4 处。
   - 再点击“下一个差异”，又跳到第 3/4 附近，实际表现像是状态被滚动同步改回第 3 处。
 - 相关代码：
-  - `frontend/src/components/writing/ChapterVersionDiffView.tsx`
-    - `jumpToDiff()` 先用 `setNavigationState()` 设置目标 ordinal，然后调用 `scrollIntoView({ block: "center" })`。
-    - `useEffect()` 内滚动监听在滚动/resize 时调用 `syncCurrentDiffFromScroll()`，重新计算当前 ordinal。
-  - `frontend/src/components/writing/chapterVersionDiffNavigation.ts`
-    - `findCurrentDiffOrdinalByViewport(anchorY, rects)` 当前使用 `rects.find((rect) => rect.bottom >= anchorY)`，即选取第一个 bottom 仍在 sticky 导航线下方的差异块。
+  - `frontend/src/components/writing/ChapterVersionDiffView.tsx:95` 保存当前导航状态 `{ diffIdentity, ordinal }`。
+  - `frontend/src/components/writing/ChapterVersionDiffView.tsx:123` 的 `syncCurrentDiffFromScroll()` 在滚动/resize 后重新计算当前 ordinal。
+  - `frontend/src/components/writing/ChapterVersionDiffView.tsx:162` 的 `jumpToDiff()` 先设置目标 ordinal，再通过 `scrollIntoView({ block: "center" })` 滚动到目标块。
+  - `frontend/src/components/writing/chapterVersionDiffNavigation.ts:7` 的 `findCurrentDiffOrdinalByViewport(anchorY, rects)` 当前使用 `rects.find((rect) => rect.bottom >= anchorY)`，即选取第一个 bottom 仍在 sticky 导航线下方的差异块。
+  - `frontend/src/components/writing/ChapterVersionDiffView.test.tsx:7` 已有导航纯函数测试，但尚未覆盖程序化跳转后的滚动同步回退。
 
 ## Root Cause
 
@@ -35,7 +35,7 @@
 - R5：保留 reduced motion 行为、当前差异高亮、差异计数、移动端双栏布局和无横向滚动约定。
 - R6：新增回归测试覆盖“程序化跳转目标不被滚动同步回退”和“高差异块仍部分可见时继续点击下一处应前进到下一 ordinal”。
 
-## Recommended Fix Direction
+## Technical Direction
 
 推荐优先采用“程序化跳转短暂锁定目标 ordinal + 改进当前差异判定”的组合：
 
@@ -45,23 +45,21 @@
 
 不建议只加固定 `setTimeout` 忽略滚动事件；这容易受滚动动画时长、reduced motion、设备性能影响。若需要时间窗口，也应有明确的目标到达条件或最小化的状态锁定边界。
 
+具体设计见 `design.md`，执行步骤见 `implement.md`。
+
 ## Acceptance Criteria
 
-- [ ] 从第 3 处点击“下一个差异”跳到第 4 处后，计数保持第 4 处，不会因第 3 处仍部分可见而回退。
-- [ ] 在上述状态继续点击“下一个差异”，应跳到第 5 处，而不是重复跳到第 4 处或回到第 3 处。
-- [ ] 手动滚动页面时，差异计数仍会根据当前位置更新。
-- [ ] `findCurrentDiffOrdinalByViewport` 或新增导航状态模型有单元测试覆盖高块残留可见导致的回退场景。
-- [ ] `ChapterVersionDiffView` 相关测试覆盖按钮跳转和滚动同步不互相覆盖的行为；如果当前 Node/Vitest 环境不适合 DOM 滚动事件测试，应抽取纯函数/状态模型测试。
-- [ ] `cd frontend && npm test -- src/components/writing/ChapterVersionDiffView.test.tsx` 通过。
-- [ ] `cd frontend && npm run lint` 通过。
-- [ ] `cd frontend && npm run build` 通过。
+- [x] 从第 3 处点击“下一个差异”跳到第 4 处后，计数保持第 4 处，不会因第 3 处仍部分可见而回退。
+- [x] 在上述状态继续点击“下一个差异”，应跳到第 5 处，而不是重复跳到第 4 处或回到第 3 处。
+- [x] 手动滚动页面时，差异计数仍会根据当前位置更新。
+- [x] `findCurrentDiffOrdinalByViewport` 或新增导航状态模型有单元测试覆盖高块残留可见导致的回退场景。
+- [x] `ChapterVersionDiffView` 相关测试覆盖按钮跳转和滚动同步不互相覆盖的行为；如果当前 Node/Vitest 环境不适合 DOM 滚动事件测试，应抽取纯函数/状态模型测试。
+- [x] `cd frontend && npm test -- src/components/writing/ChapterVersionDiffView.test.tsx` 通过。
+- [x] `cd frontend && npm run lint` 通过。
+- [x] `cd frontend && npm run build` 通过。
 
 ## Out of Scope
 
 - 不调整章节版本 API、diff 构建算法或版本数据结构。
 - 不重做章节版本抽屉整体 UI。
 - 不引入第三方 diff/viewer 组件。
-
-## Notes
-
-- 当前任务先停留在规划阶段；实现前按 Trellis 流程启动任务并读取前端规范。

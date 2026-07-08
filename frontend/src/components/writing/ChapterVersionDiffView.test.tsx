@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ChapterVersionDiffView } from "./ChapterVersionDiffView";
-import { findCurrentDiffOrdinalByViewport } from "./chapterVersionDiffNavigation";
+import {
+  findCurrentDiffOrdinalByViewport,
+  resolveDiffNavigationStateAfterScroll,
+} from "./chapterVersionDiffNavigation";
 
 describe("findCurrentDiffOrdinalByViewport", () => {
   it("selects the diff block intersecting the line below sticky navigation", () => {
@@ -23,6 +26,54 @@ describe("findCurrentDiffOrdinalByViewport", () => {
 
     expect(findCurrentDiffOrdinalByViewport(100, rects)).toBe(0);
     expect(findCurrentDiffOrdinalByViewport(420, rects)).toBe(1);
+  });
+
+  it("prefers the diff entering the reading focus over a previous tall residual block", () => {
+    expect(
+      findCurrentDiffOrdinalByViewport(120, [
+        { ordinal: 2, top: -420, bottom: 180 },
+        { ordinal: 3, top: 124, bottom: 220 },
+        { ordinal: 4, top: 360, bottom: 460 },
+      ]),
+    ).toBe(3);
+  });
+});
+
+describe("resolveDiffNavigationStateAfterScroll", () => {
+  it("keeps a programmatic jump target when scroll sync briefly reports the origin diff", () => {
+    const resolved = resolveDiffNavigationStateAfterScroll({
+      diffIdentity: "same",
+      currentState: { diffIdentity: "same", ordinal: 3 },
+      programmaticLock: { diffIdentity: "same", fromOrdinal: 2, targetOrdinal: 3 },
+      scrollOrdinal: 2,
+    });
+
+    expect(resolved.state).toEqual({ diffIdentity: "same", ordinal: 3 });
+    expect(resolved.programmaticLock).toEqual({ diffIdentity: "same", fromOrdinal: 2, targetOrdinal: 3 });
+  });
+
+  it("releases the programmatic lock once scroll sync reaches the target diff", () => {
+    const resolved = resolveDiffNavigationStateAfterScroll({
+      diffIdentity: "same",
+      currentState: { diffIdentity: "same", ordinal: 3 },
+      programmaticLock: { diffIdentity: "same", fromOrdinal: 2, targetOrdinal: 3 },
+      scrollOrdinal: 3,
+    });
+
+    expect(resolved.state).toEqual({ diffIdentity: "same", ordinal: 3 });
+    expect(resolved.programmaticLock).toBeNull();
+  });
+
+  it("allows manual scroll sync to replace a stale programmatic lock when it moves elsewhere", () => {
+    const resolved = resolveDiffNavigationStateAfterScroll({
+      diffIdentity: "same",
+      currentState: { diffIdentity: "same", ordinal: 3 },
+      programmaticLock: { diffIdentity: "same", fromOrdinal: 2, targetOrdinal: 3 },
+      scrollOrdinal: 5,
+    });
+
+    expect(resolved.state).toEqual({ diffIdentity: "same", ordinal: 5 });
+    expect(resolved.programmaticLock).toBeNull();
   });
 });
 

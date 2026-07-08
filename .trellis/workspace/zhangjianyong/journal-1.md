@@ -931,3 +931,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: 修复移动端版本对比贴合空隙
+
+**Date**: 2026-07-08
+**Task**: 修复移动端版本对比贴合空隙
+**Branch**: `main`
+
+### Summary
+
+定位章节版本移动端对比残留空隙来自 compare 滚动区顶部 padding 与半透明圆角 sticky 导航；改为顶部无 padding、不透明直角 sticky 导航，并补充回归测试与项目规范说明。验证相关测试、lint、build 均通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad443b8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -898,3 +898,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 修复移动端章节版本对比空隙
+
+**Date**: 2026-07-08
+**Task**: 修复移动端章节版本对比空隙
+**Branch**: `main`
+
+### Summary
+
+修复章节版本移动端对比布局：将基准选择器并入顶部工具栏，移除操作栏与 sticky 差异导航之间的滚动区夹层；补充回归测试、前端规范和项目说明，并通过相关测试、lint、build。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4b315ad` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

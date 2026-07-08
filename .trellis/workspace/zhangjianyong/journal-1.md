@@ -797,3 +797,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 前端移动端兼容优化
+
+**Date**: 2026-07-08
+**Task**: 前端移动端兼容优化
+**Branch**: `main`
+
+### Summary
+
+优化前端移动端兼容布局：补齐 AppShell、Drawer、Modal、MarkdownEditor、Dashboard、Writing、Outline、Prompts 的窄屏宽度、换行和滚动约束；更新前端组件规范并完成 lint、build、test 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ed8c5f9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

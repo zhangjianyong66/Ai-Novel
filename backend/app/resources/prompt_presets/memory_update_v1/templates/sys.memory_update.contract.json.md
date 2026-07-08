@@ -22,7 +22,7 @@ schema: memory_update_v1
 - op=upsert 时 after 必填；op=delete 时 target_id 必填且 after 必须为 null
 - entity after: { entity_type, name, summary_md?, attributes? }
 - relation after: { from_entity_id, to_entity_id, relation_type, description_md?, attributes? }
+- relation 的 from_entity_id/to_entity_id 必须引用已存在实体 id、同一 ops 中 entity 的 target_id，或同一 ops 中 entity after.name 的精确文本；不要自造英文缩写、拼音或 slug 作为实体 id
 - event after: { chapter_id?, event_type, title?, content_md, attributes? }
 - foreshadow after: { chapter_id?, resolved_at_chapter_id?, title?, content_md, resolved(0|1), attributes? }
 - evidence after: { source_type, source_id?, quote_md, attributes? }
-

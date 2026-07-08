@@ -339,6 +339,219 @@ class TestMemoryUpdateV1Endpoints(unittest.TestCase):
             self.assertEqual(relation.from_entity_id, "e_alice")
             self.assertEqual(relation.to_entity_id, "e_bob")
 
+    def test_propose_rejects_relation_with_unresolved_entity_ref(self) -> None:
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-unresolved-relation-ref-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": "e_yuriko",
+                        "after": {"entity_type": "character", "name": "百合子"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": "e_pan_yue",
+                        "after": {"entity_type": "character", "name": "潘越"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "relations",
+                        "target_id": "r_yuriko_pan",
+                        "after": {
+                            "from_entity_id": "yuriko",
+                            "to_entity_id": "潘越",
+                            "relation_type": "knows",
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 400)
+        body = propose.json()
+        self.assertEqual(body["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(body["error"]["details"]["reason"], "unresolved_relation_entity_ref")
+        self.assertEqual(body["error"]["details"]["ref"], "yuriko")
+
+        with self.SessionLocal() as db:
+            change_sets = db.query(MemoryChangeSet).all()
+            self.assertEqual(change_sets, [])
+            self.assertIsNone(db.get(MemoryEntity, "e_yuriko"))
+            self.assertIsNone(db.get(MemoryEntity, "e_pan_yue"))
+
+    def test_propose_rejects_items_bound_to_another_chapter(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(Chapter(id="c1_second", project_id="p1", outline_id="o1", number=2, title="Ch2", status="done"))
+            db.commit()
+
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1_second/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-cross-chapter-memory-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "events",
+                        "target_id": "ev_from_c1",
+                        "after": {
+                            "chapter_id": "c1",
+                            "event_type": "scene",
+                            "title": "Wrong chapter event",
+                            "content_md": "This event belongs to chapter 1.",
+                        },
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "evidence",
+                        "target_id": "evidence_from_c1",
+                        "after": {
+                            "source_type": "chapter",
+                            "source_id": "c1",
+                            "quote_md": "Chapter 1 quote.",
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 400)
+        body = propose.json()
+        self.assertEqual(body["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(body["error"]["details"]["reason"], "memory_update_item_chapter_mismatch")
+        self.assertEqual(body["error"]["details"]["expected_chapter_id"], "c1_second")
+
+        with self.SessionLocal() as db:
+            change_sets = db.query(MemoryChangeSet).all()
+            self.assertEqual(change_sets, [])
+            self.assertIsNone(db.get(MemoryEvent, "ev_from_c1"))
+            self.assertIsNone(db.get(MemoryEvidence, "evidence_from_c1"))
+
+    def test_propose_rejects_chapter_evidence_bound_to_another_chapter(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(Chapter(id="c1_second", project_id="p1", outline_id="o1", number=2, title="Ch2", status="done"))
+            db.commit()
+
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1_second/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-cross-chapter-evidence-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "evidence",
+                        "target_id": "evidence_from_c1",
+                        "after": {
+                            "source_type": "chapter",
+                            "source_id": "c1",
+                            "quote_md": "Chapter 1 quote.",
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 400)
+        body = propose.json()
+        self.assertEqual(body["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(body["error"]["details"]["reason"], "memory_update_item_chapter_mismatch")
+        self.assertEqual(body["error"]["details"]["target_table"], "evidence")
+        self.assertEqual(body["error"]["details"]["field"], "source_id")
+
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(MemoryChangeSet).all(), [])
+            self.assertIsNone(db.get(MemoryEvidence, "evidence_from_c1"))
+
+    def test_propose_rejects_foreshadow_bound_to_another_chapter(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(Chapter(id="c1_second", project_id="p1", outline_id="o1", number=2, title="Ch2", status="done"))
+            db.commit()
+
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1_second/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-cross-chapter-foreshadow-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "foreshadows",
+                        "target_id": "fo_from_c1",
+                        "after": {
+                            "chapter_id": "c1",
+                            "title": "Wrong chapter foreshadow",
+                            "content_md": "This foreshadow belongs to chapter 1.",
+                            "resolved": 0,
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 400)
+        body = propose.json()
+        self.assertEqual(body["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(body["error"]["details"]["reason"], "memory_update_item_chapter_mismatch")
+        self.assertEqual(body["error"]["details"]["target_table"], "foreshadows")
+        self.assertEqual(body["error"]["details"]["field"], "chapter_id")
+
+        with self.SessionLocal() as db:
+            self.assertEqual(db.query(MemoryChangeSet).all(), [])
+            self.assertIsNone(db.get(MemoryForeshadow, "fo_from_c1"))
+
+    def test_propose_allows_items_bound_to_target_chapter(self) -> None:
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-target-chapter-memory-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "events",
+                        "target_id": "ev_from_c1",
+                        "after": {
+                            "chapter_id": "c1",
+                            "event_type": "scene",
+                            "title": "Target chapter event",
+                            "content_md": "This event belongs to chapter 1.",
+                        },
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "evidence",
+                        "target_id": "evidence_from_c1",
+                        "after": {
+                            "source_type": "chapter",
+                            "source_id": "c1",
+                            "quote_md": "Chapter 1 quote.",
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 200)
+        data = propose.json()["data"]
+        self.assertEqual(data["change_set"]["status"], "proposed")
+        self.assertEqual(len(data["items"]), 2)
+
     def test_apply_integrity_error_marks_failed(self) -> None:
         with self.SessionLocal() as db:
             db.add(

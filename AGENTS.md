@@ -141,6 +141,8 @@
 
 ## StoryMemory 与伏笔生命周期约定
 
+- 结构化记忆 `memory_change_sets` 的 `relations.from_entity_id/to_entity_id` 必须在 propose 阶段解析到同项目未删除的 `entities.id`，或解析到同一变更集内新建实体的 `target_id` / `after.name`；遇到无法解析的引用（例如模型自造拼音、英文 slug）应拒绝整个变更集并返回 `VALIDATION_ERROR`，不要允许生成稍后 apply 才触发外键错误的 change_set，也不要部分应用其余条目。
+- 章节记忆提议 `POST /api/chapters/{chapter_id}/memory/propose` 必须拒绝明显绑定其他章节的结构化条目：`events.chapter_id`、`foreshadows.chapter_id/resolved_at_chapter_id`、`evidence.source_type=chapter` 的 `source_id` 只能为空或等于路径章节 ID；前端切换章节时也必须清空并失效旧提议，避免把上一章 `MemoryChangeSetItem` 重新提交到当前章节。
 - `story_memories.scope` 的合法值为 `outline`、`project`、`unassigned`；`scope=outline` 必须带同项目 `outline_id`，`project`/`unassigned` 不应带 `outline_id`。
 - 历史或无法判断来源的 `chapter_id=NULL` StoryMemory 应归为 `unassigned`，默认不参与章节生成注入；只有 `scope=project` 或 `scope=outline AND outline_id=当前章节大纲` 可以进入 StoryMemory/semantic_history/foreshadow/vector_rag 注入。
 - 删除 StoryMemory 时先定点删除派生索引，再删除源记录：`search_documents(source_type='story_memory', source_id=id)` 与 `vector_chunks(source='story_memory', source_id=id)`；单条/批量删除不触发全量 `search_rebuild` 或 `vector_rebuild`。

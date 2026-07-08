@@ -479,6 +479,72 @@ def _resolve_entity_ref(
     return raw
 
 
+def _resolve_required_relation_entity_ref(
+    db: Session,
+    *,
+    project_id: str,
+    ref: object,
+    entity_aliases: dict[str, str],
+    item_index: int,
+    field: str,
+) -> str:
+    resolved = _resolve_entity_ref(db, project_id=project_id, ref=ref, entity_aliases=entity_aliases)
+    if resolved and resolved in set(entity_aliases.values()):
+        return resolved
+
+    existing = db.get(MemoryEntity, resolved) if resolved else None
+    if existing is not None and str(existing.project_id) == project_id and existing.deleted_at is None:
+        return resolved
+
+    raise AppError.validation(
+        message="关系引用的实体不存在",
+        details={
+            "item_index": item_index,
+            "target_table": "relations",
+            "field": field,
+            "ref": str(ref or "").strip(),
+            "reason": "unresolved_relation_entity_ref",
+        },
+    )
+
+
+def _validate_memory_item_chapter_scope(
+    *,
+    target_table: str,
+    after: dict[str, Any] | None,
+    chapter_id: str,
+    item_index: int,
+) -> None:
+    if not isinstance(after, dict):
+        return
+
+    def reject(field: str, value: object) -> None:
+        raise AppError.validation(
+            message="记忆变更条目归属章节不匹配",
+            details={
+                "item_index": item_index,
+                "target_table": target_table,
+                "field": field,
+                "value": str(value or "").strip(),
+                "expected_chapter_id": chapter_id,
+                "reason": "memory_update_item_chapter_mismatch",
+            },
+        )
+
+    if target_table in {"events", "foreshadows"}:
+        for field in ("chapter_id", "resolved_at_chapter_id"):
+            value = str(after.get(field) or "").strip()
+            if value and value != chapter_id:
+                reject(field, value)
+        return
+
+    if target_table == "evidence":
+        source_type = str(after.get("source_type") or "").strip().lower()
+        source_id = str(after.get("source_id") or "").strip()
+        if source_type == "chapter" and source_id and source_id != chapter_id:
+            reject("source_id", source_id)
+
+
 def propose_chapter_memory_change_set(
     *,
     db: Session,
@@ -583,6 +649,13 @@ def propose_chapter_memory_change_set(
             if target_table in {"events", "foreshadows"} and not (after_dict.get("chapter_id") or "").strip():
                 after_dict["chapter_id"] = chapter_id
 
+            _validate_memory_item_chapter_scope(
+                target_table=target_table,
+                after=after_dict,
+                chapter_id=chapter_id,
+                item_index=idx,
+            )
+
             # restore-on-create: resolve by unique key when caller omits target_id
             if not target_id and target_table == "entities":
                 entity_type = str(after_dict.get("entity_type") or "generic").strip() or "generic"
@@ -624,21 +697,26 @@ def propose_chapter_memory_change_set(
 
             if target_table == "entities":
                 name = str(after_dict.get("name") or "").strip()
+                entity_aliases[target_id] = target_id
                 if name:
                     entity_aliases[name] = target_id
 
             if target_table == "relations":
-                after_dict["from_entity_id"] = _resolve_entity_ref(
+                after_dict["from_entity_id"] = _resolve_required_relation_entity_ref(
                     db,
                     project_id=project_id,
                     ref=after_dict.get("from_entity_id"),
                     entity_aliases=entity_aliases,
+                    item_index=idx,
+                    field="from_entity_id",
                 )
-                after_dict["to_entity_id"] = _resolve_entity_ref(
+                after_dict["to_entity_id"] = _resolve_required_relation_entity_ref(
                     db,
                     project_id=project_id,
                     ref=after_dict.get("to_entity_id"),
                     entity_aliases=entity_aliases,
+                    item_index=idx,
+                    field="to_entity_id",
                 )
 
             after_dict["id"] = target_id

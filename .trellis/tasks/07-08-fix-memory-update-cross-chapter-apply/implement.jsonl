@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/index.md","reason":"确认后端服务、数据库和核心链路修改前需要遵守的规范入口"}
+{"file":".trellis/spec/frontend/index.md","reason":"确认前端组件、本地状态和质量检查修改前需要遵守的规范入口"}

@@ -54,6 +54,101 @@
 - 不要在生产环境依赖 SQLite 多 worker。
 - 不要把 API Key 明文、密钥材料或大体积生成内容写入迁移脚本日志。
 
+## Scenario: 结构化记忆关系引用解析
+
+### 1. Scope / Trigger
+
+- Trigger: 修改 `memory_change_sets`、`MemoryRelation`、记忆更新 LLM 契约、章节记忆提议或应用逻辑。
+- 目标：关系引用必须在 propose 阶段解析清楚，避免 apply 阶段才触发数据库外键错误。
+
+### 2. Signatures
+
+- API: `POST /api/chapters/{chapter_id}/memory/propose`
+- DB: `relations.from_entity_id -> entities.id`
+- DB: `relations.to_entity_id -> entities.id`
+- Service: `propose_chapter_memory_change_set(...)` 生成 `MemoryChangeSetItem.after_json`
+
+### 3. Contracts
+
+- Relation `after.from_entity_id` / `after.to_entity_id` 只能引用同项目未删除实体。
+- 允许引用已有 `entities.id`。
+- 允许引用同一变更集内新建 entity 的 `target_id`。
+- 允许引用同一变更集内新建 entity 的 `after.name` 精确文本，服务层会归一化为 `target_id`。
+- 不允许模型自造拼音、英文缩写、slug 或其他无法解析的符号 ID。
+- Prompt preset `memory_update_v1` 必须把上述引用规则写进契约，但服务层仍必须强校验。
+
+### 4. Validation & Error Matrix
+
+- Relation 引用可解析 -> 保存 change_set，`after_json` 中写入解析后的实体 ID。
+- Relation 引用不可解析 -> `VALIDATION_ERROR`，`details.reason=unresolved_relation_entity_ref`。
+- 任一 relation 引用不可解析 -> 拒绝整个 change_set，不创建可 apply 的部分结果。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 同一 ops 先 upsert entity `target_id=e_yuriko`，后续 relation 使用 `from_entity_id=e_yuriko`。
+- Base: 同一 ops 先 upsert entity `name=百合子`，后续 relation 使用 `from_entity_id=百合子`，服务层解析为 `e_yuriko`。
+- Bad: 新建 entity `name=百合子`，relation 使用 `from_entity_id=yuriko`，服务层应拒绝整个变更集。
+
+### 6. Tests Required
+
+- 测试同一变更集内 relation 用 entity name 可解析并可 apply。
+- 测试 relation 引用不可解析时 propose 返回 `VALIDATION_ERROR`，且不创建 `MemoryChangeSet` 或实体行。
+- 测试已有实体 ID 仍可作为 relation 引用。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{"target_table":"relations","after":{"from_entity_id":"yuriko","to_entity_id":"pan_yue"}}
+```
+
+#### Correct
+
+```json
+{"target_table":"relations","after":{"from_entity_id":"e_yuriko","to_entity_id":"pan_yue"}}
+```
+
+## Scenario: 章节记忆提议的章节归属校验
+
+### 1. Scope / Trigger
+
+- Trigger: 修改章节级 `memory_update_v1` 提议、应用、前端记忆更新抽屉、LLM 自动提议结果转换逻辑。
+- 目标：章节级提议不能把上一章或其他章节的结构化记忆条目套用到当前章节。
+
+### 2. Signatures
+
+- API: `POST /api/chapters/{chapter_id}/memory/propose`
+- Service: `propose_chapter_memory_change_set(...)`
+- Tables: `events`、`foreshadows`、`evidence`
+- UI: `MemoryUpdateDrawer` 重新提交已接受条目时会把 `MemoryChangeSetItem.after_json` 转回 ops。
+
+### 3. Contracts
+
+- `events.chapter_id` 为空时由服务层填充为路径 `chapter_id`；非空时必须等于路径 `chapter_id`。
+- `foreshadows.chapter_id` 和 `foreshadows.resolved_at_chapter_id` 为空时允许；非空时必须等于路径 `chapter_id`。
+- `evidence.source_type=chapter` 且 `source_id` 非空时，`source_id` 必须等于路径 `chapter_id`。
+- 通用实体、关系或无章节来源的 evidence 不应因为缺少章节 ID 被拒绝。
+- 前端章节切换或关闭重开到不同章节时，必须清空并失效旧 `proposeResult` / accepted / apply 状态；异步晚到的旧章节 propose/apply 响应不能写入当前章节 UI。
+
+### 4. Validation & Error Matrix
+
+- 条目章节归属匹配 -> 保存 proposed change_set。
+- 条目绑定其他章节 -> `VALIDATION_ERROR`，`details.reason=memory_update_item_chapter_mismatch`。
+- 任一条目不匹配 -> 拒绝整个 change_set，不创建可应用的部分结果。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 对章节 `c2` 提交 event `after.chapter_id=c2`。
+- Base: 对章节 `c2` 提交 event 省略 `chapter_id`，服务层自动补为 `c2`。
+- Bad: 对章节 `c2` 提交 event `after.chapter_id=c1` 或 evidence `source_type=chapter, source_id=c1`，服务层应拒绝。
+
+### 6. Tests Required
+
+- 测试章节级 propose 拒绝绑定其他章节的 event/evidence/foreshadow 条目。
+- 测试绑定目标章节的 event/evidence 仍可 propose 成功。
+- 前端状态 helper 或组件测试覆盖章节切换后旧提议不可继续应用；存在异步请求时，旧章节晚到响应不能污染新章节会话。
+
 ## Scenario: 登录用户名与稳定用户 ID 分离
 
 ### 1. Scope / Trigger

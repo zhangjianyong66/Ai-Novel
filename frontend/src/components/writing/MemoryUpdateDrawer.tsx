@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { formatDateTime } from "../../lib/dateTime";
@@ -7,6 +7,11 @@ import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
 import { useToast } from "../ui/toast";
+import {
+  getMemoryUpdateDrawerSessionKey,
+  isMemoryUpdateDrawerAsyncResponseCurrent,
+  shouldResetMemoryUpdateDrawerSession,
+} from "./MemoryUpdateDrawerState";
 
 type Props = {
   open: boolean;
@@ -151,6 +156,26 @@ export function MemoryUpdateDrawer(props: Props) {
   const [structuredLoading, setStructuredLoading] = useState(false);
   const [structuredError, setStructuredError] = useState<ApiError | null>(null);
   const [structured, setStructured] = useState<StructuredMemory | null>(null);
+  const sessionKeyRef = useRef<string | null>(null);
+  const proposeRequestIdRef = useRef(0);
+  const applyRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const nextSessionKey = getMemoryUpdateDrawerSessionKey({ chapterId, open });
+    if (shouldResetMemoryUpdateDrawerSession(sessionKeyRef.current, nextSessionKey)) {
+      proposeRequestIdRef.current += 1;
+      applyRequestIdRef.current += 1;
+      setProposeLoading(false);
+      setProposeError(null);
+      setProposeResult(null);
+      setAccepted({});
+      setApplyLoading(false);
+      setApplyError(null);
+      setApplyResult(null);
+      setLastApplyChangeSetId(null);
+    }
+    sessionKeyRef.current = nextSessionKey;
+  }, [chapterId, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -183,6 +208,17 @@ export function MemoryUpdateDrawer(props: Props) {
       toast.toastError("请先选择章节");
       return;
     }
+    const requestSessionKey = getMemoryUpdateDrawerSessionKey({ chapterId, open });
+    const requestId = proposeRequestIdRef.current + 1;
+    proposeRequestIdRef.current = requestId;
+    const isCurrentRequest = () =>
+      isMemoryUpdateDrawerAsyncResponseCurrent({
+        requestId,
+        activeRequestId: proposeRequestIdRef.current,
+        requestSessionKey,
+        activeSessionKey: sessionKeyRef.current,
+      });
+
     setProposeLoading(true);
     setProposeError(null);
     setApplyResult(null);
@@ -212,24 +248,37 @@ export function MemoryUpdateDrawer(props: Props) {
         `/api/chapters/${chapterId}/memory/propose`,
         buildLlmJsonRequestInit({ payload: req, llmTimeoutSeconds: props.llmTimeoutSeconds }),
       );
+      if (!isCurrentRequest()) return;
       setProposeResult(res.data);
       toast.toastSuccess("已生成提议");
     } catch (e) {
+      if (!isCurrentRequest()) return;
       const err =
         e instanceof ApiError
           ? e
           : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
       setProposeError(err);
     } finally {
-      setProposeLoading(false);
+      if (isCurrentRequest()) setProposeLoading(false);
     }
-  }, [chapterId, inputJson, props.llmTimeoutSeconds, toast]);
+  }, [chapterId, inputJson, open, props.llmTimeoutSeconds, toast]);
 
   const runAutoPropose = useCallback(async () => {
     if (!chapterId) {
       toast.toastError("请先选择章节");
       return;
     }
+    const requestSessionKey = getMemoryUpdateDrawerSessionKey({ chapterId, open });
+    const requestId = proposeRequestIdRef.current + 1;
+    proposeRequestIdRef.current = requestId;
+    const isCurrentRequest = () =>
+      isMemoryUpdateDrawerAsyncResponseCurrent({
+        requestId,
+        activeRequestId: proposeRequestIdRef.current,
+        requestSessionKey,
+        activeSessionKey: sessionKeyRef.current,
+      });
+
     setProposeLoading(true);
     setProposeError(null);
     setApplyResult(null);
@@ -243,18 +292,20 @@ export function MemoryUpdateDrawer(props: Props) {
           llmTimeoutSeconds: props.llmTimeoutSeconds,
         }),
       );
+      if (!isCurrentRequest()) return;
       setProposeResult(res.data);
       toast.toastSuccess("已生成提议（自动）");
     } catch (e) {
+      if (!isCurrentRequest()) return;
       const err =
         e instanceof ApiError
           ? e
           : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
       setProposeError(err);
     } finally {
-      setProposeLoading(false);
+      if (isCurrentRequest()) setProposeLoading(false);
     }
-  }, [autoFocus, chapterId, props.llmTimeoutSeconds, toast]);
+  }, [autoFocus, chapterId, open, props.llmTimeoutSeconds, toast]);
 
   const runApplyAccepted = useCallback(async () => {
     if (!chapterId) {
@@ -270,6 +321,17 @@ export function MemoryUpdateDrawer(props: Props) {
       toast.toastError("没有可应用的条目（全部已拒绝）");
       return;
     }
+
+    const requestSessionKey = getMemoryUpdateDrawerSessionKey({ chapterId, open });
+    const requestId = applyRequestIdRef.current + 1;
+    applyRequestIdRef.current = requestId;
+    const isCurrentRequest = () =>
+      isMemoryUpdateDrawerAsyncResponseCurrent({
+        requestId,
+        activeRequestId: applyRequestIdRef.current,
+        requestSessionKey,
+        activeSessionKey: sessionKeyRef.current,
+      });
 
     setApplyLoading(true);
     setApplyError(null);
@@ -308,6 +370,7 @@ export function MemoryUpdateDrawer(props: Props) {
         `/api/chapters/${chapterId}/memory/propose`,
         buildLlmJsonRequestInit({ payload: proposeReq, llmTimeoutSeconds: props.llmTimeoutSeconds }),
       );
+      if (!isCurrentRequest()) return;
       const changeSetId = proposed.data?.change_set?.id;
       if (!changeSetId) {
         throw new ApiError({
@@ -320,42 +383,57 @@ export function MemoryUpdateDrawer(props: Props) {
       setLastApplyChangeSetId(changeSetId);
 
       const applied = await apiJson<ApplyResult>(`/api/memory_change_sets/${changeSetId}/apply`, { method: "POST" });
+      if (!isCurrentRequest()) return;
       setApplyResult(applied.data);
       toast.toastSuccess("已应用");
     } catch (e) {
+      if (!isCurrentRequest()) return;
       const err =
         e instanceof ApiError
           ? e
           : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
       setApplyError(err);
     } finally {
-      setApplyLoading(false);
+      if (isCurrentRequest()) setApplyLoading(false);
     }
-  }, [accepted, chapterId, props.llmTimeoutSeconds, proposeResult, toast]);
+  }, [accepted, chapterId, open, props.llmTimeoutSeconds, proposeResult, toast]);
 
   const retryApply = useCallback(async () => {
     if (!lastApplyChangeSetId) {
       toast.toastError("没有可重试的 change_set_id");
       return;
     }
+    const requestSessionKey = getMemoryUpdateDrawerSessionKey({ chapterId, open });
+    const requestId = applyRequestIdRef.current + 1;
+    applyRequestIdRef.current = requestId;
+    const isCurrentRequest = () =>
+      isMemoryUpdateDrawerAsyncResponseCurrent({
+        requestId,
+        activeRequestId: applyRequestIdRef.current,
+        requestSessionKey,
+        activeSessionKey: sessionKeyRef.current,
+      });
+
     setApplyLoading(true);
     setApplyError(null);
     try {
       const applied = await apiJson<ApplyResult>(`/api/memory_change_sets/${lastApplyChangeSetId}/apply`, {
         method: "POST",
       });
+      if (!isCurrentRequest()) return;
       setApplyResult(applied.data);
       toast.toastSuccess("已应用（重试）");
     } catch (e) {
+      if (!isCurrentRequest()) return;
       const err =
         e instanceof ApiError
           ? e
           : new ApiError({ code: "UNKNOWN", message: String(e), requestId: "unknown", status: 0 });
       setApplyError(err);
     } finally {
-      setApplyLoading(false);
+      if (isCurrentRequest()) setApplyLoading(false);
     }
-  }, [lastApplyChangeSetId, toast]);
+  }, [chapterId, lastApplyChangeSetId, open, toast]);
 
   const refreshStructured = useCallback(async () => {
     if (!projectId) {

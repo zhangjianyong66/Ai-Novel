@@ -1031,3 +1031,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: 修复记忆更新提议跨章节应用
+
+**Date**: 2026-07-08
+**Task**: 修复记忆更新提议跨章节应用
+**Branch**: `main`
+
+### Summary
+
+修复写作页记忆更新抽屉跨章节保留旧提议的问题，增加前端会话/异步响应守卫，并在后端 propose 阶段拒绝绑定其他章节的结构化记忆条目。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16798cc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

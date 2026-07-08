@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-07-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1033 | Active |
+| `journal-1.md` | ~1066 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-07-08 | 修复记忆更新提议跨章节应用 | `16798cc` | `main` |
 | 31 | 2026-07-08 | 修复写作页记忆更新状态 | `942cae1`, `9a27e33` | `main` |
 | 30 | 2026-07-08 | 修复章节版本差异跳转回退 | `4a8d971` | `main` |
 | 29 | 2026-07-08 | 修复移动端版本对比贴合空隙 | `ad443b8` | `main` |

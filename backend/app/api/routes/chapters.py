@@ -25,7 +25,7 @@ from app.api.deps import (
 from app.core.errors import AppError, ok_payload
 from app.core.logging import exception_log_fields, log_event
 from app.db.session import SessionLocal
-from app.db.utils import new_id
+from app.db.utils import new_id, utc_now
 from app.llm.client import call_llm_messages, call_llm_stream_messages
 from app.llm.messages import ChatMessage, coalesce_system, flatten_messages
 from app.llm.redaction import redact_text
@@ -34,8 +34,11 @@ from app.models.chapter_version import ChapterVersion
 from app.models.character import Character
 from app.models.generation_run import GenerationRun
 from app.models.outline import Outline
+from app.models.plot_analysis import PlotAnalysis
 from app.models.project import Project
 from app.models.project_settings import ProjectSettings
+from app.models.project_task import ProjectTask
+from app.models.story_memory import StoryMemory
 from app.schemas.chapters import (
     BulkCreateRequest,
     ChapterCreate,
@@ -76,6 +79,7 @@ from app.services.mcp.service import McpResearchConfig as McpResearchConfigSvc
 from app.services.mcp.service import McpToolCall as McpToolCallSvc
 from app.services.output_contracts import contract_for_task
 from app.services.outline_store import ensure_active_outline
+from app.services.plot_analysis_service import compute_chapter_content_hash
 from app.services.chapter_context_service import (
     build_chapter_generate_render_values,
     inject_plan_into_render_values,
@@ -139,6 +143,7 @@ class ChapterTriggerAutoUpdates(BaseModel):
         max_length=36,
         description="用于幂等的 token（优先使用 generation_run_id；不提供则回退 chapter.updated_at）",
     )
+    force: bool = Field(default=False, description="为重新更新记忆生成新的任务 token，默认保持幂等")
 
 
 def _resolve_macro_seed(*, request_id: str, body: object) -> str:
@@ -492,6 +497,159 @@ def _chapter_detail_data(db: Session, row: Chapter) -> dict[str, object]:
     data = ChapterDetailOut.model_validate(row).model_dump()
     data["active_version"] = get_active_chapter_version_summary(db, row)
     return data
+
+
+def _safe_dict_json(raw: str | None) -> dict[str, object]:
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_dt_iso(value: object) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
+def _task_chapter_id(task: ProjectTask) -> str:
+    params = _safe_dict_json(task.params_json)
+    return str(params.get("chapter_id") or "").strip()
+
+
+def _task_sort_timestamp(value: object) -> float:
+    if isinstance(value, datetime):
+        return value.timestamp()
+    return 0.0
+
+
+def _task_status_priority(task: ProjectTask) -> int:
+    status = str(getattr(task, "status", "") or "").strip()
+    if status in {"queued", "running"}:
+        return 3
+    if status in {"failed", "canceled"}:
+        return 2
+    return 1
+
+
+def _task_error_message(task: ProjectTask | None) -> str | None:
+    if task is None:
+        return None
+    for raw in (task.error_json, task.result_json):
+        obj = _safe_dict_json(raw)
+        for key in ("message", "error_message", "reason"):
+            value = obj.get(key)
+            if isinstance(value, str) and value.strip():
+                return redact_text(value.strip())[:400]
+        error_obj = obj.get("error")
+        if isinstance(error_obj, dict):
+            value = error_obj.get("message")
+            if isinstance(value, str) and value.strip():
+                return redact_text(value.strip())[:400]
+    return None
+
+
+def _latest_plot_auto_update_task(db: Session, *, project_id: str, chapter_id: str) -> ProjectTask | None:
+    rows = (
+        db.execute(
+            select(ProjectTask)
+            .where(ProjectTask.project_id == project_id, ProjectTask.kind == "plot_auto_update")
+            .order_by(ProjectTask.updated_at.desc(), ProjectTask.created_at.desc(), ProjectTask.id.desc())
+            .limit(200)
+        )
+        .scalars()
+        .all()
+    )
+    matches = [task for task in rows if _task_chapter_id(task) == chapter_id]
+    if not matches:
+        return None
+    return max(
+        matches,
+        key=lambda task: (
+            _task_sort_timestamp(getattr(task, "updated_at", None)),
+            _task_sort_timestamp(getattr(task, "created_at", None)),
+            _task_status_priority(task),
+        ),
+    )
+
+
+def _latest_chapter_story_memory_at(db: Session, *, project_id: str, chapter_id: str) -> datetime | None:
+    return db.execute(
+        select(func.max(StoryMemory.updated_at)).where(
+            StoryMemory.project_id == project_id,
+            StoryMemory.chapter_id == chapter_id,
+        )
+    ).scalar_one_or_none()
+
+
+def _latest_plot_analysis(db: Session, *, project_id: str, chapter: Chapter) -> PlotAnalysis | None:
+    row = (
+        db.execute(
+            select(PlotAnalysis)
+            .where(PlotAnalysis.project_id == project_id, PlotAnalysis.chapter_id == str(chapter.id))
+            .order_by(PlotAnalysis.updated_at.desc(), PlotAnalysis.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        return None
+    if str(row.chapter_content_hash or "").strip() != compute_chapter_content_hash(chapter.content_md):
+        return None
+    active_version_id = str(row.chapter_active_version_id or "").strip()
+    current_version_id = str(chapter.active_version_id or "").strip()
+    if active_version_id and active_version_id != current_version_id:
+        return None
+    return row
+
+
+def _chapter_memory_update_status(db: Session, *, chapter: Chapter) -> dict[str, object]:
+    project_id = str(chapter.project_id)
+    chapter_id = str(chapter.id)
+    if str(chapter.status or "") != "done":
+        return {
+            "status": "unavailable",
+            "task_id": None,
+            "task_status": None,
+            "plot_analysis_id": None,
+            "apply_status": None,
+            "last_updated_at": None,
+            "error_message": None,
+        }
+
+    task = _latest_plot_auto_update_task(db, project_id=project_id, chapter_id=chapter_id)
+    task_status = str(getattr(task, "status", "") or "").strip() if task is not None else ""
+    plot_analysis = _latest_plot_analysis(db, project_id=project_id, chapter=chapter)
+    story_memory_at = _latest_chapter_story_memory_at(db, project_id=project_id, chapter_id=chapter_id)
+    plot_updated_at = getattr(plot_analysis, "updated_at", None) if plot_analysis is not None else None
+    last_updated_at = plot_updated_at if plot_updated_at is not None else story_memory_at
+
+    if task_status in {"queued", "running"}:
+        status = "updating"
+    elif task_status in {"failed", "canceled"} and (
+        last_updated_at is None or (getattr(task, "updated_at", None) is not None and task.updated_at >= last_updated_at)
+    ):
+        status = "failed"
+    elif plot_analysis is not None and str(plot_analysis.apply_status or "") in {"success", "empty"}:
+        status = "updated"
+    elif story_memory_at is not None:
+        status = "updated"
+    else:
+        status = "pending"
+
+    return {
+        "status": status,
+        "task_id": task.id if task is not None else None,
+        "task_status": task_status or None,
+        "plot_analysis_id": plot_analysis.id if plot_analysis is not None else None,
+        "apply_status": plot_analysis.apply_status if plot_analysis is not None else None,
+        "last_updated_at": _safe_dt_iso(last_updated_at),
+        "error_message": _task_error_message(task) if status == "failed" else None,
+    }
 
 
 def _save_generated_chapter_version(
@@ -974,6 +1132,21 @@ def update_chapter_status(
     return ok_payload(request_id=request_id, data={"chapter": ChapterDetailOut.model_validate(row).model_dump()})
 
 
+@router.get("/chapters/{chapter_id}/memory_update_status")
+def get_chapter_memory_update_status(
+    request: Request,
+    db: DbDep,
+    user_id: UserIdDep,
+    chapter_id: str,
+) -> dict:
+    request_id = request.state.request_id
+    chapter = require_chapter_viewer(db, chapter_id=chapter_id, user_id=user_id)
+    return ok_payload(
+        request_id=request_id,
+        data={"memory_update_status": _chapter_memory_update_status(db, chapter=chapter)},
+    )
+
+
 @router.post("/chapters/{chapter_id}/trigger_auto_updates")
 def trigger_chapter_auto_updates(
     request: Request,
@@ -993,6 +1166,9 @@ def trigger_chapter_auto_updates(
         updated_at = getattr(chapter, "updated_at", None)
         if updated_at is not None:
             token = updated_at.isoformat().replace("+00:00", "Z")
+    if bool(getattr(body, "force", False)):
+        base_token = token or utc_now().isoformat().replace("+00:00", "Z")
+        token = f"{base_token}:force:{new_id()}"
 
     if str(chapter.status or "") == "done":
         tasks = schedule_chapter_done_tasks(

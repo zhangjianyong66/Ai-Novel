@@ -7,13 +7,20 @@ import { useConfirm } from "../../components/ui/confirm";
 import { useToast } from "../../components/ui/toast";
 import { usePersistentOutletIsActive } from "../../hooks/usePersistentOutlet";
 import { useProjectData } from "../../hooks/useProjectData";
+import { useProjectTaskEvents } from "../../hooks/useProjectTaskEvents";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { chapterStore } from "../../services/chapterStore";
-import { activateChapterVersion, fetchChapterVersionDetail, fetchChapterVersions } from "../../services/chaptersApi";
+import {
+  activateChapterVersion,
+  fetchChapterMemoryUpdateStatus,
+  fetchChapterVersionDetail,
+  fetchChapterVersions,
+} from "../../services/chaptersApi";
 import { getWizardProjectChangedAt, markWizardProjectChanged } from "../../services/wizard";
 import type {
+  ChapterMemoryUpdateStatusValue,
   ChapterStatus,
   ChapterVersionDetail,
   ChapterVersionSummary,
@@ -114,8 +121,11 @@ export function useWritingPageState(): WritingPageState {
   const versionListGuardRef = useRef(createRequestSeqGuard());
   const versionDetailGuardRef = useRef(createRequestSeqGuard());
   const versionCompareGuardRef = useRef(createRequestSeqGuard());
+  const memoryStatusGuardRef = useRef(createRequestSeqGuard());
+  const memoryStatusSyncTimerRef = useRef<number | null>(null);
   const [autoUpdatesTriggering, setAutoUpdatesTriggering] = useState(false);
   const [memoryUpdateFailedChapterId, setMemoryUpdateFailedChapterId] = useState<string | null>(null);
+  const [memoryUpdateStatus, setMemoryUpdateStatus] = useState<ChapterMemoryUpdateStatusValue | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
 
   const writingQuery = useProjectData<WritingLoaded>(projectId, async (id) => {
@@ -190,6 +200,93 @@ export function useWritingPageState(): WritingPageState {
   const isDoneReadonly = activeChapter?.status === "done";
   const memoryUpdateFailed = Boolean(activeChapter?.id && memoryUpdateFailedChapterId === activeChapter.id);
   const activeVersionId = activeChapter?.active_version_id ?? activeChapter?.active_version?.id ?? null;
+
+  const refreshMemoryUpdateStatus = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!activeChapter) {
+        memoryStatusGuardRef.current.invalidate();
+        setMemoryUpdateStatus(null);
+        return;
+      }
+      if (activeChapter.status !== "done") {
+        memoryStatusGuardRef.current.invalidate();
+        setMemoryUpdateStatus("unavailable");
+        return;
+      }
+      const seq = memoryStatusGuardRef.current.next();
+      try {
+        const status = await fetchChapterMemoryUpdateStatus(activeChapter.id);
+        if (!memoryStatusGuardRef.current.isLatest(seq)) return;
+        setMemoryUpdateStatus(status.status);
+        if (status.status !== "failed") {
+          setMemoryUpdateFailedChapterId((current) => (current === activeChapter.id ? null : current));
+        } else {
+          setMemoryUpdateFailedChapterId(activeChapter.id);
+        }
+      } catch (error) {
+        if (!memoryStatusGuardRef.current.isLatest(seq)) return;
+        if (!opts?.silent) {
+          const err =
+            error instanceof ApiError
+              ? error
+              : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+          toast.toastError(`${err.message} (${err.code})`, err.requestId);
+        }
+      }
+    },
+    [activeChapter, toast],
+  );
+
+  useEffect(() => {
+    void refreshMemoryUpdateStatus({ silent: true });
+  }, [refreshMemoryUpdateStatus]);
+
+  const scheduleMemoryStatusSync = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (memoryStatusSyncTimerRef.current !== null) {
+      window.clearTimeout(memoryStatusSyncTimerRef.current);
+    }
+    memoryStatusSyncTimerRef.current = window.setTimeout(() => {
+      memoryStatusSyncTimerRef.current = null;
+      void refreshMemoryUpdateStatus({ silent: true });
+    }, 150);
+  }, [refreshMemoryUpdateStatus]);
+
+  const projectTaskEvents = useProjectTaskEvents({
+    projectId,
+    enabled: Boolean(projectId && activeChapter?.status === "done"),
+    onSnapshot: (snapshot) => {
+      if ((snapshot.active_tasks || []).some((task) => task.kind === "plot_auto_update")) {
+        scheduleMemoryStatusSync();
+      }
+    },
+    onEvent: (event) => {
+      if (event.kind !== "plot_auto_update") return;
+      const eventChapterId =
+        typeof event.payload?.chapter_id === "string" ? String(event.payload.chapter_id).trim() : "";
+      if (eventChapterId && eventChapterId !== activeChapter?.id) return;
+      scheduleMemoryStatusSync();
+    },
+  });
+
+  useEffect(() => {
+    return () => {
+      if (memoryStatusSyncTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(memoryStatusSyncTimerRef.current);
+        memoryStatusSyncTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (projectTaskEvents.status === "open") return;
+    if (memoryUpdateStatus !== "updating") return;
+    if (typeof window === "undefined") return;
+    const id = window.setInterval(() => {
+      void refreshMemoryUpdateStatus({ silent: true });
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [memoryUpdateStatus, projectTaskEvents.status, refreshMemoryUpdateStatus]);
 
   useApplyGenerationRun({
     applyRunId,
@@ -564,47 +661,52 @@ export function useWritingPageState(): WritingPageState {
     [form, toast],
   );
 
-  const saveAndTriggerAutoUpdates = useCallback(async () => {
-    if (!projectId || !activeChapter || autoUpdatesTriggering) return;
+  const saveAndTriggerAutoUpdates = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!projectId || !activeChapter || autoUpdatesTriggering) return;
 
-    setAutoUpdatesTriggering(true);
-    try {
-      const ok = await saveChapter({ silent: true });
-      if (!ok) return;
+      setAutoUpdatesTriggering(true);
+      try {
+        const ok = await saveChapter({ silent: true });
+        if (!ok) return;
 
-      const response = await apiJson<ChapterAutoUpdatesTriggerResult>(
-        `/api/chapters/${activeChapter.id}/trigger_auto_updates`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
-      );
-      const taskId = pickFirstProjectTaskId(response.data.tasks);
-      toast.toastSuccess(
-        WRITING_PAGE_COPY.autoUpdatesCreated,
-        response.request_id,
-        taskId
-          ? {
-              label: WRITING_PAGE_COPY.openTaskCenter,
-              onClick: () => {
-                const href = buildProjectTaskCenterHref(projectId, taskId);
-                if (href) navigate(href);
-              },
-            }
-          : undefined,
-      );
-      setMemoryUpdateFailedChapterId((current) => (current === activeChapter.id ? null : current));
-    } catch (error) {
-      const err =
-        error instanceof ApiError
-          ? error
-          : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
-      setMemoryUpdateFailedChapterId(activeChapter.id);
-      toast.toastError(`${err.message} (${err.code})`, err.requestId);
-    } finally {
-      setAutoUpdatesTriggering(false);
-    }
-  }, [activeChapter, autoUpdatesTriggering, navigate, projectId, saveChapter, toast]);
+        const response = await apiJson<ChapterAutoUpdatesTriggerResult>(
+          `/api/chapters/${activeChapter.id}/trigger_auto_updates`,
+          {
+            method: "POST",
+            body: JSON.stringify(options?.force ? { force: true } : {}),
+          },
+        );
+        setMemoryUpdateStatus(activeChapter.status === "done" ? "updating" : "unavailable");
+        const taskId = pickFirstProjectTaskId(response.data.tasks);
+        toast.toastSuccess(
+          WRITING_PAGE_COPY.autoUpdatesCreated,
+          response.request_id,
+          taskId
+            ? {
+                label: WRITING_PAGE_COPY.openTaskCenter,
+                onClick: () => {
+                  const href = buildProjectTaskCenterHref(projectId, taskId);
+                  if (href) navigate(href);
+                },
+              }
+            : undefined,
+        );
+        setMemoryUpdateFailedChapterId((current) => (current === activeChapter.id ? null : current));
+        scheduleMemoryStatusSync();
+      } catch (error) {
+        const err =
+          error instanceof ApiError
+            ? error
+            : new ApiError({ code: "UNKNOWN", message: String(error), requestId: "unknown", status: 0 });
+        setMemoryUpdateFailedChapterId(activeChapter.id);
+        toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      } finally {
+        setAutoUpdatesTriggering(false);
+      }
+    },
+    [activeChapter, autoUpdatesTriggering, navigate, projectId, saveChapter, scheduleMemoryStatusSync, toast],
+  );
 
   const updateChapterStatusForChapter = useCallback(
     async (chapter: typeof activeChapter, status: ChapterStatus) => {
@@ -709,8 +811,12 @@ export function useWritingPageState(): WritingPageState {
         await updateChapterStatusForChapter(activeChapter, "planned");
         return;
       }
-      if (actionId === "update_memory" || actionId === "retry_memory_update") {
+      if (actionId === "update_memory") {
         await saveAndTriggerAutoUpdates();
+        return;
+      }
+      if (actionId === "retry_memory_update" || actionId === "rerun_memory_update") {
+        await saveAndTriggerAutoUpdates({ force: true });
         return;
       }
       if (actionId === "delete") {
@@ -845,6 +951,7 @@ export function useWritingPageState(): WritingPageState {
       saving,
       statusUpdating,
       autoUpdatesTriggering,
+      memoryUpdateStatus,
       memoryUpdateFailed,
       hasNonEmptyContent: hasNonEmptyChapterContent(form?.content_md),
       contentEditorTab,

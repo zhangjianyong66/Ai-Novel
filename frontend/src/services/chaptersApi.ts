@@ -3,6 +3,7 @@ import type {
   BulkCreateChapterInput,
   ChapterDetail,
   ChapterListItem,
+  ChapterMemoryUpdateStatus,
   ChapterMetaPage,
   ChapterVersionDetail,
   ChapterVersionSummary,
@@ -73,6 +74,13 @@ export async function fetchAllChapterMeta(
 export async function fetchChapterDetail(chapterId: string): Promise<ChapterDetail> {
   const res = await apiJson<{ chapter: ChapterDetail }>(`/api/chapters/${chapterId}`);
   return res.data.chapter;
+}
+
+export async function fetchChapterMemoryUpdateStatus(chapterId: string): Promise<ChapterMemoryUpdateStatus> {
+  const res = await apiJson<{ memory_update_status: ChapterMemoryUpdateStatus }>(
+    `/api/chapters/${chapterId}/memory_update_status`,
+  );
+  return res.data.memory_update_status;
 }
 
 export async function createChapter(projectId: string, payload: CreateChapterInput): Promise<ChapterDetail> {

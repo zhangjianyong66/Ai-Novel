@@ -7,6 +7,17 @@ export type LLMProvider =
   | "gemini";
 
 export type ChapterStatus = "planned" | "drafting" | "done";
+export type ChapterMemoryUpdateStatusValue = "unavailable" | "pending" | "updating" | "updated" | "failed";
+
+export interface ChapterMemoryUpdateStatus {
+  status: ChapterMemoryUpdateStatusValue;
+  task_id?: string | null;
+  task_status?: string | null;
+  plot_analysis_id?: string | null;
+  apply_status?: string | null;
+  last_updated_at?: string | null;
+  error_message?: string | null;
+}
 
 export interface Project {
   id: string;

@@ -206,6 +206,28 @@ describe("writingPageModels", () => {
     expect(workflow.primaryAction).toMatchObject({ id: "retry_memory_update", label: "重试更新记忆" });
   });
 
+  it("builds the done workflow as updated without memory update as the primary action", () => {
+    const workflow = getChapterWorkflowState({
+      status: "done",
+      dirty: false,
+      hasNonEmptyContent: true,
+      loadingChapter: false,
+      generating: false,
+      saving: false,
+      statusUpdating: false,
+      autoUpdatesTriggering: false,
+      activeChapterId: "c1",
+      memoryUpdateStatus: "updated",
+    });
+
+    expect(workflow.memoryStatusLabel).toBe("已更新");
+    expect(workflow.primaryAction?.id).not.toBe("update_memory");
+    expect(workflow.secondaryAction).toMatchObject({ id: "reopen_draft", label: "退回草稿", confirm: true });
+    expect(workflow.moreActions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "rerun_memory_update", label: "重新更新记忆" })]),
+    );
+  });
+
   it("marks workflow actions disabled while a request is in flight", () => {
     const workflow = getChapterWorkflowState({
       status: "drafting",

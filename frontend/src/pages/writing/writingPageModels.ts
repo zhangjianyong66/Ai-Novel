@@ -1,4 +1,4 @@
-import type { ChapterStatus } from "../../types";
+import type { ChapterMemoryUpdateStatusValue, ChapterStatus } from "../../types";
 import type { ChapterAnalyzeResult } from "../../components/writing/types";
 
 export type ChapterAutoUpdatesTriggerResult = {
@@ -16,6 +16,7 @@ export type ChapterWorkflowActionId =
   | "reopen_draft"
   | "update_memory"
   | "retry_memory_update"
+  | "rerun_memory_update"
   | "delete"
   | "mark_planned";
 
@@ -119,6 +120,7 @@ export function getChapterWorkflowState(params: {
   statusUpdating: boolean;
   autoUpdatesTriggering: boolean;
   activeChapterId?: string | null;
+  memoryUpdateStatus?: ChapterMemoryUpdateStatusValue | null;
   memoryUpdateFailed?: boolean;
 }): ChapterWorkflowState {
   const actionParams = {
@@ -160,15 +162,36 @@ export function getChapterWorkflowState(params: {
     };
   }
 
+  const memoryStatus: ChapterMemoryUpdateStatusValue = params.autoUpdatesTriggering
+    ? "updating"
+    : params.memoryUpdateFailed
+      ? "failed"
+      : (params.memoryUpdateStatus ?? "pending");
+  const memoryStatusLabel =
+    memoryStatus === "updating"
+      ? "更新中"
+      : memoryStatus === "failed"
+        ? "更新失败"
+        : memoryStatus === "updated"
+          ? "已更新"
+          : "待更新";
+  const doneMoreActions = [buildWorkflowAction("delete", "删除", { ...actionParams, danger: true, confirm: true })];
+  if (memoryStatus === "updated") {
+    doneMoreActions.unshift(buildWorkflowAction("rerun_memory_update", "重新更新记忆", actionParams));
+  }
+
   return {
     writingStatusLabel: getWritingStatusLabel(params.status),
-    memoryStatusLabel: params.autoUpdatesTriggering ? "更新中" : params.memoryUpdateFailed ? "更新失败" : "待更新",
+    memoryStatusLabel,
     dirtyLabel,
-    primaryAction: params.memoryUpdateFailed
-      ? buildWorkflowAction("retry_memory_update", "重试更新记忆", actionParams)
-      : buildWorkflowAction("update_memory", "更新记忆", actionParams),
+    primaryAction:
+      memoryStatus === "failed"
+        ? buildWorkflowAction("retry_memory_update", "重试更新记忆", actionParams)
+        : memoryStatus === "updated"
+          ? null
+          : buildWorkflowAction("update_memory", "更新记忆", actionParams),
     secondaryAction: buildWorkflowAction("reopen_draft", "退回草稿", { ...actionParams, confirm: true }),
-    moreActions: [buildWorkflowAction("delete", "删除", { ...actionParams, danger: true, confirm: true })],
+    moreActions: doneMoreActions,
   };
 }
 

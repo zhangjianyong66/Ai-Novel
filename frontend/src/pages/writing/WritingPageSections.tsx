@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import type { ChapterMemoryUpdateStatusValue } from "../../types";
 import clsx from "clsx";
 import { Diff } from "lucide-react";
 
@@ -50,6 +51,7 @@ export type WritingEditorSectionProps = {
   statusUpdating: boolean;
   autoUpdatesTriggering: boolean;
   memoryUpdateFailed: boolean;
+  memoryUpdateStatus?: ChapterMemoryUpdateStatusValue | null;
   hasNonEmptyContent: boolean;
   contentEditorTab: "edit" | "preview";
   onContentEditorTabChange: (tab: "edit" | "preview") => void;
@@ -146,6 +148,7 @@ export function WritingEditorSection(props: WritingEditorSectionProps) {
     statusUpdating: props.statusUpdating,
     autoUpdatesTriggering: props.autoUpdatesTriggering,
     activeChapterId: props.activeChapter.id,
+    memoryUpdateStatus: props.memoryUpdateStatus,
     memoryUpdateFailed: props.memoryUpdateFailed,
   });
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -17,11 +18,14 @@ from app.db.base import Base
 from app.main import app_error_handler, validation_error_handler
 from app.models.chapter import Chapter
 from app.models.outline import Outline
+from app.models.plot_analysis import PlotAnalysis
 from app.models.project import Project
 from app.models.project_settings import ProjectSettings
 from app.models.project_task import ProjectTask
 from app.models.project_task_event import ProjectTaskEvent
+from app.models.story_memory import StoryMemory
 from app.models.user import User
+from app.services.plot_analysis_service import compute_chapter_content_hash
 
 
 class _DummyQueue:
@@ -66,6 +70,8 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
                 ProjectSettings.__table__,
                 Outline.__table__,
                 Chapter.__table__,
+                PlotAnalysis.__table__,
+                StoryMemory.__table__,
                 ProjectTask.__table__,
                 ProjectTaskEvent.__table__,
             ],
@@ -148,6 +154,138 @@ class TestChapterTriggerAutoUpdatesEndpoint(unittest.TestCase):
                 after = db.execute(select(ProjectTask)).scalars().all()
 
             self.assertEqual(len(after), len(before))
+
+    def test_force_trigger_chapter_auto_updates_creates_new_plot_task(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "done"
+            db.commit()
+
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal), patch(
+            "app.services.task_queue.get_task_queue", return_value=_DummyQueue()
+        ), patch("app.services.plot_analysis_service.get_task_queue", return_value=_DummyQueue()), patch(
+            "app.services.characters_auto_update_service.get_task_queue", return_value=_DummyQueue()
+        ):
+            resp1 = client.post(
+                "/api/chapters/c1/trigger_auto_updates",
+                headers={"X-Test-User": "u_owner"},
+                json={"generation_run_id": "run-1"},
+            )
+            self.assertEqual(resp1.status_code, 200)
+            task1 = ((resp1.json().get("data") or {}).get("tasks") or {}).get("plot_auto_update")
+            self.assertTrue(str(task1 or ""))
+
+            resp2 = client.post(
+                "/api/chapters/c1/trigger_auto_updates",
+                headers={"X-Test-User": "u_owner"},
+                json={"generation_run_id": "run-1", "force": True},
+            )
+            self.assertEqual(resp2.status_code, 200)
+            data2 = resp2.json().get("data") or {}
+            task2 = (data2.get("tasks") or {}).get("plot_auto_update")
+            self.assertTrue(str(task2 or ""))
+            self.assertNotEqual(task2, task1)
+            self.assertNotEqual(data2.get("chapter_token"), "run-1")
+
+        with self.SessionLocal() as db:
+            plot_tasks = db.execute(
+                select(ProjectTask).where(ProjectTask.kind == "plot_auto_update").order_by(ProjectTask.created_at.asc())
+            ).scalars().all()
+        self.assertEqual(len(plot_tasks), 2)
+
+    def test_memory_update_status_reflects_no_record_updating_updated_and_failed(self) -> None:
+        with self.SessionLocal() as db:
+            chapter = db.get(Chapter, "c1")
+            self.assertIsNotNone(chapter)
+            chapter.status = "done"
+            db.commit()
+
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal):
+            pending_resp = client.get("/api/chapters/c1/memory_update_status", headers={"X-Test-User": "u_owner"})
+        self.assertEqual(pending_resp.status_code, 200)
+        pending_status = (pending_resp.json().get("data") or {}).get("memory_update_status") or {}
+        self.assertEqual(pending_status.get("status"), "pending")
+
+        with self.SessionLocal() as db:
+            db.add(
+                ProjectTask(
+                    id="pt-running",
+                    project_id="p1",
+                    actor_user_id="u_owner",
+                    kind="plot_auto_update",
+                    status="running",
+                    idempotency_key="plot:chapter:c1:running",
+                    params_json=json.dumps({"chapter_id": "c1"}),
+                )
+            )
+            db.commit()
+
+        with patch("app.db.session.SessionLocal", self.SessionLocal):
+            updating_resp = client.get("/api/chapters/c1/memory_update_status", headers={"X-Test-User": "u_owner"})
+        self.assertEqual(updating_resp.status_code, 200)
+        updating_status = (updating_resp.json().get("data") or {}).get("memory_update_status") or {}
+        self.assertEqual(updating_status.get("status"), "updating")
+        self.assertEqual(updating_status.get("task_id"), "pt-running")
+
+        with self.SessionLocal() as db:
+            task = db.get(ProjectTask, "pt-running")
+            self.assertIsNotNone(task)
+            task.status = "succeeded"
+            db.add(
+                PlotAnalysis(
+                    id="pa-success",
+                    project_id="p1",
+                    chapter_id="c1",
+                    analysis_json="{}",
+                    chapter_content_hash=compute_chapter_content_hash("content"),
+                    apply_status="success",
+                )
+            )
+            db.commit()
+
+        with patch("app.db.session.SessionLocal", self.SessionLocal):
+            updated_resp = client.get("/api/chapters/c1/memory_update_status", headers={"X-Test-User": "u_owner"})
+        self.assertEqual(updated_resp.status_code, 200)
+        updated_status = (updated_resp.json().get("data") or {}).get("memory_update_status") or {}
+        self.assertEqual(updated_status.get("status"), "updated")
+        self.assertEqual(updated_status.get("plot_analysis_id"), "pa-success")
+        self.assertEqual(updated_status.get("apply_status"), "success")
+
+        with self.SessionLocal() as db:
+            db.add(
+                ProjectTask(
+                    id="pt-failed",
+                    project_id="p1",
+                    actor_user_id="u_owner",
+                    kind="plot_auto_update",
+                    status="failed",
+                    idempotency_key="plot:chapter:c1:failed",
+                    params_json=json.dumps({"chapter_id": "c1"}),
+                    error_json=json.dumps({"message": "模型输出截断"}),
+                )
+            )
+            db.commit()
+
+        with patch("app.db.session.SessionLocal", self.SessionLocal):
+            failed_resp = client.get("/api/chapters/c1/memory_update_status", headers={"X-Test-User": "u_owner"})
+        self.assertEqual(failed_resp.status_code, 200)
+        failed_status = (failed_resp.json().get("data") or {}).get("memory_update_status") or {}
+        self.assertEqual(failed_status.get("status"), "failed")
+        self.assertEqual(failed_status.get("task_id"), "pt-failed")
+        self.assertIn("截断", failed_status.get("error_message") or "")
+
+    def test_memory_update_status_is_unavailable_for_draft(self) -> None:
+        client = TestClient(self.app)
+        with patch("app.db.session.SessionLocal", self.SessionLocal):
+            resp = client.get("/api/chapters/c1/memory_update_status", headers={"X-Test-User": "u_owner"})
+
+        self.assertEqual(resp.status_code, 200)
+        status = (resp.json().get("data") or {}).get("memory_update_status") or {}
+        self.assertEqual(status.get("status"), "unavailable")
+        self.assertIsNone(status.get("task_id"))
 
     def test_trigger_chapter_auto_updates_for_draft_only_creates_index_tasks(self) -> None:
         client = TestClient(self.app)

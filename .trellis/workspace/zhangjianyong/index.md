@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-07-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~966 | Active |
+| `journal-1.md` | ~999 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-07-08 | 修复章节版本差异跳转回退 | `4a8d971` | `main` |
 | 29 | 2026-07-08 | 修复移动端版本对比贴合空隙 | `ad443b8` | `main` |
 | 28 | 2026-07-08 | 修复移动端章节版本对比空隙 | `4b315ad` | `main` |
 | 27 | 2026-07-08 | 完成前端移动端核心布局优化 | `3f8d642` | `main` |

@@ -964,3 +964,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 修复章节版本差异跳转回退
+
+**Date**: 2026-07-08
+**Task**: 修复章节版本差异跳转回退
+**Branch**: `main`
+
+### Summary
+
+修复章节版本对比中程序化跳转被滚动同步回退的问题，新增导航状态回归测试并完成前端验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a8d971` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

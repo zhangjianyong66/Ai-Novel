@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from typing import Generator
 
@@ -338,6 +339,156 @@ class TestMemoryUpdateV1Endpoints(unittest.TestCase):
             self.assertIsNotNone(relation)
             self.assertEqual(relation.from_entity_id, "e_alice")
             self.assertEqual(relation.to_entity_id, "e_bob")
+
+    def test_propose_normalizes_structured_memory_fields_before_saving_items(self) -> None:
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-normalize-fields-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": " e_alice ",
+                        "after": {
+                            "entity_type": " Person ",
+                            "name": " Alice ",
+                            "attributes": {" role ": " protagonist ", "": "drop"},
+                        },
+                        "evidence_ids": [" ev_1 "],
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "target_id": "e_bob",
+                        "after": {"entity_type": "character", "name": "Bob"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "relations",
+                        "target_id": " r_alice_bob_norm ",
+                        "after": {
+                            "from_entity_id": " Alice ",
+                            "to_entity_id": " Bob ",
+                            "relation_type": " Close Friend ",
+                        },
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "events",
+                        "target_id": " ev_norm ",
+                        "after": {"event_type": " Plot Beat ", "content_md": "event"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "evidence",
+                        "target_id": " evidence_norm ",
+                        "after": {"source_type": " Chapter ", "source_id": " c1 ", "quote_md": "quote"},
+                    },
+                    {
+                        "op": "upsert",
+                        "target_table": "foreshadows",
+                        "target_id": " fs_norm ",
+                        "after": {"content_md": "hook", "resolved": 1},
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 200)
+        items = propose.json()["data"]["items"]
+        entity_after = json.loads(items[0]["after_json"])
+        relation_after = json.loads(items[2]["after_json"])
+        event_after = json.loads(items[3]["after_json"])
+        evidence_after = json.loads(items[4]["after_json"])
+        foreshadow_after = json.loads(items[5]["after_json"])
+
+        self.assertEqual(items[0]["target_id"], "e_alice")
+        self.assertEqual(items[0]["evidence_ids_json"], '["ev_1"]')
+        self.assertEqual(entity_after["entity_type"], "character")
+        self.assertEqual(entity_after["name"], "Alice")
+        self.assertEqual(entity_after["attributes"], {"role": "protagonist"})
+        self.assertEqual(relation_after["from_entity_id"], "e_alice")
+        self.assertEqual(relation_after["to_entity_id"], "e_bob")
+        self.assertEqual(relation_after["relation_type"], "close_friend")
+        self.assertEqual(event_after["event_type"], "plot_beat")
+        self.assertEqual(evidence_after["source_type"], "chapter")
+        self.assertEqual(evidence_after["source_id"], "c1")
+        self.assertEqual(foreshadow_after["resolved"], 1)
+
+    def test_propose_marks_different_name_duplicate_entity_candidates_for_review(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(
+                MemoryEntity(
+                    id="ticket_midi",
+                    project_id="p1",
+                    entity_type="artifact",
+                    name="迷笛音乐节旧门票",
+                    summary_md="一张泛黄的四年前迷笛音乐节门票，乐队名印在第三行，背面写着监听完毕，保留。",
+                    attributes_json='{"event":"迷笛音乐节","note":"监听完毕，保留"}',
+                )
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-duplicate-review-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "after": {
+                            "entity_type": "object",
+                            "name": "四年前迷笛音乐节门票",
+                            "summary_md": "泛黄演出门票，日期为四年前迷笛音乐节，乐队名字在第三行，背面有监听完毕，保留。",
+                        },
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 200)
+        item = propose.json()["data"]["items"][0]
+        after = json.loads(item["after_json"])
+        self.assertEqual(after["entity_type"], "artifact")
+        review = after["attributes"]["__review"]
+        self.assertTrue(review["duplicate_review_required"])
+        self.assertEqual(review["duplicate_candidates"][0]["id"], "ticket_midi")
+        self.assertIn("迷笛音乐节", review["duplicate_candidates"][0]["evidence"]["shared_terms"])
+
+    def test_propose_rejects_unresolved_duplicate_review_marker_from_client(self) -> None:
+        client = TestClient(self.app)
+        propose = client.post(
+            "/api/chapters/c1/memory/propose",
+            headers={"X-Test-User": "u_editor"},
+            json={
+                "schema_version": "memory_update_v1",
+                "idempotency_key": "key-duplicate-review-marker-1",
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "target_table": "entities",
+                        "after": {
+                            "entity_type": "artifact",
+                            "name": "四年前迷笛音乐节门票",
+                            "attributes": {"__review": {"duplicate_review_required": True}},
+                        },
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(propose.status_code, 400)
+        body = propose.json()
+        self.assertEqual(body["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(body["error"]["details"]["reason"], "duplicate_review_unresolved")
 
     def test_propose_rejects_relation_with_unresolved_entity_ref(self) -> None:
         client = TestClient(self.app)

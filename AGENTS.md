@@ -141,6 +141,9 @@
 
 ## StoryMemory 与伏笔生命周期约定
 
+- 结构化记忆章节提议进入 `memory_change_sets` 前必须走服务层统一规范化，不能只依赖 prompt：小说人物 `entity_type` 统一为 `character`，`person`/`people`/`human`/`人物`/`角色` 都视为同义；`relation_type`、`event_type`、`evidence.source_type` 统一为小写 snake_case，ID/名称/source_id 去首尾空白，`attributes` 只保留 JSON object、去空 key、字符串值 trim。
+- `memory_update_v1` 默认资源提示词必须提供 `existing_entities_json`，包含同项目未删除实体的 `id/entity_type/name/summary_md` 精简列表；服务层仍是最终边界，旧项目 prompt preset 未重置时也必须规范化后再保存 change_set item。
+- 历史同名 `person`/`character` 结构化实体清理使用 `backend/scripts/normalize_memory_entities.py --project-id <id>` 先 dry-run；只有确认计划后才加 `--apply`。清理逻辑应优先保留 `character`，更新 `relations` 和 `evidence(source_type='entity')` 引用，软删除重复实体并标记索引脏。
 - 结构化记忆 `memory_change_sets` 的 `relations.from_entity_id/to_entity_id` 必须在 propose 阶段解析到同项目未删除的 `entities.id`，或解析到同一变更集内新建实体的 `target_id` / `after.name`；遇到无法解析的引用（例如模型自造拼音、英文 slug）应拒绝整个变更集并返回 `VALIDATION_ERROR`，不要允许生成稍后 apply 才触发外键错误的 change_set，也不要部分应用其余条目。
 - 章节记忆提议 `POST /api/chapters/{chapter_id}/memory/propose` 必须拒绝明显绑定其他章节的结构化条目：`events.chapter_id`、`foreshadows.chapter_id/resolved_at_chapter_id`、`evidence.source_type=chapter` 的 `source_id` 只能为空或等于路径章节 ID；前端切换章节时也必须清空并失效旧提议，避免把上一章 `MemoryChangeSetItem` 重新提交到当前章节。
 - `story_memories.scope` 的合法值为 `outline`、`project`、`unassigned`；`scope=outline` 必须带同项目 `outline_id`，`project`/`unassigned` 不应带 `outline_id`。

@@ -12,6 +12,14 @@ import {
   isMemoryUpdateDrawerAsyncResponseCurrent,
   shouldResetMemoryUpdateDrawerSession,
 } from "./MemoryUpdateDrawerState";
+import {
+  buildInitialAcceptedMap,
+  buildMemoryUpdateOpFromItem,
+  getDuplicateReviewCandidates,
+  hasDuplicateReviewRequired,
+  resolveDuplicateReviewForCreate,
+  resolveDuplicateReviewForReuse,
+} from "./MemoryUpdateDrawerReview";
 
 type Props = {
   open: boolean;
@@ -118,13 +126,6 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
-function removeIdField(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  const o = { ...(value as Record<string, unknown>) };
-  delete o.id;
-  return o;
-}
-
 function safeParseJsonField(raw: string | null | undefined): unknown {
   if (!raw) return null;
   try {
@@ -186,9 +187,7 @@ export function MemoryUpdateDrawer(props: Props) {
 
   useEffect(() => {
     if (!proposeResult) return;
-    const next: Record<string, boolean> = {};
-    for (const item of proposeResult.items ?? []) next[item.id] = true;
-    setAccepted(next);
+    setAccepted(buildInitialAcceptedMap(proposeResult.items ?? []));
   }, [proposeResult]);
 
   const groups = useMemo(() => {
@@ -336,28 +335,7 @@ export function MemoryUpdateDrawer(props: Props) {
     setApplyLoading(true);
     setApplyError(null);
     try {
-      const ops = acceptedItems.map((item) => {
-        const evidenceIds = safeParseJsonField(item.evidence_ids_json);
-        if (item.op === "delete") {
-          const base: Record<string, unknown> = {
-            op: "delete",
-            target_table: item.target_table,
-            target_id: item.target_id,
-          };
-          if (Array.isArray(evidenceIds) && evidenceIds.length) base.evidence_ids = evidenceIds;
-          return base;
-        }
-        const afterRaw = safeParseJsonField(item.after_json);
-        const after = removeIdField(afterRaw);
-        const base: Record<string, unknown> = {
-          op: "upsert",
-          target_table: item.target_table,
-          target_id: item.target_id,
-          after,
-        };
-        if (Array.isArray(evidenceIds) && evidenceIds.length) base.evidence_ids = evidenceIds;
-        return base;
-      });
+      const ops = acceptedItems.map((item) => buildMemoryUpdateOpFromItem(item));
 
       const idempotencyKey = `memupd-${crypto.randomUUID().slice(0, 12)}`;
       const proposeReq = {
@@ -465,6 +443,17 @@ export function MemoryUpdateDrawer(props: Props) {
     navigate(`/projects/${projectId}/tasks${qs.toString() ? `?${qs.toString()}` : ""}`);
     onClose();
   }, [chapterId, navigate, onClose, projectId]);
+
+  const replaceProposeItem = useCallback((nextItem: MemoryChangeSetItem) => {
+    setProposeResult((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.map((item) => (item.id === nextItem.id ? nextItem : item)),
+      };
+    });
+    setAccepted((prev) => ({ ...prev, [nextItem.id]: true }));
+  }, []);
 
   return (
     <Drawer
@@ -574,6 +563,8 @@ export function MemoryUpdateDrawer(props: Props) {
                         {items.map((item) => {
                           const before = safeParseJsonField(item.before_json);
                           const after = safeParseJsonField(item.after_json);
+                          const duplicateCandidates = getDuplicateReviewCandidates(item);
+                          const reviewRequired = hasDuplicateReviewRequired(item);
                           return (
                             <div key={item.id} className="rounded-atelier border border-border bg-surface p-2 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -581,7 +572,9 @@ export function MemoryUpdateDrawer(props: Props) {
                                   <input
                                     className="checkbox"
                                     type="checkbox"
+                                    disabled={reviewRequired}
                                     checked={accepted[item.id] !== false}
+                                    title={reviewRequired ? "请先处理疑似重复实体" : undefined}
                                     onChange={(e) => setAccepted((prev) => ({ ...prev, [item.id]: e.target.checked }))}
                                   />
                                   {copy.accept}
@@ -591,6 +584,58 @@ export function MemoryUpdateDrawer(props: Props) {
                                   {item.target_id ? `| ${item.target_id}` : ""}
                                 </div>
                               </div>
+
+                              {reviewRequired ? (
+                                <div className="mt-2 rounded-atelier border border-warning/40 bg-warning/10 p-2 text-xs">
+                                  <div className="text-ink">疑似重复实体，需要显式处理后才能应用。</div>
+                                  <div className="mt-2 grid gap-2">
+                                    {duplicateCandidates.map((candidate) => (
+                                      <div
+                                        key={candidate.id}
+                                        className="rounded-atelier border border-border bg-surface p-2"
+                                      >
+                                        <div className="break-all text-ink">
+                                          {candidate.entity_type ? `${candidate.entity_type}:` : ""}
+                                          {candidate.name || candidate.id}
+                                        </div>
+                                        <div className="mt-1 break-all text-subtext">id: {candidate.id}</div>
+                                        {candidate.evidence?.shared_terms?.length ? (
+                                          <div className="mt-1 break-words text-subtext">
+                                            重叠线索：{candidate.evidence.shared_terms.slice(0, 6).join("、")}
+                                          </div>
+                                        ) : null}
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <button
+                                            className="btn btn-secondary btn-sm"
+                                            type="button"
+                                            onClick={() =>
+                                              replaceProposeItem(resolveDuplicateReviewForReuse(item, candidate.id))
+                                            }
+                                          >
+                                            复用已有实体
+                                          </button>
+                                          <button
+                                            className="btn btn-ghost btn-sm"
+                                            type="button"
+                                            onClick={() => replaceProposeItem(resolveDuplicateReviewForCreate(item))}
+                                          >
+                                            仍创建新实体
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {!duplicateCandidates.length ? (
+                                      <button
+                                        className="btn btn-ghost btn-sm w-fit"
+                                        type="button"
+                                        onClick={() => replaceProposeItem(resolveDuplicateReviewForCreate(item))}
+                                      >
+                                        仍创建新实体
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               <details className="mt-2">
                                 <summary className="ui-transition-fast cursor-pointer text-xs text-subtext hover:text-ink">

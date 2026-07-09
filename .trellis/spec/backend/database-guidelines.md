@@ -109,6 +109,68 @@
 {"target_table":"relations","after":{"from_entity_id":"e_yuriko","to_entity_id":"pan_yue"}}
 ```
 
+## Scenario: 结构化记忆字段规范化与人物类型合并
+
+### 1. Scope / Trigger
+
+- Trigger: 修改 `POST /api/chapters/{chapter_id}/memory/propose`、`/memory/propose/auto`、`MemoryUpdateV1Request`、`memory_update_v1` prompt 资源、`entities` restore-on-create 或历史结构化实体清理。
+- 目标：LLM 和手工提交的结构化记忆在进入 `memory_change_sets` 前统一字段形态，避免同一人物因 `person` / `character` 类型漂移被拆成多条实体。
+
+### 2. Signatures
+
+- API: `POST /api/chapters/{chapter_id}/memory/propose`
+- API: `POST /api/chapters/{chapter_id}/memory/propose/auto`
+- Service: `propose_chapter_memory_change_set(...)`
+- Script: `cd backend && .venv/bin/python scripts/normalize_memory_entities.py --project-id <id> [--name <name>] [--apply]`
+- Prompt values: `existing_entities` 和 `existing_entities_json`
+- DB: `entities(project_id, entity_type, name)` 唯一约束仍存在。
+
+### 3. Contracts
+
+- 服务层是最终边界；prompt 只降低模型错误率，不能替代规范化。
+- `entities.after.entity_type`：`person`、`people`、`human`、`人物`、`角色` 统一为 `character`；空值为 `generic`。
+- `entities.after.name`、relation refs、`target_id`、`evidence_ids`、`source_id` 去首尾空白；空字符串不作为有效 ID。
+- `relations.after.relation_type`、`events.after.event_type`、`evidence.after.source_type` 统一为小写 snake_case，空值分别为 `related_to`、`event`、`unknown`。
+- `foreshadows.after.resolved` 接受 `true/false`、`0/1`、`resolved/unresolved` 等常见形态，保存为 `0` 或 `1`。
+- `attributes` 只接受 JSON object，去空 key，字符串值 trim；本规则不做中英文 key 语义合并。
+- 自动提议渲染 `memory_update_v1` 时必须提供同项目未删除实体的 `id/entity_type/name/summary_md` 精简上下文。
+- 历史清理默认 dry-run；`--apply` 才会写库。清理应优先保留 `character`，更新 `relations` 和 `evidence(source_type='entity')` 引用，软删除重复 `person`。
+
+### 4. Validation & Error Matrix
+
+- 可规范化字段漂移 -> 保存规范化后的 `MemoryChangeSetItem.after_json`。
+- `relation` 引用规范化后仍不可唯一解析 -> `VALIDATION_ERROR`，`details.reason=unresolved_relation_entity_ref`。
+- 同名 `person` / `character` restore-on-create 只有一个同义候选 -> 复用该 ID，并在 apply 时改成 `character`。
+- 同名同义候选仍有多个 -> 不猜测；先通过历史清理脚本 dry-run/apply 消除歧义。
+
+### 5. Good/Base/Bad Cases
+
+- Good: entity 提议 `entity_type=" Person "`, `name=" 潘越 "`，保存为 `character:潘越`。
+- Base: 自动提议 relation 使用 `from_entity_id="潘越"`，同一 ops 或 existing entity 可唯一解析，保存为实体 ID。
+- Bad: prompt 写了 `不要输出 person`，但服务层不规范化，导致旧 preset 或手工提议继续写入 `person:潘越`。
+
+### 6. Tests Required
+
+- 测试手工 propose 和自动 propose 都会在保存 item 前规范化 `entity_type`。
+- 测试 restore-on-create 可复用历史 `person` 并 apply 为 `character`。
+- 测试 relation 名称引用在规范化后仍按 fail-closed 规则拒绝不可解析引用。
+- 测试 prompt resource 包含实体类型规范和 `existing_entities_json`。
+- 测试历史清理 dry-run 不写库、apply 会更新 relation/evidence 引用并软删除重复实体。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{"target_table":"entities","after":{"entity_type":"person","name":" 潘越 "}}
+```
+
+#### Correct
+
+```json
+{"target_table":"entities","after":{"entity_type":"character","name":"潘越"}}
+```
+
 ## Scenario: 章节记忆提议的章节归属校验
 
 ### 1. Scope / Trigger

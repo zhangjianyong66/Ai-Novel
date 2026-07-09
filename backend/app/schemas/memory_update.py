@@ -85,6 +85,19 @@ class ForeshadowAfter(_AfterBase):
     def _validate_attributes(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
         return _validate_attributes_size(v)
 
+    @field_validator("resolved", mode="before")
+    @classmethod
+    def _normalize_resolved(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in {"true", "1", "yes", "y", "resolved", "done", "已解决", "已回收"}:
+                return 1
+            if s in {"false", "0", "no", "n", "unresolved", "open", "未解决", "未回收"}:
+                return 0
+        if isinstance(v, bool):
+            return 1 if v else 0
+        return v
+
 
 class EvidenceAfter(_AfterBase):
     source_type: str = Field(default="unknown", max_length=32)

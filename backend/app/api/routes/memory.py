@@ -385,6 +385,34 @@ class MemoryAutoProposeRequest(RequestModel):
     focus: str | None = Field(default=None, max_length=4000)
 
 
+def _compact_json_dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _load_memory_update_existing_entities(db: DbDep, *, project_id: str, limit: int = 80) -> list[dict]:
+    rows = (
+        db.execute(
+            select(MemoryEntity)
+            .where(MemoryEntity.project_id == project_id, MemoryEntity.deleted_at.is_(None))
+            .order_by(MemoryEntity.updated_at.desc(), MemoryEntity.name.asc(), MemoryEntity.id.asc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    items: list[dict] = []
+    for row in rows:
+        items.append(
+            {
+                "id": str(row.id),
+                "entity_type": str(row.entity_type or "generic"),
+                "name": str(row.name or ""),
+                "summary_md": str(row.summary_md or "")[:300],
+            }
+        )
+    return items
+
+
 @router.get("/projects/{project_id}/memory/structured")
 def list_structured_memory(
     request: Request,
@@ -704,6 +732,7 @@ def auto_propose_chapter_memory_update(
         resolved_api_key = str(resolved_memupd.api_key)
 
         _ensure_default_preset_from_resource(db, project_id=project_id, resource_key="memory_update_v1", activate=True)
+        existing_entities = _load_memory_update_existing_entities(db, project_id=project_id)
         values = {
             "chapter_id": str(chapter.id),
             "chapter_number": int(chapter.number),
@@ -711,6 +740,8 @@ def auto_propose_chapter_memory_update(
             "chapter_plan": str(chapter.plan or ""),
             "chapter_content_md": str(chapter.content_md or ""),
             "focus": focus,
+            "existing_entities": existing_entities,
+            "existing_entities_json": _compact_json_dumps(existing_entities),
         }
 
         prompt_system, prompt_user, prompt_messages, _, _, _, render_log = render_preset_for_task(

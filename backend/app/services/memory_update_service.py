@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,7 @@ from app.models.generation_run import GenerationRun
 from app.models.memory_task import MemoryTask
 from app.models.project_table import ProjectTable, ProjectTableRow
 from app.models.project_settings import ProjectSettings
+from app.models.search_index import SearchDocument
 from app.models.structured_memory import (
     MemoryChangeSet,
     MemoryChangeSetItem,
@@ -47,6 +49,361 @@ _MODEL_BY_TABLE: dict[str, type] = {
     "evidence": MemoryEvidence,
     "project_table_rows": ProjectTableRow,
 }
+
+_CHARACTER_ENTITY_TYPE_ALIASES = {"character", "person", "people", "human", "人物", "角色"}
+_ARTIFACT_ENTITY_TYPE_ALIASES = {"artifact", "object", "item", "prop", "物品", "道具"}
+
+
+def _strip_or_none(value: object) -> str | None:
+    s = str(value or "").strip()
+    return s or None
+
+
+def _normalize_entity_type(value: object) -> str:
+    s = str(value or "").strip().lower()
+    if not s:
+        return "generic"
+    if s in _CHARACTER_ENTITY_TYPE_ALIASES:
+        return "character"
+    if s in _ARTIFACT_ENTITY_TYPE_ALIASES:
+        return "artifact"
+    return s[:64] or "generic"
+
+
+def _normalize_token(value: object, *, default: str, max_length: int = 64) -> str:
+    s = str(value or "").strip().lower()
+    if not s:
+        return default
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"[^0-9a-zA-Z_\-\u4e00-\u9fff]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_-")
+    return (s[:max_length].strip("_-") or default)
+
+
+def _normalize_attributes(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise AppError.validation(details={"reason": "attributes_must_be_object"})
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        key_norm = str(key or "").strip()
+        if not key_norm:
+            continue
+        if isinstance(item, str):
+            out[key_norm] = item.strip()
+        elif isinstance(item, dict):
+            out[key_norm] = _normalize_attributes(item) or {}
+        elif isinstance(item, list):
+            out[key_norm] = [v.strip() if isinstance(v, str) else v for v in item]
+        else:
+            out[key_norm] = item
+    return out or None
+
+
+def _normalize_memory_after(*, target_table: str, after: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(after)
+    if target_table == "entities":
+        normalized["entity_type"] = _normalize_entity_type(normalized.get("entity_type"))
+        normalized["name"] = str(normalized.get("name") or "").strip()
+    elif target_table == "relations":
+        normalized["from_entity_id"] = str(normalized.get("from_entity_id") or "").strip()
+        normalized["to_entity_id"] = str(normalized.get("to_entity_id") or "").strip()
+        normalized["relation_type"] = _normalize_token(normalized.get("relation_type"), default="related_to")
+    elif target_table == "events":
+        normalized["chapter_id"] = _strip_or_none(normalized.get("chapter_id"))
+        normalized["event_type"] = _normalize_token(normalized.get("event_type"), default="event")
+    elif target_table == "foreshadows":
+        normalized["chapter_id"] = _strip_or_none(normalized.get("chapter_id"))
+        normalized["resolved_at_chapter_id"] = _strip_or_none(normalized.get("resolved_at_chapter_id"))
+        normalized["resolved"] = 1 if int(normalized.get("resolved") or 0) else 0
+    elif target_table == "evidence":
+        normalized["source_type"] = _normalize_token(normalized.get("source_type"), default="unknown", max_length=32)
+        normalized["source_id"] = _strip_or_none(normalized.get("source_id"))
+
+    if "attributes" in normalized:
+        normalized["attributes"] = _normalize_attributes(normalized.get("attributes"))
+    return normalized
+
+
+def _entity_candidate_types(entity_type: str) -> list[str]:
+    candidate_types = [entity_type]
+    if entity_type == "character":
+        candidate_types.extend(t for t in sorted(_CHARACTER_ENTITY_TYPE_ALIASES - {"character"}) if t not in candidate_types)
+    elif entity_type == "artifact":
+        candidate_types.extend(t for t in sorted(_ARTIFACT_ENTITY_TYPE_ALIASES - {"artifact"}) if t not in candidate_types)
+    return candidate_types
+
+
+def _find_existing_entity_id_for_upsert(
+    db: Session,
+    *,
+    project_id: str,
+    entity_type: str,
+    name: str,
+) -> str | None:
+    if not name:
+        return None
+
+    candidates = (
+        db.execute(
+            select(MemoryEntity.id).where(
+                MemoryEntity.project_id == project_id,
+                MemoryEntity.entity_type.in_(_entity_candidate_types(entity_type)),
+                MemoryEntity.name == name,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    unique = [str(candidate) for candidate in candidates]
+    if len(unique) == 1:
+        return unique[0]
+    return None
+
+
+def _flatten_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(v) for v in value.values())
+    if isinstance(value, list):
+        return " ".join(_flatten_text(v) for v in value)
+    return str(value)
+
+
+def _shared_chinese_terms(left: str, right: str) -> list[str]:
+    left = re.sub(r"\s+", "", left)
+    right = re.sub(r"\s+", "", right)
+    if not left or not right:
+        return []
+    terms: set[str] = set()
+    for seq in re.findall(r"[\u4e00-\u9fff]{4,}", left):
+        max_len = min(10, len(seq))
+        for size in range(max_len, 3, -1):
+            for start in range(0, len(seq) - size + 1):
+                term = seq[start : start + size]
+                if term in right:
+                    terms.add(term)
+    return sorted(terms, key=lambda x: (-len(x), x))[:30]
+
+
+def _entity_text_for_duplicate_check(*, name: str, summary_md: object, attributes: object) -> str:
+    return " ".join(part for part in [name, _flatten_text(summary_md), _flatten_text(attributes)] if part)
+
+
+def _reject_unresolved_duplicate_review_marker(*, after: dict[str, Any], item_index: int) -> None:
+    attrs = after.get("attributes")
+    if not isinstance(attrs, dict):
+        return
+    review = attrs.get("__review")
+    if isinstance(review, dict) and bool(review.get("duplicate_review_required")):
+        raise AppError.validation(
+            details={
+                "item_index": item_index,
+                "reason": "duplicate_review_unresolved",
+            }
+        )
+
+
+def _mark_duplicate_entity_candidates_for_review(
+    db: Session,
+    *,
+    project_id: str,
+    after: dict[str, Any],
+) -> None:
+    entity_type = _normalize_entity_type(after.get("entity_type"))
+    name = str(after.get("name") or "").strip()
+    if not name or entity_type == "generic":
+        return
+
+    proposed_text = _entity_text_for_duplicate_check(
+        name=name,
+        summary_md=after.get("summary_md"),
+        attributes=after.get("attributes"),
+    )
+    candidates = (
+        db.execute(
+            select(MemoryEntity)
+            .where(
+                MemoryEntity.project_id == project_id,
+                MemoryEntity.deleted_at.is_(None),
+                MemoryEntity.entity_type.in_(_entity_candidate_types(entity_type)),
+                MemoryEntity.name != name,
+            )
+            .order_by(MemoryEntity.updated_at.desc(), MemoryEntity.name.asc(), MemoryEntity.id.asc())
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
+
+    review_candidates: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate_attrs = _parse_attributes_json(candidate.attributes_json)
+        candidate_text = _entity_text_for_duplicate_check(
+            name=str(candidate.name or ""),
+            summary_md=candidate.summary_md,
+            attributes=candidate_attrs,
+        )
+        shared_terms = _shared_chinese_terms(proposed_text, candidate_text)
+        if not shared_terms:
+            continue
+        review_candidates.append(
+            {
+                "id": str(candidate.id),
+                "entity_type": _normalize_entity_type(candidate.entity_type),
+                "name": str(candidate.name or ""),
+                "summary_md": candidate.summary_md,
+                "evidence": {"shared_terms": shared_terms[:20]},
+            }
+        )
+        if len(review_candidates) >= 3:
+            break
+
+    if not review_candidates:
+        return
+
+    attrs = after.get("attributes")
+    if not isinstance(attrs, dict):
+        attrs = {}
+    review = dict(attrs.get("__review") or {}) if isinstance(attrs.get("__review"), dict) else {}
+    review["duplicate_review_required"] = True
+    review["duplicate_candidates"] = review_candidates
+    attrs["__review"] = review
+    after["attributes"] = attrs
+
+
+def _session_has_table(db: Session, *, name: str) -> bool:
+    bind = db.get_bind()
+    dialect = str(getattr(bind.dialect, "name", "") or "")
+    try:
+        if dialect == "sqlite":
+            found = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"), {"name": name}).scalar()
+            return found is not None
+        found = db.execute(text("SELECT to_regclass(:name)"), {"name": name}).scalar()
+        return found is not None
+    except Exception:
+        return False
+
+
+def normalize_character_entity_duplicates(
+    *,
+    db: Session,
+    project_id: str,
+    apply: bool = False,
+    names: list[str] | None = None,
+) -> dict[str, Any]:
+    name_filter = {str(name or "").strip() for name in (names or []) if str(name or "").strip()}
+    rows = (
+        db.execute(
+            select(MemoryEntity).where(
+                MemoryEntity.project_id == project_id,
+                MemoryEntity.deleted_at.is_(None),
+                MemoryEntity.entity_type.in_(["person", "character"]),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    by_name: dict[str, list[MemoryEntity]] = {}
+    for row in rows:
+        name = str(row.name or "").strip()
+        if not name or (name_filter and name not in name_filter):
+            continue
+        by_name.setdefault(name, []).append(row)
+
+    has_search_documents = _session_has_table(db, name="search_documents")
+    plans: list[dict[str, Any]] = []
+    now = utc_now()
+    for name, candidates in sorted(by_name.items()):
+        typed = {str(c.entity_type or "") for c in candidates}
+        if typed == {"character"}:
+            continue
+        characters = [c for c in candidates if str(c.entity_type or "") == "character"]
+        persons = [c for c in candidates if str(c.entity_type or "") == "person"]
+        if not persons:
+            continue
+
+        target = sorted(characters or persons, key=lambda e: (str(e.updated_at or ""), str(e.id)), reverse=True)[0]
+        duplicate_ids = [str(e.id) for e in candidates if str(e.id) != str(target.id)]
+        plan = {
+            "name": name,
+            "target_id": str(target.id),
+            "target_type_before": str(target.entity_type or ""),
+            "duplicate_ids": duplicate_ids,
+            "will_convert_target_to": "character",
+        }
+        plans.append(plan)
+        if not apply:
+            continue
+
+        target.entity_type = "character"
+        target.updated_at = now
+        for duplicate in candidates:
+            if str(duplicate.id) == str(target.id):
+                continue
+            duplicate_id = str(duplicate.id)
+            target_id = str(target.id)
+            for relation in (
+                db.execute(
+                    select(MemoryRelation).where(
+                        MemoryRelation.project_id == project_id,
+                        MemoryRelation.deleted_at.is_(None),
+                        (MemoryRelation.from_entity_id == duplicate_id) | (MemoryRelation.to_entity_id == duplicate_id),
+                    )
+                )
+                .scalars()
+                .all()
+            ):
+                relation.from_entity_id = target_id if str(relation.from_entity_id) == duplicate_id else relation.from_entity_id
+                relation.to_entity_id = target_id if str(relation.to_entity_id) == duplicate_id else relation.to_entity_id
+                relation.updated_at = now
+
+            for evidence in (
+                db.execute(
+                    select(MemoryEvidence).where(
+                        MemoryEvidence.project_id == project_id,
+                        MemoryEvidence.source_type == "entity",
+                        MemoryEvidence.source_id == duplicate_id,
+                    )
+                )
+                .scalars()
+                .all()
+            ):
+                evidence.source_id = target_id
+
+            if has_search_documents:
+                for doc in (
+                    db.execute(
+                        select(SearchDocument).where(
+                            SearchDocument.project_id == project_id,
+                            SearchDocument.source_type == "memory_entity",
+                            SearchDocument.source_id == duplicate_id,
+                        )
+                    )
+                    .scalars()
+                    .all()
+                ):
+                    doc.source_id = target_id
+                    doc.deleted_at = now
+
+            duplicate.name = f"{duplicate.name}__merged__{duplicate.id}"
+            duplicate.deleted_at = now
+            duplicate.updated_at = now
+
+    if apply and plans:
+        settings_row = db.get(ProjectSettings, project_id)
+        if settings_row is None:
+            settings_row = ProjectSettings(project_id=project_id)
+            db.add(settings_row)
+        settings_row.vector_index_dirty = True
+        db.commit()
+
+    return {"project_id": project_id, "apply": bool(apply), "plans": plans, "count": len(plans)}
 
 
 def _compact_json_dumps(value: Any) -> str:
@@ -638,6 +995,7 @@ def propose_chapter_memory_change_set(
     for idx, op in enumerate(payload.ops):
         target_table = str(op.target_table)
         target_id = str(op.target_id or "").strip()
+        evidence_ids = [str(eid or "").strip() for eid in (op.evidence_ids or []) if str(eid or "").strip()]
 
         after_dict: dict[str, Any] | None = None
         if op.op == "upsert":
@@ -645,7 +1003,7 @@ def propose_chapter_memory_change_set(
             if model_cls is None:
                 raise AppError.validation(details={"item_index": idx, "reason": "unsupported_target_table"})
             after_obj = model_cls.model_validate(op.after or {})
-            after_dict = dict(after_obj.model_dump())
+            after_dict = _normalize_memory_after(target_table=target_table, after=dict(after_obj.model_dump()))
             if target_table in {"events", "foreshadows"} and not (after_dict.get("chapter_id") or "").strip():
                 after_dict["chapter_id"] = chapter_id
 
@@ -655,42 +1013,27 @@ def propose_chapter_memory_change_set(
                 chapter_id=chapter_id,
                 item_index=idx,
             )
+            if target_table == "entities":
+                _reject_unresolved_duplicate_review_marker(after=after_dict, item_index=idx)
 
             # restore-on-create: resolve by unique key when caller omits target_id
             if not target_id and target_table == "entities":
-                entity_type = str(after_dict.get("entity_type") or "generic").strip() or "generic"
+                entity_type = _normalize_entity_type(after_dict.get("entity_type"))
                 name = str(after_dict.get("name") or "").strip()
-                existing_id = (
-                    db.execute(
-                        select(MemoryEntity.id).where(
-                            MemoryEntity.project_id == project_id,
-                            MemoryEntity.entity_type == entity_type,
-                            MemoryEntity.name == name,
-                        )
-                    )
-                    .scalars()
-                    .first()
+                existing_id = _find_existing_entity_id_for_upsert(
+                    db,
+                    project_id=project_id,
+                    entity_type=entity_type,
+                    name=name,
                 )
                 if existing_id:
                     target_id = str(existing_id)
-            if not target_id and target_table == "relations":
-                from_entity_id = str(after_dict.get("from_entity_id") or "").strip()
-                to_entity_id = str(after_dict.get("to_entity_id") or "").strip()
-                relation_type = str(after_dict.get("relation_type") or "related_to").strip() or "related_to"
-                existing_id = (
-                    db.execute(
-                        select(MemoryRelation.id).where(
-                            MemoryRelation.project_id == project_id,
-                            MemoryRelation.from_entity_id == from_entity_id,
-                            MemoryRelation.to_entity_id == to_entity_id,
-                            MemoryRelation.relation_type == relation_type,
-                        )
+                else:
+                    _mark_duplicate_entity_candidates_for_review(
+                        db,
+                        project_id=project_id,
+                        after=after_dict,
                     )
-                    .scalars()
-                    .first()
-                )
-                if existing_id:
-                    target_id = str(existing_id)
 
             if not target_id:
                 target_id = new_id()
@@ -718,6 +1061,24 @@ def propose_chapter_memory_change_set(
                     item_index=idx,
                     field="to_entity_id",
                 )
+                if op.target_id is None:
+                    from_entity_id = str(after_dict.get("from_entity_id") or "").strip()
+                    to_entity_id = str(after_dict.get("to_entity_id") or "").strip()
+                    relation_type = str(after_dict.get("relation_type") or "related_to").strip() or "related_to"
+                    existing_id = (
+                        db.execute(
+                            select(MemoryRelation.id).where(
+                                MemoryRelation.project_id == project_id,
+                                MemoryRelation.from_entity_id == from_entity_id,
+                                MemoryRelation.to_entity_id == to_entity_id,
+                                MemoryRelation.relation_type == relation_type,
+                            )
+                        )
+                        .scalars()
+                        .first()
+                    )
+                    if existing_id:
+                        target_id = str(existing_id)
 
             after_dict["id"] = target_id
 
@@ -730,7 +1091,7 @@ def propose_chapter_memory_change_set(
 
         before_dict = _row_payload(target_table, before_row) if before_row is not None else None
 
-        evidence_ids_json = _compact_json_dumps(op.evidence_ids) if op.evidence_ids else None
+        evidence_ids_json = _compact_json_dumps(evidence_ids) if evidence_ids else None
 
         item = MemoryChangeSetItem(
             id=new_id(),

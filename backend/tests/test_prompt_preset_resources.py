@@ -56,6 +56,18 @@ class TestPromptPresetResources(unittest.TestCase):
         self.assertIn("后续出现/影响", contract_template)
         self.assertIn("退场或回收方式", contract_template)
 
+    def test_memory_update_default_prompt_declares_entity_type_rules_and_existing_entities(self) -> None:
+        res = load_preset_resource("memory_update_v1")
+        blocks = {block.identifier: block.template for block in res.blocks}
+
+        contract_template = blocks["sys.memory_update.contract.json"]
+        user_template = blocks["user.memory_update.inputs"]
+
+        self.assertIn("人物统一使用 character", contract_template)
+        self.assertIn("不要输出 person", contract_template)
+        self.assertIn("existing_entities", user_template)
+        self.assertIn("{{existing_entities_json}}", user_template)
+
 
 class TestPromptPresetDefaultCategoryRepair(unittest.TestCase):
     def setUp(self) -> None:

@@ -4,6 +4,9 @@ chapter_number: {{chapter_number}}
 chapter_title: {{chapter_title}}
 {% if focus %}focus: {{focus}}
 {% endif %}
+<EXISTING_ENTITIES>
+{{existing_entities_json}}
+</EXISTING_ENTITIES>
 {% if chapter_plan %}<CHAPTER_PLAN>
 {{chapter_plan}}
 </CHAPTER_PLAN>
@@ -13,4 +16,3 @@ chapter_title: {{chapter_title}}
 </CHAPTER_CONTENT>
 {% endif %}
 </MEMORY_UPDATE_INPUT>
-

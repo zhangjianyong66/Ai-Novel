@@ -36,6 +36,7 @@ describe("MemoryUpdateDrawerReview", () => {
     const resolved = resolveDuplicateReviewForReuse(duplicateItem, "ticket_midi");
     const op = buildMemoryUpdateOpFromItem(resolved);
 
+    expect(resolved.item_index).toBe(0);
     expect(op.target_id).toBe("ticket_midi");
     expect(op.after).toMatchObject({
       entity_type: "artifact",
@@ -48,6 +49,7 @@ describe("MemoryUpdateDrawerReview", () => {
     const resolved = resolveDuplicateReviewForCreate(duplicateItem);
     const op = buildMemoryUpdateOpFromItem(resolved);
 
+    expect(resolved.item_index).toBe(0);
     expect(op.target_id).toBe("new-ticket");
     expect((op.after as { attributes?: Record<string, unknown> }).attributes?.__review).toBeUndefined();
   });

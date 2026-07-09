@@ -1,5 +1,6 @@
 export type MemoryUpdateDrawerItem = {
   id: string;
+  item_index: number;
   target_table: string;
   target_id?: string | null;
   op: string;

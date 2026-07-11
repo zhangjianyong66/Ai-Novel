@@ -488,7 +488,7 @@ export function ContextPreviewDrawer(props: Props) {
   }, [effectivePack.worldbook]);
 
   const fetchPreview = useCallback(
-    async (params: { queryText: string; sections: MemorySectionEnabled; budgets: Record<string, number> }) => {
+    async (params: { queryText: string; sections: MemorySectionEnabled; budgets: Partial<Record<string, number>> }) => {
       if (!projectId) {
         setError({ code: "NO_PROJECT", message: UI_COPY.writing.contextPreviewMissingProjectId });
         return;

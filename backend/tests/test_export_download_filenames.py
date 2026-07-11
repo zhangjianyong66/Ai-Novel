@@ -173,6 +173,175 @@ class TestExportDownloadFilenames(unittest.TestCase):
         self.assertIn("已定稿正文", res.text)
         self.assertNotIn("草稿正文", res.text)
 
+    def test_markdown_export_can_limit_to_selected_chapters(self) -> None:
+        with self.SessionLocal() as db:
+            outline = Outline(id="o1", project_id="p1", title="大纲", content_md="大纲内容")
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.add(outline)
+            db.add_all(
+                [
+                    Chapter(
+                        id="c2",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=2,
+                        title="第二章",
+                        status="drafting",
+                        content_md="第二章正文",
+                    ),
+                    Chapter(
+                        id="c1",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=1,
+                        title="第一章",
+                        status="done",
+                        content_md="第一章正文",
+                    ),
+                    Chapter(
+                        id="c3",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=3,
+                        title="第三章",
+                        status="done",
+                        content_md="第三章正文",
+                    ),
+                ]
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+
+        res = client.get(
+            "/api/projects/p1/export/markdown?chapters=selected&chapter_ids=c3&chapter_ids=c1",
+            headers={"X-Test-User": "u1"},
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("### 第1章 第一章", res.text)
+        self.assertIn("第一章正文", res.text)
+        self.assertIn("### 第3章 第三章", res.text)
+        self.assertIn("第三章正文", res.text)
+        self.assertNotIn("第二章正文", res.text)
+        self.assertLess(res.text.index("### 第1章 第一章"), res.text.index("### 第3章 第三章"))
+
+    def test_txt_export_can_limit_to_selected_chapters(self) -> None:
+        with self.SessionLocal() as db:
+            outline = Outline(id="o1", project_id="p1", title="大纲", content_md="")
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.add(outline)
+            db.add_all(
+                [
+                    Chapter(
+                        id="c1",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=1,
+                        title="第一章",
+                        status="done",
+                        content_md="第一章正文",
+                    ),
+                    Chapter(
+                        id="c2",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=2,
+                        title="第二章",
+                        status="drafting",
+                        content_md="第二章正文",
+                    ),
+                    Chapter(
+                        id="c3",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=3,
+                        title="第三章",
+                        status="done",
+                        content_md="第三章正文",
+                    ),
+                ]
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+
+        res = client.get(
+            "/api/projects/p1/export/txt?chapters=selected&chapter_ids=c3&chapter_ids=c1",
+            headers={"X-Test-User": "u1"},
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.text, "《小说/世界》\n\n第1章 第一章\n\n第一章正文\n\n第3章 第三章\n\n第三章正文\n")
+
+    def test_selected_export_rejects_empty_chapter_ids(self) -> None:
+        client = TestClient(self.app)
+
+        res = client.get("/api/projects/p1/export/txt?chapters=selected", headers={"X-Test-User": "u1"})
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(res.json()["error"]["details"]["reason"], "selected_chapters_required")
+
+    def test_selected_export_rejects_chapters_outside_active_outline(self) -> None:
+        with self.SessionLocal() as db:
+            db.add(User(id="u2", display_name="User 2", is_admin=False))
+            db.add(Project(id="p2", owner_user_id="u2", name="其他项目", genre=None, logline=None))
+            outline = Outline(id="o1", project_id="p1", title="当前大纲", content_md="")
+            other_outline = Outline(id="o2", project_id="p1", title="其他大纲", content_md="")
+            foreign_outline = Outline(id="o3", project_id="p2", title="其他项目大纲", content_md="")
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.add_all([outline, other_outline, foreign_outline])
+            db.add_all(
+                [
+                    Chapter(
+                        id="c1",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=1,
+                        title="当前章节",
+                        status="done",
+                        content_md="当前正文",
+                    ),
+                    Chapter(
+                        id="c2",
+                        project_id="p1",
+                        outline_id="o2",
+                        number=2,
+                        title="其他大纲章节",
+                        status="done",
+                        content_md="不应导出",
+                    ),
+                    Chapter(
+                        id="c3",
+                        project_id="p2",
+                        outline_id="o3",
+                        number=1,
+                        title="其他项目章节",
+                        status="done",
+                        content_md="不应导出",
+                    ),
+                ]
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+
+        res = client.get(
+            "/api/projects/p1/export/txt?chapters=selected&chapter_ids=c1&chapter_ids=c2&chapter_ids=c3",
+            headers={"X-Test-User": "u1"},
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["code"], "VALIDATION_ERROR")
+        self.assertEqual(res.json()["error"]["details"]["reason"], "selected_chapters_invalid")
+
     def test_bundle_download_filename_includes_timestamp_before_bundle_suffix(self) -> None:
         client = TestClient(self.app)
 

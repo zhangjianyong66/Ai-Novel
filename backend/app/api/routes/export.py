@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy import select
 
 from app.api.deps import DbDep, UserIdDep, require_project_editor, require_project_viewer
+from app.core.errors import AppError
 from app.models.chapter import Chapter
 from app.models.character import Character
 from app.models.outline import Outline
@@ -54,14 +55,38 @@ def _active_outline_for_export(db: DbDep, *, project_id: str, active_outline_id:
     )
 
 
-def _chapter_rows_for_export(db: DbDep, *, project_id: str, outline_id: str | None, chapters: str) -> list[Chapter]:
+def _selected_chapter_ids_for_export(chapter_ids: list[str] | None) -> list[str]:
+    selected_ids = list(dict.fromkeys((chapter_id or "").strip() for chapter_id in (chapter_ids or [])))
+    selected_ids = [chapter_id for chapter_id in selected_ids if chapter_id]
+    if not selected_ids:
+        raise AppError.validation("请选择至少一个章节", details={"reason": "selected_chapters_required"})
+    return selected_ids
+
+
+def _chapter_rows_for_export(
+    db: DbDep,
+    *,
+    project_id: str,
+    outline_id: str | None,
+    chapters: str,
+    chapter_ids: list[str] | None = None,
+) -> list[Chapter]:
     if not outline_id:
+        if chapters == "selected":
+            _selected_chapter_ids_for_export(chapter_ids)
+            raise AppError.validation("选择的章节不可导出", details={"reason": "selected_chapters_invalid"})
         return []
     q = (
         select(Chapter)
         .where(Chapter.project_id == project_id, Chapter.outline_id == outline_id)
         .order_by(Chapter.number.asc())
     )
+    if chapters == "selected":
+        selected_ids = _selected_chapter_ids_for_export(chapter_ids)
+        rows = list(db.execute(q.where(Chapter.id.in_(selected_ids))).scalars().all())
+        if len(rows) != len(selected_ids):
+            raise AppError.validation("选择的章节不可导出", details={"reason": "selected_chapters_invalid"})
+        return rows
     if chapters == "done":
         q = q.where(Chapter.status == "done")
     return list(db.execute(q).scalars().all())
@@ -102,6 +127,7 @@ def export_markdown(
     include_characters: str | None = Query(default="1"),
     include_outline: str | None = Query(default="1"),
     chapters: str = Query(default="all"),
+    chapter_ids: list[str] | None = Query(default=None),
 ) -> Response:
     project = require_project_viewer(db, project_id=project_id, user_id=user_id)
     active_outline = _active_outline_for_export(db, project_id=project_id, active_outline_id=project.active_outline_id)
@@ -165,6 +191,7 @@ def export_markdown(
         project_id=project_id,
         outline_id=active_outline.id if active_outline else None,
         chapters=chapters,
+        chapter_ids=chapter_ids,
     )
     if not chapter_rows:
         parts.append("_（无章节）_")
@@ -192,6 +219,7 @@ def export_txt(
     user_id: UserIdDep,
     project_id: str,
     chapters: str = Query(default="all"),
+    chapter_ids: list[str] | None = Query(default=None),
 ) -> Response:
     project = require_project_viewer(db, project_id=project_id, user_id=user_id)
     active_outline = _active_outline_for_export(db, project_id=project_id, active_outline_id=project.active_outline_id)
@@ -200,6 +228,7 @@ def export_txt(
         project_id=project_id,
         outline_id=active_outline.id if active_outline else None,
         chapters=chapters,
+        chapter_ids=chapter_ids,
     )
 
     content = _build_txt_content(project_name=project.name, chapter_rows=chapter_rows)

@@ -93,6 +93,7 @@ class ChapterGenerateRequest(BaseModel):
     macro_seed: str | None = Field(default=None, max_length=256)
     prompt_override: PromptOverride | None = None
     style_id: str | None = Field(default=None, max_length=36)
+    memory_strategy: Literal["off", "stable", "deep"] | None = None
     memory_injection_enabled: bool = False
     memory_query_text: str | None = Field(default=None, max_length=5000)
     memory_modules: dict[str, bool] = Field(default_factory=dict)

@@ -10,6 +10,12 @@ import { useProjectData } from "../../hooks/useProjectData";
 import { useProjectTaskEvents } from "../../hooks/useProjectTaskEvents";
 import { useWizardProgress } from "../../hooks/useWizardProgress";
 import { createRequestSeqGuard } from "../../lib/requestSeqGuard";
+import {
+  STABLE_MEMORY_MODULES,
+  deepMemoryBudgetOverrides,
+  isMemoryEnabled,
+  resolveMemoryModulesForStrategy,
+} from "../../lib/memoryStrategy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { chapterStore } from "../../services/chapterStore";
 import {
@@ -1123,13 +1129,23 @@ export function useWritingPageState(): WritingPageState {
       projectId,
       outlineId: activeChapter?.outline_id ?? undefined,
       chapterNumber: activeChapter?.number ?? null,
-      memoryInjectionEnabled: genForm.memory_injection_enabled,
+      memoryStrategy: genForm.memory_strategy,
+      memoryInjectionEnabled: isMemoryEnabled(genForm.memory_strategy),
       genInstruction: genForm.instruction,
       genChapterPlan: activeChapter?.plan ?? "",
       genMemoryQueryText: genForm.memory_query_text,
-      genMemoryModules: genForm.memory_modules,
+      genMemoryModules: resolveMemoryModulesForStrategy(genForm.memory_strategy, genForm.memory_modules),
+      genMemoryBudgetOverrides:
+        genForm.memory_strategy === "deep"
+          ? deepMemoryBudgetOverrides(resolveMemoryModulesForStrategy(genForm.memory_strategy, genForm.memory_modules))
+          : {},
       onChangeMemoryInjectionEnabled: (enabled) =>
-        setGenForm((prev) => ({ ...prev, memory_injection_enabled: Boolean(enabled) })),
+        setGenForm((prev) => ({
+          ...prev,
+          memory_strategy: enabled ? "stable" : "off",
+          memory_injection_enabled: Boolean(enabled),
+          memory_modules: enabled ? { ...STABLE_MEMORY_MODULES } : prev.memory_modules,
+        })),
     },
     tablesPanelProps: {
       open: tablesOpen,

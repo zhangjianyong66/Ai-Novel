@@ -5,6 +5,7 @@ import type { LLMPreset } from "../../types";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
 import { useToast } from "../ui/toast";
+import { isMemoryEnabled, resolveMemoryModulesForStrategy } from "../../lib/memoryStrategy";
 
 type Props = {
   open: boolean;
@@ -106,6 +107,8 @@ export function PromptInspectorDrawer(props: Props) {
       typeof genForm.target_word_count === "number" && genForm.target_word_count >= 100
         ? genForm.target_word_count
         : null;
+    const memoryModules = resolveMemoryModulesForStrategy(genForm.memory_strategy, genForm.memory_modules);
+    const memoryInjectionEnabled = isMemoryEnabled(genForm.memory_strategy);
 
     const payload = {
       mode,
@@ -118,9 +121,10 @@ export function PromptInspectorDrawer(props: Props) {
       macro_seed: macroSeed,
       ...(genForm.prompt_override != null ? { prompt_override: genForm.prompt_override } : {}),
       style_id: genForm.style_id,
-      memory_injection_enabled: genForm.memory_injection_enabled,
+      memory_strategy: genForm.memory_strategy,
+      memory_injection_enabled: memoryInjectionEnabled,
       memory_query_text: genForm.memory_query_text.trim() ? genForm.memory_query_text : null,
-      memory_modules: genForm.memory_modules,
+      memory_modules: memoryModules,
       context: {
         include_world_setting: genForm.context.include_world_setting,
         include_style_guide: genForm.context.include_style_guide,
@@ -333,7 +337,7 @@ export function PromptInspectorDrawer(props: Props) {
           <div className="mt-2 grid gap-2">
             {packTextBlocks.length === 0 ? (
               <div className="text-xs text-subtext">
-                {genForm.memory_injection_enabled
+                {isMemoryEnabled(genForm.memory_strategy)
                   ? "本次未生成可展示的注入段落（可能为空或未命中）。"
                   : "未启用记忆注入。"}
               </div>

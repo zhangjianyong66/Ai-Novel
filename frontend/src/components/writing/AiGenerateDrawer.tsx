@@ -2,7 +2,13 @@ import { useCallback, useEffect, useId, useMemo, useState, type Dispatch, type S
 
 import { Drawer } from "../ui/Drawer";
 import { ProgressBar } from "../ui/ProgressBar";
-import { UI_COPY } from "../../lib/uiCopy";
+import {
+  DEEP_MEMORY_DEFAULT_MODULES,
+  STABLE_MEMORY_MODULES,
+  isMemoryEnabled,
+  type MemoryModules,
+  type MemoryStrategy,
+} from "../../lib/memoryStrategy";
 import type { Character, LLMPreset } from "../../types";
 import type { GenerateForm } from "./types";
 import { ApiError, apiJson } from "../../services/apiClient";
@@ -55,6 +61,34 @@ export function AiGenerateDrawer(props: Props) {
   const [projectDefaultStyleId, setProjectDefaultStyleId] = useState<string | null>(null);
   const [stylesError, setStylesError] = useState<ApiError | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const memoryStrategy = props.genForm.memory_strategy;
+
+  const setMemoryStrategy = useCallback(
+    (strategy: MemoryStrategy) => {
+      props.setGenForm((v) => ({
+        ...v,
+        memory_strategy: strategy,
+        memory_injection_enabled: isMemoryEnabled(strategy),
+        memory_modules:
+          strategy === "deep"
+            ? { ...DEEP_MEMORY_DEFAULT_MODULES }
+            : strategy === "stable"
+              ? { ...STABLE_MEMORY_MODULES }
+              : { ...STABLE_MEMORY_MODULES },
+      }));
+    },
+    [props],
+  );
+
+  const setMemoryModule = useCallback(
+    (key: keyof MemoryModules, checked: boolean) => {
+      props.setGenForm((v) => ({
+        ...v,
+        memory_modules: { ...v.memory_modules, [key]: checked },
+      }));
+    },
+    [props],
+  );
 
   const allStyles = useMemo(() => [...presets, ...userStyles], [presets, userStyles]);
   const projectDefaultStyle = useMemo(
@@ -242,25 +276,41 @@ export function AiGenerateDrawer(props: Props) {
         <div className="panel p-3">
           <div className="text-sm font-medium text-ink">记忆注入</div>
 
-          <div className="mt-3">
-            <label className="flex items-center justify-between gap-3 text-sm text-ink">
-              <span>{UI_COPY.writing.memoryInjectionToggle}</span>
-              <input
-                className="checkbox"
-                checked={props.genForm.memory_injection_enabled}
-                disabled={props.generating}
-                name="memory_injection_enabled"
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  props.setGenForm((v) => ({ ...v, memory_injection_enabled: checked }));
-                }}
-                type="checkbox"
-              />
-            </label>
-            <div className="mt-1 text-[11px] text-subtext">{UI_COPY.writing.memoryInjectionHint}</div>
+          <div className="mt-3 grid gap-3">
+            <div className="grid grid-cols-3 gap-1 rounded-atelier border border-border bg-surface p-1">
+              {(
+                [
+                  ["off", "关闭记忆"],
+                  ["stable", "稳定续写"],
+                  ["deep", "深度记忆"],
+                ] as const
+              ).map(([strategy, label]) => {
+                const active = memoryStrategy === strategy;
+                return (
+                  <button
+                    key={strategy}
+                    className={`btn btn-sm ${active ? "btn-primary" : "btn-ghost"}`}
+                    disabled={props.generating}
+                    type="button"
+                    onClick={() => setMemoryStrategy(strategy)}
+                    aria-pressed={active}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
 
-            {props.genForm.memory_injection_enabled ? (
-              <div className="mt-2 rounded-atelier border border-border bg-surface p-3">
+            <div className="text-[11px] leading-5 text-subtext">
+              {memoryStrategy === "off"
+                ? "只使用当前章节计划和用户指令，不注入世界书、表格或长期记忆。"
+                : memoryStrategy === "deep"
+                  ? "本次生成会查相似历史、未回收伏笔和向量索引；生成后自动回到稳定续写。"
+                  : "日常推荐。只注入世界书、表格系统和下一章要求，减少跑偏。"}
+            </div>
+
+            {memoryStrategy === "deep" ? (
+              <div className="rounded-atelier border border-border bg-surface p-3">
                 <label className="grid gap-1">
                   <span className="text-xs text-subtext">记忆查询关键词（可选）</span>
                   <input
@@ -277,42 +327,10 @@ export function AiGenerateDrawer(props: Props) {
                 <div className="mt-1 text-[11px] text-subtext">留空将自动使用“用户指令 + 章节计划”。</div>
 
                 <div className="mt-3 grid gap-2">
-                  <div className="text-xs text-subtext">注入模块</div>
-                  <div className="text-[11px] text-subtext">会影响本次生成提示词，并同步到「上下文预览」。</div>
-
-                  <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                    <span>世界书（worldbook）</span>
-                    <input
-                      className="checkbox"
-                      checked={props.genForm.memory_modules.worldbook}
-                      disabled={props.generating}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        props.setGenForm((v) => ({
-                          ...v,
-                          memory_modules: { ...v.memory_modules, worldbook: checked },
-                        }));
-                      }}
-                      type="checkbox"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                    <span>表格系统（tables）</span>
-                    <input
-                      className="checkbox"
-                      checked={props.genForm.memory_modules.tables}
-                      disabled={props.generating}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        props.setGenForm((v) => ({
-                          ...v,
-                          memory_modules: { ...v.memory_modules, tables: checked },
-                        }));
-                      }}
-                      type="checkbox"
-                    />
-                  </label>
+                  <div className="text-xs text-subtext">深度记忆默认模块</div>
+                  <div className="text-[11px] text-subtext">
+                    默认查语义历史、未回收伏笔和向量索引；额外记忆总预算 9000 字符。
+                  </div>
 
                   <details className="rounded-atelier border border-border bg-surface p-2">
                     <summary className="cursor-pointer text-sm text-ink">更多模块（高级）</summary>
@@ -323,13 +341,7 @@ export function AiGenerateDrawer(props: Props) {
                           className="checkbox"
                           checked={props.genForm.memory_modules.story_memory}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, story_memory: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("story_memory", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
@@ -344,13 +356,7 @@ export function AiGenerateDrawer(props: Props) {
                           className="checkbox"
                           checked={props.genForm.memory_modules.semantic_history}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, semantic_history: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("semantic_history", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
@@ -365,13 +371,7 @@ export function AiGenerateDrawer(props: Props) {
                           className="checkbox"
                           checked={props.genForm.memory_modules.foreshadow_open_loops}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, foreshadow_open_loops: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("foreshadow_open_loops", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
@@ -381,13 +381,7 @@ export function AiGenerateDrawer(props: Props) {
                           className="checkbox"
                           checked={props.genForm.memory_modules.structured}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, structured: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("structured", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
@@ -397,45 +391,37 @@ export function AiGenerateDrawer(props: Props) {
                           className="checkbox"
                           checked={props.genForm.memory_modules.vector_rag}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, vector_rag: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("vector_rag", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
                       <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                        <span>关系图（graph）</span>
+                        <span className="min-w-0">
+                          <span className="block">关系图（graph）</span>
+                          <span className="mt-1 block text-xs leading-5 text-subtext">
+                            适合调试或特定项目，不建议日常开启。
+                          </span>
+                        </span>
                         <input
                           className="checkbox"
                           checked={props.genForm.memory_modules.graph}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, graph: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("graph", e.target.checked)}
                           type="checkbox"
                         />
                       </label>
                       <label className="flex items-center justify-between gap-3 text-sm text-ink">
-                        <span>Fractal（fractal）</span>
+                        <span className="min-w-0">
+                          <span className="block">Fractal（fractal）</span>
+                          <span className="mt-1 block text-xs leading-5 text-subtext">
+                            适合调试或特定项目，不建议日常开启。
+                          </span>
+                        </span>
                         <input
                           className="checkbox"
                           checked={props.genForm.memory_modules.fractal}
                           disabled={props.generating}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            props.setGenForm((v) => ({
-                              ...v,
-                              memory_modules: { ...v.memory_modules, fractal: checked },
-                            }));
-                          }}
+                          onChange={(e) => setMemoryModule("fractal", e.target.checked)}
                           type="checkbox"
                         />
                       </label>

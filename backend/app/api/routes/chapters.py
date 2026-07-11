@@ -94,6 +94,7 @@ from app.services.chapter_version_service import (
 )
 from app.services.memory_query_service import normalize_query_text, parse_query_preprocessing_config
 from app.services.memory_retrieval_service import build_memory_retrieval_log_json, retrieve_memory_context_pack
+from app.services.memory_strategy import resolve_memory_strategy
 from app.services.prompt_presets import ensure_default_plan_preset, ensure_default_post_edit_preset, render_preset_for_task
 from app.services.prompt_store import format_characters
 from app.services.project_task_service import schedule_chapter_done_tasks
@@ -324,21 +325,6 @@ class _ChapterMemoryPreparation:
     memory_retrieval_log_json: dict[str, object] | None
 
 
-def _resolve_memory_modules(raw_modules: dict[str, bool]) -> dict[str, bool]:
-    return {
-        "worldbook": bool(raw_modules.get("worldbook", True)),
-        "story_memory": bool(raw_modules.get("story_memory", True)),
-        "next_requirements": True,
-        "semantic_history": bool(raw_modules.get("semantic_history", False)),
-        "foreshadow_open_loops": bool(raw_modules.get("foreshadow_open_loops", False)),
-        "structured": bool(raw_modules.get("structured", True)),
-        "tables": bool(raw_modules.get("tables", True)),
-        "vector_rag": bool(raw_modules.get("vector_rag", True)),
-        "graph": bool(raw_modules.get("graph", True)),
-        "fractal": bool(raw_modules.get("fractal", True)),
-    }
-
-
 def _prepare_chapter_memory_injection(
     *,
     db: Session,
@@ -349,7 +335,24 @@ def _prepare_chapter_memory_injection(
     base_instruction: str,
     values: dict[str, object],
 ) -> _ChapterMemoryPreparation:
-    if not body.memory_injection_enabled:
+    resolved_memory = resolve_memory_strategy(
+        memory_strategy=body.memory_strategy,
+        memory_injection_enabled=body.memory_injection_enabled,
+        raw_modules=body.memory_modules or {},
+    )
+    if not resolved_memory.enabled:
+        if body.memory_strategy is not None:
+            return _ChapterMemoryPreparation(
+                memory_pack=None,
+                memory_injection_config={
+                    "enabled": False,
+                    "strategy": resolved_memory.strategy,
+                    "modules": resolved_memory.section_enabled,
+                    "budget_total_chars": resolved_memory.budget_total_chars,
+                    "budget_allocations": resolved_memory.budget_allocations,
+                },
+                memory_retrieval_log_json=None,
+            )
         return _ChapterMemoryPreparation(
             memory_pack=None,
             memory_injection_config=None,
@@ -368,7 +371,7 @@ def _prepare_chapter_memory_injection(
             memory_query_text = f"{memory_query_text}\n\n{chapter.plan}".strip()
         memory_query_text = memory_query_text[:5000]
 
-    memory_modules = _resolve_memory_modules(body.memory_modules or {})
+    memory_modules = resolved_memory.section_enabled
     raw_query_text = memory_query_text
     qp_cfg = parse_query_preprocessing_config(
         (settings_row.query_preprocessing_json or "").strip() if settings_row is not None else None
@@ -385,6 +388,7 @@ def _prepare_chapter_memory_injection(
             chapter_number=int(getattr(chapter, "number", 0) or 0),
             query_text=memory_query_text,
             section_enabled=memory_modules,
+            budget_overrides=resolved_memory.budget_overrides,
         )
     except Exception:
         pack = None
@@ -395,9 +399,13 @@ def _prepare_chapter_memory_injection(
         values["memory"] = memory_pack
 
     memory_injection_config: dict[str, object] = {
+        "enabled": True,
+        "strategy": resolved_memory.strategy,
         "query_text": memory_query_text,
         "query_text_source": query_text_source,
         "modules": memory_modules,
+        "budget_total_chars": resolved_memory.budget_total_chars,
+        "budget_allocations": resolved_memory.budget_allocations,
         "raw_query_text": raw_query_text,
         "normalized_query_text": memory_query_text,
         "preprocess_obs": preprocess_obs,
@@ -408,6 +416,11 @@ def _prepare_chapter_memory_injection(
         pack=pack,
         errors=pack_errors,
     )
+    if resolved_memory.budget_total_chars is not None:
+        memory_retrieval_log_json["budgets"] = {
+            "total_chars": resolved_memory.budget_total_chars,
+            "allocations": resolved_memory.budget_allocations,
+        }
     return _ChapterMemoryPreparation(
         memory_pack=memory_pack,
         memory_injection_config=memory_injection_config,
@@ -421,12 +434,16 @@ def _build_memory_run_params_extra_json(
     memory_injection_enabled: bool,
     memory_preparation: _ChapterMemoryPreparation,
 ) -> dict[str, object]:
+    effective_memory_enabled = memory_injection_enabled
+    if memory_preparation.memory_injection_config is not None:
+        effective_memory_enabled = bool(memory_preparation.memory_injection_config.get("enabled"))
     params: dict[str, object] = {
         "style_resolution": style_resolution,
-        "memory_injection_enabled": memory_injection_enabled,
+        "memory_injection_enabled": effective_memory_enabled,
     }
     # Mirror generation_runs.params_json fields for observability + replay.
-    if memory_injection_enabled and memory_preparation.memory_injection_config is not None:
+    if memory_preparation.memory_injection_config is not None:
+        params["memory_strategy"] = memory_preparation.memory_injection_config.get("strategy")
         params["memory_injection_config"] = memory_preparation.memory_injection_config
         params["memory_retrieval_log_json"] = memory_preparation.memory_retrieval_log_json
     return params

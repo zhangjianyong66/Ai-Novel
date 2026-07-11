@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { formatDateTime, formatDateTimeForFilename } from "../../lib/dateTime";
+import type { MemoryStrategy } from "../../lib/memoryStrategy";
 import { UI_COPY } from "../../lib/uiCopy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { Drawer } from "../ui/Drawer";
@@ -17,6 +18,7 @@ type Props = {
   projectId?: string;
   outlineId?: string;
   chapterNumber?: number | null;
+  memoryStrategy?: MemoryStrategy;
   memoryInjectionEnabled: boolean;
   onChangeMemoryInjectionEnabled?: (enabled: boolean) => void;
   genInstruction?: string;
@@ -33,6 +35,7 @@ type Props = {
     graph: boolean;
     fractal: boolean;
   };
+  genMemoryBudgetOverrides?: Partial<Record<string, number>>;
 };
 
 type MemoryContextPackLogItem = {
@@ -234,12 +237,14 @@ export function ContextPreviewDrawer(props: Props) {
     onClose,
     open,
     projectId,
+    memoryStrategy,
     memoryInjectionEnabled,
     onChangeMemoryInjectionEnabled,
     genInstruction,
     genChapterPlan,
     genMemoryQueryText,
     genMemoryModules,
+    genMemoryBudgetOverrides,
   } = props;
   const titleId = useId();
   const toast = useToast();
@@ -317,6 +322,7 @@ export function ContextPreviewDrawer(props: Props) {
           sections: previewSections,
           budget_overrides: parsedBudgetOverrides,
           budget_override_inputs: budgetOverrideInputs,
+          memory_strategy: memoryStrategy ?? null,
           memory_injection_enabled: memoryInjectionEnabled,
         },
         pack: effectivePack ?? EMPTY_PACK,
@@ -334,6 +340,7 @@ export function ContextPreviewDrawer(props: Props) {
           chapter_plan: genChapterPlan ?? null,
           memory_query_text: genMemoryQueryText ?? null,
           memory_modules: genMemoryModules ?? null,
+          memory_budget_overrides: genMemoryBudgetOverrides ?? null,
         },
       });
       toast.toastSuccess("已导出预览 bundle", requestId ?? undefined);
@@ -346,7 +353,9 @@ export function ContextPreviewDrawer(props: Props) {
     genChapterPlan,
     genInstruction,
     genMemoryModules,
+    genMemoryBudgetOverrides,
     genMemoryQueryText,
+    memoryStrategy,
     memoryInjectionEnabled,
     parsedBudgetOverrides,
     previewQueryText,
@@ -525,12 +534,16 @@ export function ContextPreviewDrawer(props: Props) {
   const syncPreviewFromGenerate = useCallback(async () => {
     const queryText = computeEffectiveQueryTextFromGenerate();
     const sections: MemorySectionEnabled = { ...DEFAULT_PREVIEW_SECTIONS, ...(genMemoryModules ?? {}) };
+    const budgets = genMemoryBudgetOverrides ?? {};
     setPreviewQueryText(queryText);
     setPreviewSections(sections);
-    setBudgetOverrideInputs(DEFAULT_BUDGET_INPUTS);
+    setBudgetOverrideInputs({
+      ...DEFAULT_BUDGET_INPUTS,
+      ...Object.fromEntries(Object.entries(budgets).map(([key, value]) => [key, String(value)])),
+    });
     setSyncedAt(formatDateTime(new Date()));
-    await fetchPreview({ queryText, sections, budgets: {} });
-  }, [computeEffectiveQueryTextFromGenerate, fetchPreview, genMemoryModules]);
+    await fetchPreview({ queryText, sections, budgets });
+  }, [computeEffectiveQueryTextFromGenerate, fetchPreview, genMemoryBudgetOverrides, genMemoryModules]);
 
   const load = useCallback(async () => {
     if (!projectId) {

@@ -5,12 +5,16 @@ import type { GenerateForm } from "../../components/writing/types";
 import type { ConfirmApi } from "../../components/ui/confirm";
 import type { ToastApi } from "../../components/ui/toast";
 import { UI_COPY } from "../../lib/uiCopy";
+import {
+  DEFAULT_MEMORY_STRATEGY,
+  STABLE_MEMORY_MODULES,
+  isMemoryEnabled,
+  resolveMemoryModulesForStrategy,
+} from "../../lib/memoryStrategy";
 import { ApiError, apiJson } from "../../services/apiClient";
 import { createChapterMarkerStreamParser } from "../../services/chapterMarkerStreamParser";
 import { chapterStore } from "../../services/chapterStore";
-import { getCurrentUserId } from "../../services/currentUser";
 import { SSEError, SSEPostClient } from "../../services/sseClient";
-import { writingMemoryInjectionEnabledStorageKey } from "../../services/uiState";
 import type { Chapter, ChapterListItem, LLMPreset } from "../../types";
 import { extractMissingNumbers } from "./writingErrorUtils";
 import {
@@ -79,19 +83,10 @@ const DEFAULT_GEN_FORM: GenerateForm = {
   post_edit_sanitize: false,
   content_optimize: false,
   style_id: null,
+  memory_strategy: DEFAULT_MEMORY_STRATEGY,
   memory_injection_enabled: true,
   memory_query_text: "",
-  memory_modules: {
-    worldbook: true,
-    story_memory: true,
-    semantic_history: false,
-    foreshadow_open_loops: false,
-    structured: true,
-    tables: true,
-    vector_rag: true,
-    graph: true,
-    fractal: true,
-  },
+  memory_modules: { ...STABLE_MEMORY_MODULES },
   context: {
     include_world_setting: true,
     include_style_guide: true,
@@ -103,14 +98,6 @@ const DEFAULT_GEN_FORM: GenerateForm = {
     previous_chapter: "summary",
   },
 };
-
-function loadMemoryInjectionEnabled(projectId: string | undefined): boolean {
-  if (!projectId) return DEFAULT_GEN_FORM.memory_injection_enabled;
-  const key = writingMemoryInjectionEnabledStorageKey(getCurrentUserId(), projectId);
-  const raw = localStorage.getItem(key);
-  if (raw === null) return DEFAULT_GEN_FORM.memory_injection_enabled;
-  return raw === "1";
-}
 
 export function useChapterGeneration(args: {
   projectId?: string;
@@ -152,7 +139,6 @@ export function useChapterGeneration(args: {
 
   const [genForm, setGenForm] = useState<GenerateForm>(() => ({
     ...DEFAULT_GEN_FORM,
-    memory_injection_enabled: loadMemoryInjectionEnabled(projectId),
   }));
 
   const lastProjectIdRef = useRef<string | undefined>(undefined);
@@ -165,13 +151,13 @@ export function useChapterGeneration(args: {
   useEffect(() => {
     if (lastProjectIdRef.current === projectId) return;
     lastProjectIdRef.current = projectId;
-    const enabled = loadMemoryInjectionEnabled(projectId);
     setInstructionHistory([]);
     setGenForm((prev) => ({
       ...prev,
-      memory_injection_enabled: enabled,
+      memory_strategy: DEFAULT_MEMORY_STRATEGY,
+      memory_injection_enabled: isMemoryEnabled(DEFAULT_MEMORY_STRATEGY),
       memory_query_text: "",
-      memory_modules: { ...DEFAULT_GEN_FORM.memory_modules },
+      memory_modules: { ...STABLE_MEMORY_MODULES },
     }));
   }, [projectId]);
 
@@ -179,12 +165,6 @@ export function useChapterGeneration(args: {
     setPostEditCompare(null);
     setContentOptimizeCompare(null);
   }, [activeChapter?.id]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    const key = writingMemoryInjectionEnabledStorageKey(getCurrentUserId(), projectId);
-    localStorage.setItem(key, genForm.memory_injection_enabled ? "1" : "0");
-  }, [genForm.memory_injection_enabled, projectId]);
 
   const refreshInstructionHistory = useCallback(async () => {
     if (!projectId) {
@@ -345,6 +325,8 @@ export function useChapterGeneration(args: {
           typeof genForm.target_word_count === "number" && genForm.target_word_count >= 100
             ? genForm.target_word_count
             : null;
+        const memoryModules = resolveMemoryModulesForStrategy(genForm.memory_strategy, genForm.memory_modules);
+        const memoryInjectionEnabled = isMemoryEnabled(genForm.memory_strategy);
 
         const payload = {
           mode,
@@ -357,9 +339,10 @@ export function useChapterGeneration(args: {
           ...(typeof macroSeed === "string" && macroSeed.trim() ? { macro_seed: macroSeed.trim() } : {}),
           ...(promptOverride != null ? { prompt_override: promptOverride } : {}),
           style_id: genForm.style_id,
-          memory_injection_enabled: genForm.memory_injection_enabled,
+          memory_strategy: genForm.memory_strategy,
+          memory_injection_enabled: memoryInjectionEnabled,
           memory_query_text: genForm.memory_query_text.trim() ? genForm.memory_query_text : null,
-          memory_modules: genForm.memory_modules,
+          memory_modules: memoryModules,
           context: {
             include_world_setting: genForm.context.include_world_setting,
             include_style_guide: genForm.context.include_style_guide,
@@ -790,6 +773,17 @@ export function useChapterGeneration(args: {
         toast.toastError(`${err.message} (${err.code})`, err.requestId);
       } finally {
         setGenerating(false);
+        setGenForm((prev) =>
+          prev.memory_strategy === "deep"
+            ? {
+                ...prev,
+                memory_strategy: DEFAULT_MEMORY_STRATEGY,
+                memory_injection_enabled: isMemoryEnabled(DEFAULT_MEMORY_STRATEGY),
+                memory_query_text: "",
+                memory_modules: { ...STABLE_MEMORY_MODULES },
+              }
+            : prev,
+        );
       }
     },
     [

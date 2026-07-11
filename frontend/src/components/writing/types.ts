@@ -1,3 +1,5 @@
+import type { MemoryModules, MemoryStrategy } from "../../lib/memoryStrategy";
+
 export type CreateChapterForm = {
   number: number;
   title: string;
@@ -27,19 +29,10 @@ export type GenerateForm = {
   post_edit_sanitize: boolean;
   content_optimize: boolean;
   style_id: string | null;
+  memory_strategy: MemoryStrategy;
   memory_injection_enabled: boolean;
   memory_query_text: string;
-  memory_modules: {
-    worldbook: boolean;
-    story_memory: boolean;
-    semantic_history: boolean;
-    foreshadow_open_loops: boolean;
-    structured: boolean;
-    tables: boolean;
-    vector_rag: boolean;
-    graph: boolean;
-    fractal: boolean;
-  };
+  memory_modules: MemoryModules;
   context: {
     include_world_setting: boolean;
     include_style_guide: boolean;

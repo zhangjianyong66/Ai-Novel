@@ -1064,3 +1064,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: 完成选择章节导出
+
+**Date**: 2026-07-11
+**Task**: 完成选择章节导出
+**Branch**: `main`
+
+### Summary
+
+为 Markdown/TXT 导出增加 selected 章节范围，补充前后端校验、前端选章 UI、测试和导出契约文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4fddce` | (see git log) |
+| `9d5203e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

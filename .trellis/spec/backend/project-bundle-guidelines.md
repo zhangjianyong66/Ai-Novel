@@ -65,3 +65,67 @@ LLMTaskPreset(project_id=new_project_id, llm_profile_id=None, ...)
 ```
 
 跨用户导入不能保留旧用户的 profile 引用；只迁移可继续写作的非密文参数。
+
+## Scenario: Project Content Markdown/TXT Export
+
+### 1. Scope / Trigger
+
+- Trigger: 普通内容导出是后端附件响应、前端下载动作和用户可见文件格式的跨层契约。
+- 适用范围：`backend/app/api/routes/export.py`、`frontend/src/pages/ExportPage.tsx`、`frontend/src/services/apiClient.ts`。
+
+### 2. Signatures
+
+- `GET /api/projects/{project_id}/export/markdown`
+  - 权限：`require_project_viewer`。
+  - Query：`include_settings=1|0`、`include_characters=1|0`、`include_outline=1|0`、`chapters=all|done`。
+  - 响应：`text/markdown; charset=utf-8` 附件，文件名 `*.md`。
+- `GET /api/projects/{project_id}/export/txt`
+  - 权限：`require_project_viewer`。
+  - Query：`chapters=all|done`。
+  - 响应：`text/plain; charset=utf-8` 附件，文件名 `*.txt`。
+
+### 3. Contracts
+
+- Markdown 和 TXT 都只导出当前 active outline 下的章节；若项目没有 active outline，则回退到同项目最近更新的大纲。
+- 章节按 `Chapter.number` 升序输出；`chapters=done` 只包含 `status == "done"` 的章节，否则包含全部章节。
+- Markdown 是资料汇总格式，可包含项目设定、角色卡、大纲和正文。
+- TXT 是纯小说正文格式，只包含书名、章节标题和章节正文，不包含设定、角色卡或大纲。
+- 下载响应必须带 `Content-Disposition`，同时提供 ASCII `filename` 和 UTF-8 `filename*`，并保留 `X-Request-Id`。
+
+### 4. Validation & Error Matrix
+
+- 用户无项目查看权限 -> 由 `require_project_viewer` 按项目权限规则返回 404/403。
+- 项目没有可导出章节 -> 返回合法附件内容，正文中显示空章节占位，不返回错误。
+- `chapters` 非 `done` -> 当前按全部章节处理；不要让前端依赖其他未定义值。
+
+### 5. Good/Base/Bad Cases
+
+- Good: TXT 下载只输出 `《书名》`、`第N章 标题` 和正文，适合投稿/阅读。
+- Base: 空正文章节在 TXT 中显示 `（空）`，Markdown 中显示 `_（空）_`。
+- Bad: 为 TXT 复用 Markdown 的设定/角色/大纲选项，导致纯正文导出混入项目资料。
+
+### 6. Tests Required
+
+- 路由测试：Markdown、TXT、bundle 文件名均包含项目名和时间戳，后缀正确。
+- 路由测试：TXT 内容按章节号升序，只包含章节正文，不包含大纲/设定/角色资料。
+- 路由测试：`chapters=done` 只导出定稿章节。
+- 前端检查：导出页提供 TXT 下载动作，并通过 `apiDownloadAttachment` 或同等附件下载 helper 处理下载。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+parts.append(active_outline.content_md or "")
+parts.extend(ch.content_md for ch in chapter_rows)
+```
+
+#### Correct
+
+```python
+parts.append(f"《{project.name}》")
+parts.append(f"第{chapter.number}章 {chapter.title}".rstrip())
+parts.append(chapter.content_md if chapter.content_md else "（空）")
+```
+
+TXT 导出必须保持纯正文边界；大纲、设定和角色资料属于 Markdown 或项目包场景。

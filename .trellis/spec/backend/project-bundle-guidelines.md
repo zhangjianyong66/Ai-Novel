@@ -77,17 +77,18 @@ LLMTaskPreset(project_id=new_project_id, llm_profile_id=None, ...)
 
 - `GET /api/projects/{project_id}/export/markdown`
   - 权限：`require_project_viewer`。
-  - Query：`include_settings=1|0`、`include_characters=1|0`、`include_outline=1|0`、`chapters=all|done`。
+  - Query：`include_settings=1|0`、`include_characters=1|0`、`include_outline=1|0`、`chapters=all|done|selected`、`chapter_ids=<id>`（`selected` 时可重复）。
   - 响应：`text/markdown; charset=utf-8` 附件，文件名 `*.md`。
 - `GET /api/projects/{project_id}/export/txt`
   - 权限：`require_project_viewer`。
-  - Query：`chapters=all|done`。
+  - Query：`chapters=all|done|selected`、`chapter_ids=<id>`（`selected` 时可重复）。
   - 响应：`text/plain; charset=utf-8` 附件，文件名 `*.txt`。
 
 ### 3. Contracts
 
 - Markdown 和 TXT 都只导出当前 active outline 下的章节；若项目没有 active outline，则回退到同项目最近更新的大纲。
-- 章节按 `Chapter.number` 升序输出；`chapters=done` 只包含 `status == "done"` 的章节，否则包含全部章节。
+- 章节按 `Chapter.number` 升序输出；`chapters=done` 只包含 `status == "done"` 的章节，`chapters=selected` 只包含请求中明确选择的章节，否则包含全部章节。
+- `chapters=selected` 不叠加定稿过滤，草稿章节可被明确选择；请求顺序不影响输出顺序。
 - Markdown 是资料汇总格式，可包含项目设定、角色卡、大纲和正文。
 - TXT 是纯小说正文格式，只包含书名、章节标题和章节正文，不包含设定、角色卡或大纲。
 - 下载响应必须带 `Content-Disposition`，同时提供 ASCII `filename` 和 UTF-8 `filename*`，并保留 `X-Request-Id`。
@@ -96,7 +97,9 @@ LLMTaskPreset(project_id=new_project_id, llm_profile_id=None, ...)
 
 - 用户无项目查看权限 -> 由 `require_project_viewer` 按项目权限规则返回 404/403。
 - 项目没有可导出章节 -> 返回合法附件内容，正文中显示空章节占位，不返回错误。
-- `chapters` 非 `done` -> 当前按全部章节处理；不要让前端依赖其他未定义值。
+- `chapters=selected` 且没有有效 `chapter_ids` -> `AppError.validation(details.reason="selected_chapters_required")`。
+- `chapters=selected` 中任一 `chapter_ids` 不存在、不属于当前项目或不属于当前 active outline -> `AppError.validation(details.reason="selected_chapters_invalid")`，不做部分导出。
+- `chapters` 非 `done` 且非 `selected` -> 当前按全部章节处理；不要让前端依赖其他未定义值。
 
 ### 5. Good/Base/Bad Cases
 
@@ -109,6 +112,8 @@ LLMTaskPreset(project_id=new_project_id, llm_profile_id=None, ...)
 - 路由测试：Markdown、TXT、bundle 文件名均包含项目名和时间戳，后缀正确。
 - 路由测试：TXT 内容按章节号升序，只包含章节正文，不包含大纲/设定/角色资料。
 - 路由测试：`chapters=done` 只导出定稿章节。
+- 路由测试：Markdown/TXT `chapters=selected` 只导出选中章节，按章节号升序输出。
+- 路由测试：`chapters=selected` 空选择和非法章节 ID 返回 `VALIDATION_ERROR`，且不静默部分导出。
 - 前端检查：导出页提供 TXT 下载动作，并通过 `apiDownloadAttachment` 或同等附件下载 helper 处理下载。
 
 ### 7. Wrong vs Correct

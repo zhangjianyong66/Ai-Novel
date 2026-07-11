@@ -74,8 +74,10 @@
 
 ## 项目包导入导出约定
 
-- 项目普通内容导出位于 `GET /api/projects/{project_id}/export/markdown` 和 `GET /api/projects/{project_id}/export/txt`；两者都只导出当前 active outline 下的章节，并支持 `chapters=all|done` 章节范围。
+- 项目普通内容导出位于 `GET /api/projects/{project_id}/export/markdown` 和 `GET /api/projects/{project_id}/export/txt`；两者都只导出当前 active outline 下的章节，并支持 `chapters=all|done|selected` 章节范围。
 - Markdown 导出是资料汇总格式，可按查询参数包含设定、角色卡、大纲和正文；TXT 导出是纯小说正文格式，只包含书名、章节标题和章节正文，不包含设定、角色卡或大纲。
+- Markdown/TXT 按章节选择导出使用 `chapters=selected` 加重复查询参数 `chapter_ids=id1&chapter_ids=id2`；后端只接受当前项目当前 active outline 下的章节 ID，空选择、其他项目、非当前大纲或不存在的章节 ID 都应返回参数错误，不做部分导出。输出顺序始终按章节号升序，不按请求参数顺序。
+- 前端导出页选择章节模式默认不自动勾选章节，只在同一次页面会话内保留勾选；刷新后不持久化。选择为空时禁用 Markdown/TXT 导出并提示选择至少一个章节；选择区提供“全选 / 清空 / 仅选择定稿”，暂不要求搜索框或 POST 下载接口。
 - 项目包导入上传大小上限由 `PROJECT_BUNDLE_IMPORT_MAX_BYTES` 配置，未配置或配置为非正数时默认 `52428800` 字节（50MB），后端会把过大的异常配置钳制到 500MB。
 - 前端通过 `GET /api/projects/import_bundle/config` 获取项目包导入限制和支持的 `schema_version`，本地预检失败时使用 50MB 兜底。
 - 项目包导入服务使用裸外键 ID 批量创建多张表时，不能依赖 SQLAlchemy 自动推断父子表 flush 顺序；PostgreSQL 会严格检查外键。新增导入实体时，父表应先 `db.flush()` 后再创建依赖子表，并在 roundtrip 测试里启用 SQLite `PRAGMA foreign_keys=ON` 覆盖该类问题。

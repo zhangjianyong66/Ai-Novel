@@ -65,6 +65,7 @@ export function ExportPage() {
   const bumpWizardLocal = wizard.bumpLocal;
 
   const [exporting, setExporting] = useState(false);
+  const [exportingTxt, setExportingTxt] = useState(false);
   const [exportingBundle, setExportingBundle] = useState(false);
   const [form, setForm] = useState<ExportForm>({
     include_settings: true,
@@ -82,6 +83,13 @@ export function ExportPage() {
     qs.set("chapters", form.chapters);
     return `/api/projects/${projectId}/export/markdown?${qs.toString()}`;
   }, [form, projectId]);
+
+  const txtUrl = useMemo(() => {
+    if (!projectId) return "";
+    const qs = new URLSearchParams();
+    qs.set("chapters", form.chapters);
+    return `/api/projects/${projectId}/export/txt?${qs.toString()}`;
+  }, [form.chapters, projectId]);
 
   const doExport = useCallback(async (): Promise<boolean> => {
     if (!projectId) return false;
@@ -111,6 +119,34 @@ export function ExportPage() {
       setExporting(false);
     }
   }, [bumpWizardLocal, exporting, projectId, toast, url]);
+
+  const doTxtExport = useCallback(async (): Promise<boolean> => {
+    if (!projectId) return false;
+    if (!txtUrl) return false;
+    if (exportingTxt) return false;
+    setExportingTxt(true);
+    try {
+      const { filename, blob } = await apiDownloadAttachment(txtUrl);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename || "ainovel.txt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      toast.toastSuccess("已导出 TXT，已开始下载");
+      markWizardExported(projectId);
+      bumpWizardLocal();
+      return true;
+    } catch (e) {
+      const err = e as ApiError;
+      toast.toastError(`${err.message} (${err.code})`, err.requestId);
+      return false;
+    } finally {
+      setExportingTxt(false);
+    }
+  }, [bumpWizardLocal, exportingTxt, projectId, toast, txtUrl]);
 
   const doBundleExport = useCallback(async (): Promise<boolean> => {
     if (!projectId || exportingBundle) return false;
@@ -146,17 +182,28 @@ export function ExportPage() {
               按选项生成并下载 `.md` 文件（如浏览器拦截下载，请允许该站点下载）。
             </div>
           </div>
-          <button
-            className="btn btn-primary"
-            disabled={!projectId || exporting}
-            onClick={() => void doExport()}
-            type="button"
-          >
-            {exporting ? "导出中…" : "导出 Markdown"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="btn btn-secondary"
+              disabled={!projectId || exportingTxt}
+              onClick={() => void doTxtExport()}
+              type="button"
+            >
+              {exportingTxt ? "导出中…" : "导出 TXT"}
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={!projectId || exporting}
+              onClick={() => void doExport()}
+              type="button"
+            >
+              {exporting ? "导出中…" : "导出 Markdown"}
+            </button>
+          </div>
         </div>
 
         {exporting ? <GhostwriterIndicator className="mt-4" label="导出中：正在生成并下载 Markdown…" /> : null}
+        {exportingTxt ? <GhostwriterIndicator className="mt-4" label="导出中：正在生成并下载 TXT…" /> : null}
 
         <div className="mt-5 grid gap-4">
           <div className="grid gap-2">
@@ -221,7 +268,10 @@ export function ExportPage() {
 
           <details className="surface p-3 text-xs text-subtext">
             <summary className="ui-transition-fast cursor-pointer hover:text-ink">排障信息（请求 URL）</summary>
-            <div className="mt-2 break-all">{url || "（请选择项目）"}</div>
+            <div className="mt-2 grid gap-1 break-all">
+              <div>Markdown：{url || "（请选择项目）"}</div>
+              <div>TXT：{txtUrl || "（请选择项目）"}</div>
+            </div>
           </details>
         </div>
       </section>
@@ -258,7 +308,7 @@ export function ExportPage() {
         loading={wizard.loading}
         primaryAction={
           wizard.progress.nextStep?.key === "export"
-            ? { label: "本页：导出 Markdown", disabled: exporting, onClick: doExport }
+            ? { label: "本页：导出 Markdown", disabled: exporting || exportingTxt, onClick: doExport }
             : undefined
         }
       />

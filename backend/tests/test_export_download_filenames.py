@@ -19,6 +19,8 @@ from app.db.session import get_db
 import app.models  # noqa: F401 - registers all SQLAlchemy models for create_all
 from app.main import app_error_handler, validation_error_handler
 from app.models.project import Project
+from app.models.chapter import Chapter
+from app.models.outline import Outline
 from app.models.user import User
 
 
@@ -82,6 +84,94 @@ class TestExportDownloadFilenames(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         filename = _filename_star(res.headers.get("Content-Disposition", ""))
         self.assertRegex(filename, r"^小说_世界_\d{14}\.md$")
+
+    def test_txt_download_filename_includes_timestamp_before_extension(self) -> None:
+        client = TestClient(self.app)
+
+        res = client.get("/api/projects/p1/export/txt", headers={"X-Test-User": "u1"})
+
+        self.assertEqual(res.status_code, 200)
+        filename = _filename_star(res.headers.get("Content-Disposition", ""))
+        self.assertRegex(filename, r"^小说_世界_\d{14}\.txt$")
+
+    def test_txt_export_contains_only_chapter_content_in_number_order(self) -> None:
+        with self.SessionLocal() as db:
+            outline = Outline(id="o1", project_id="p1", title="大纲", content_md="不应出现在 TXT 中")
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.add(outline)
+            db.add_all(
+                [
+                    Chapter(
+                        id="c2",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=2,
+                        title="第二章",
+                        status="drafting",
+                        content_md="第二章正文",
+                    ),
+                    Chapter(
+                        id="c1",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=1,
+                        title="第一章",
+                        status="done",
+                        content_md="第一章正文",
+                    ),
+                ]
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+
+        res = client.get("/api/projects/p1/export/txt?chapters=all", headers={"X-Test-User": "u1"})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("text/plain", res.headers.get("Content-Type", ""))
+        self.assertEqual(res.text, "《小说/世界》\n\n第1章 第一章\n\n第一章正文\n\n第2章 第二章\n\n第二章正文\n")
+        self.assertNotIn("不应出现在 TXT 中", res.text)
+
+    def test_txt_export_can_limit_to_done_chapters(self) -> None:
+        with self.SessionLocal() as db:
+            outline = Outline(id="o1", project_id="p1", title="大纲", content_md="")
+            project = db.get(Project, "p1")
+            assert project is not None
+            project.active_outline_id = "o1"
+            db.add(outline)
+            db.add_all(
+                [
+                    Chapter(
+                        id="c1",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=1,
+                        title="已定稿",
+                        status="done",
+                        content_md="已定稿正文",
+                    ),
+                    Chapter(
+                        id="c2",
+                        project_id="p1",
+                        outline_id="o1",
+                        number=2,
+                        title="草稿",
+                        status="drafting",
+                        content_md="草稿正文",
+                    ),
+                ]
+            )
+            db.commit()
+
+        client = TestClient(self.app)
+
+        res = client.get("/api/projects/p1/export/txt?chapters=done", headers={"X-Test-User": "u1"})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("已定稿正文", res.text)
+        self.assertNotIn("草稿正文", res.text)
 
     def test_bundle_download_filename_includes_timestamp_before_bundle_suffix(self) -> None:
         client = TestClient(self.app)

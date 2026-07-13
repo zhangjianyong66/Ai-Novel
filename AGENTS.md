@@ -163,4 +163,6 @@
 
 ## Trellis 任务约定
 
+- 当前项目 Trellis 模板版本为 `0.6.6`，全局 CLI 同为 `0.6.6`。
+- Trellis 升级先运行 `trellis update --dry-run` 预览；确认后使用 `trellis update --skip-all --migrate` 自动更新未定制模板、跳过 `AGENTS.md` 等项目定制，并保留 `.trellis/workspace/`、`.trellis/tasks/`、`.trellis/spec/` 与 `.trellis/.developer/` 用户数据。
 - 当前 `.trellis/scripts/task.py list` 支持 `--mine` / `-m` 查看当前开发者任务，支持 `--status` / `-s` 按状态过滤；不支持 `--assignee` 参数。
